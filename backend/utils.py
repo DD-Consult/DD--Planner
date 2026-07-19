@@ -295,11 +295,21 @@ def compute_phase_allocated_hours(allocation: dict, phase: dict) -> float:
     return compute_allocation_hours(allocation)
 
 
+def wbs_parent_id_set(tasks: list) -> set:
+    """Set of parent identifiers referenced by any task."""
+    return {str(t.get("parent_id")) for t in tasks if t.get("parent_id")}
+
+
+def is_leaf_task(task: dict, parent_ids: set) -> bool:
+    """A task is a leaf if neither its Mongo _id nor its internal uuid id is referenced as a parent."""
+    return not ({str(task.get("_id")), str(task.get("id"))} & parent_ids)
+
+
 def leaf_estimated_hours(tasks: list) -> float:
     """Sum estimated_hours over LEAF WBS tasks only (avoids double counting parents)."""
-    parent_ids = {str(t.get("parent_id")) for t in tasks if t.get("parent_id")}
+    parent_ids = wbs_parent_id_set(tasks)
     return sum(
         float(t.get("estimated_hours") or 0)
         for t in tasks
-        if str(t.get("id") or t.get("_id")) not in parent_ids
+        if is_leaf_task(t, parent_ids)
     )

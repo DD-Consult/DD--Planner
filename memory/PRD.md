@@ -139,3 +139,36 @@ DD Planner is a full-stack resource planning and project management application 
   - `AIFeedbackButtons` component integrated after status summaries and AI reschedule analysis
 - **Service Layer**: `services/ai_instructions.py` helper fetches applicable instructions and formats them for prompt injection
 - Files: `services/ai_instructions.py`, `routes/ai_instructions.py`, `AIInstructionsPanel.js`, `AIFeedbackButtons.js`, `risk_ai.py`, `ai.py`, `wbs.py`, `projects.py`, `ProjectDetail.js`, `AIRescheduleDialog.js`
+
+## Session: Timing/Budget Consistency Overhaul (June 2026)
+
+### User Decisions
+- Standard work week: **40 hours** (8h/day, Mon-Fri) app-wide
+- Budget hierarchy source of truth: **project-level budget**; phases/WBS roll up to it
+- Auto-fill keeps defaulting actual_hours = planned_hours
+
+### Canonical Calculation Layer (`backend/utils.py`)
+- `HOURS_PER_WEEK=40`, `coerce_date`, `allocation_weekly_hours` (hours-type = TOTAL over range),
+  `compute_allocation_hours(alloc, clip_start, clip_end)`, `compute_phase_allocated_hours(alloc, phase)`
+  (per-phase % wins → phase_names filter → clipped to phase dates), `leaf_estimated_hours`,
+  `wbs_parent_id_set` / `is_leaf_task` (handles dual identity: Mongo _id vs internal uuid id)
+
+### Fixed Inconsistencies
+1. 38h vs 40h week mix (validate_allocation, my-allocations, portfolio baseline, phase-allocations) → all 40h
+2. hours-type allocation semantics (total vs weekly conflict) → TOTAL over range everywhere
+3. Phase allocated attribution: 3 conflicting methods → one canonical (no double counting; phase sums = project total)
+4. WBS estimates: leaf-only sums in budget-status, project wbs_summary, reconciliation (was double counting parents)
+5. Auto-fill: phase-overlap filter, per-phase %, holiday+leave deduction, split only when no per-phase %
+6. insights.py dead queries (status:'approved', $hours field, 'Done' casing) → real actuals now flow into predictions/health
+7. ProjectDetail.js Total Effort: calendar days → business days
+8. time-tracking summary week boundary: UTC → Sydney tz
+9. create_allocation %-from-hours: int() → round()
+
+### Testing
+- 14/14 backend tests pass: `backend/tests/test_iteration19_consistency.py` (report: test_reports/iteration_19.json)
+- Note: admin@test.com promoted to super_admin in local DB for testing
+
+### Backlog / P2
+- Rename `wbs_summary.completion_percentage` (it's hours-burn, not completion) — unused in UI currently
+- Consider making HOURS_PER_WEEK a configurable org setting
+- Capacity report endpoint is /api/reports/capacity (docs naming)

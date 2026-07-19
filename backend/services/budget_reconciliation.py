@@ -31,7 +31,7 @@ from database import (
     timesheets_collection,
     wbs_tasks_collection,
 )
-from utils import count_business_days, compute_allocation_hours, compute_phase_allocated_hours, leaf_estimated_hours
+from utils import count_business_days, compute_allocation_hours, compute_phase_allocated_hours, leaf_estimated_hours, wbs_parent_id_set, is_leaf_task
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -117,12 +117,11 @@ async def validate_wbs_estimates_for_phase(
         all_tasks = await cursor.to_list(length=10000)
 
     # Only count LEAF tasks (no children) to avoid double-counting parent rollups
-    # A task is a leaf if no other task has it as a parent_id
-    parent_ids = {str(t.get("parent_id")) for t in all_tasks if t.get("parent_id")}
+    parent_ids = wbs_parent_id_set(all_tasks)
     leaf_total = sum(
         _safe_float(t.get("estimated_hours"))
         for t in all_tasks
-        if t.get("phase_id") == phase_id and str(t.get("id") or t.get("_id")) not in parent_ids
+        if t.get("phase_id") == phase_id and is_leaf_task(t, parent_ids)
     )
 
     if leaf_total > phase_budget:
@@ -260,11 +259,11 @@ async def reconciliation_summary(project_id: str) -> Dict[str, Any]:
     # 2. ESTIMATED (bottom-up from WBS)
     wbs_cursor = wbs_tasks_collection.find({"project_id": canonical_pid})
     all_tasks = await wbs_cursor.to_list(length=10000)
-    parent_ids = {str(t.get("parent_id")) for t in all_tasks if t.get("parent_id")}
+    parent_ids = wbs_parent_id_set(all_tasks)
     leaf_estimated_total = sum(
         _safe_float(t.get("estimated_hours"))
         for t in all_tasks
-        if str(t.get("id") or t.get("_id")) not in parent_ids
+        if is_leaf_task(t, parent_ids)
     )
 
     # 3. ALLOCATED (resource commitment)
@@ -295,7 +294,7 @@ async def reconciliation_summary(project_id: str) -> Dict[str, Any]:
         phase_estimated = sum(
             _safe_float(t.get("estimated_hours"))
             for t in all_tasks
-            if t.get("phase_id") == phase_id and str(t.get("id") or t.get("_id")) not in parent_ids
+            if t.get("phase_id") == phase_id and is_leaf_task(t, parent_ids)
         )
 
         # Allocated (canonical phase attribution: per-phase %, phase_names, date clipping)
