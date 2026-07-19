@@ -1,0 +1,43 @@
+/* Additional custom styles */
+.timeline-grid {
+  display: grid;
+  grid-auto-flow: column;
+}
+
+.timeline-cell {
+  min-width: 48px;
+  height: 36px;
+  border-left: 1px solid #F0F2F5;
+  transition: all 150ms ease-out;
+}
+
+.timeline-cell:hover {
+  box-shadow: inset 0 0 0 1px #1570EF;
+  cursor: pointer;
+}
+
+.timeline-cell.green {
+  background-color: #16B364;
+}
+
+.timeline-cell.yellow {
+  background-color: #F4B740;
+}
+
+.timeline-cell.red {
+  background-color: #EF4444;
+}
+
+.sidebar-nav a {
+  transition: background-color 150ms ease;
+}
+
+.sidebar-nav a:hover {
+  background-color: #F2F3F5;
+}
+
+.sidebar-nav a.active {
+  background-color: #F2F7FF;
+  color: #1570EF;
+  font-weight: 500;
+}

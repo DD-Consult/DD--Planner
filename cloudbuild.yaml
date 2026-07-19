@@ -1,0 +1,76 @@
+# ============================================================
+# DD Planner — Cloud Build Pipeline
+# Triggered automatically on GitHub push
+#
+# RULES — DO NOT CHANGE WITHOUT TESTING:
+#   - Port MUST be 8080 (Cloud Run requirement)
+#   - All 4 secrets must exist in GCP Secret Manager
+#   - --min-instances 1 keeps container warm (prevents cold-start 502)
+#   - Only add gcloud flags you have verified exist:
+#     VALID: --image --region --platform --port --memory --cpu
+#            --min-instances --max-instances --timeout
+#            --allow-unauthenticated --set-env-vars --update-secrets
+#   INVALID (broke deploy): --startup-probe-initial-delay
+#
+# Validate before pushing: bash scripts/validate-deploy.sh
+# Full docs: DEPLOYMENT.md
+# ============================================================
+steps:
+  # Step 1: Build Docker image (frontend + backend)
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "australia-southeast1-docker.pkg.dev/$PROJECT_ID/dd-planner/dd-planner:$SHORT_SHA"
+      - "-t"
+      - "australia-southeast1-docker.pkg.dev/$PROJECT_ID/dd-planner/dd-planner:latest"
+      - "--build-arg"
+      - "REACT_APP_BACKEND_URL="
+      - "."
+
+  # Step 2: Push image to Artifact Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "--all-tags"
+      - "australia-southeast1-docker.pkg.dev/$PROJECT_ID/dd-planner/dd-planner"
+
+  # Step 3: Deploy to Cloud Run
+  # WARNING: Only add flags listed as VALID above.
+  # Each flag and its value must be separate list items.
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "dd-planner"
+      - "--image"
+      - "australia-southeast1-docker.pkg.dev/$PROJECT_ID/dd-planner/dd-planner:$SHORT_SHA"
+      - "--region"
+      - "australia-southeast1"
+      - "--platform"
+      - "managed"
+      - "--port"
+      - "8080"                  # MUST match nginx listen port and EXPOSE in Dockerfile
+      - "--memory"
+      - "1Gi"
+      - "--cpu"
+      - "1"
+      - "--min-instances"
+      - "1"                     # Keep 1 instance warm — prevents cold-start 502 on login
+      - "--max-instances"
+      - "3"
+      - "--timeout"
+      - "300"
+      - "--allow-unauthenticated"
+      - "--set-env-vars"
+      - "DB_NAME=resource_planner"
+      - "--update-secrets"
+      - "MONGO_URL=MONGO_URL:latest,SECRET_KEY=SECRET_KEY:latest,EMERGENT_LLM_KEY=EMERGENT_LLM_KEY:latest,EXPORT_API_KEY=EXPORT_API_KEY:latest"
+
+images:
+  - "australia-southeast1-docker.pkg.dev/$PROJECT_ID/dd-planner/dd-planner:$SHORT_SHA"
+  - "australia-southeast1-docker.pkg.dev/$PROJECT_ID/dd-planner/dd-planner:latest"
+
+options:
+  logging: CLOUD_LOGGING_ONLY

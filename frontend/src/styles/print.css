@@ -1,0 +1,200 @@
+/* ============================================================
+ * Print Stylesheet for ProjectReport — generates DD-branded PDFs
+ *
+ * Strategy: render the existing on-screen React UI with print
+ * media rules that:
+ *   1. Prevent cards/tables/risks from splitting mid-row
+ *   2. Force major sections onto fresh pages where appropriate
+ *   3. Compact spacing for landscape A4
+ *   4. Force color rendering of brand badges and gradients
+ * ============================================================ */
+
+/* ────────────────────────────────────────────────────────────
+ * 1. Page setup
+ * ──────────────────────────────────────────────────────────── */
+@page {
+  size: A4 landscape;
+  margin: 8mm;
+}
+
+@media print {
+  /* Force color print (Chromium needs this to render bg/badges) */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide app chrome (already done by no-print) */
+  .no-print {
+    display: none !important;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: white;
+    font-size: 10pt;
+    line-height: 1.35;
+  }
+
+  /* Tighten the outer report container */
+  #report-root {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* Tighten the header */
+  #report-header {
+    page-break-after: avoid;
+    margin-bottom: 12pt !important;
+    padding-bottom: 12pt !important;
+  }
+
+  /* Tighten H1/H2 */
+  h1 { font-size: 20pt !important; }
+  h2 { font-size: 13pt !important; margin-bottom: 6pt !important; margin-top: 12pt !important; page-break-after: avoid; }
+  h3 { font-size: 11pt !important; }
+  p, li, span, td, th { font-size: 9.5pt !important; }
+
+  /* ────────────────────────────────────────────────────────
+   * 2. Prevent bad breaks — cards / risks / table rows / etc.
+   * ──────────────────────────────────────────────────────── */
+
+  /* Risk/issue cards (rendered as colored-border-left blocks) */
+  .print\:break-inside-avoid,
+  [data-print-keep],
+  [data-export-section="overview"] > div,
+  .grid > div {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Tables: keep rows together */
+  tr, thead, tfoot {
+    page-break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;  /* repeat header on each page */
+  }
+
+  /* Avoid orphan single-line at the top of a page */
+  p, li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* ────────────────────────────────────────────────────────
+   * 3. Force major sections to start on a NEW page so the
+   *    report reads as: Cover / Performance / Risks / Team.
+   *    Skip the rule for the very first such section.
+   * ──────────────────────────────────────────────────────── */
+
+  /* Risks section starts on its own page */
+  [data-print-section="risks"] {
+    page-break-before: always;
+    break-before: page;
+  }
+  /* Team allocations on its own page (if there are any) */
+  [data-print-section="team"] {
+    page-break-before: always;
+    break-before: page;
+  }
+  /* WBS-only export shouldn't force breaks */
+  [data-export-section="wbs"] {
+    page-break-before: auto !important;
+    break-before: auto !important;
+  }
+
+  /* The Gantt chart should not be split */
+  #report-gantt,
+  #report-gantt-inner {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Footer stays whole */
+  .report-footer {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* ────────────────────────────────────────────────────────
+   * 4. Compact spacing
+   * ──────────────────────────────────────────────────────── */
+
+  /* Reduce vertical gaps */
+  .mb-8 { margin-bottom: 12pt !important; }
+  .mb-6 { margin-bottom: 9pt !important; }
+  .mb-4 { margin-bottom: 6pt !important; }
+  .mt-6 { margin-top: 9pt !important; }
+  .mt-8 { margin-top: 12pt !important; }
+  .py-8 { padding-top: 8pt !important; padding-bottom: 8pt !important; }
+  .p-5  { padding: 8pt !important; }
+  .p-4  { padding: 6pt !important; }
+
+  /* Footer pinned at the bottom of last page only */
+  .report-footer {
+    margin-top: 16pt !important;
+    padding-top: 8pt !important;
+  }
+
+  /* ────────────────────────────────────────────────────────
+   * 5. Tables in print mode — slimmer
+   * ──────────────────────────────────────────────────────── */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 9pt !important;
+  }
+  th, td {
+    padding: 4pt 6pt !important;
+  }
+  th {
+    background-color: #f5f5f5 !important;
+    font-weight: 600;
+  }
+
+  /* ────────────────────────────────────────────────────────
+   * 6. Misc fixes
+   * ──────────────────────────────────────────────────────── */
+
+  /* No hover effects in print */
+  *:hover {
+    background: inherit !important;
+  }
+
+  /* Ensure borders/colors render */
+  .bg-amber-50, .bg-red-50, .bg-blue-50, .bg-green-50,
+  .bg-purple-50, .bg-emerald-50, .bg-orange-50, .bg-pink-50,
+  .bg-indigo-50, .bg-gray-50, .bg-yellow-50, .bg-violet-50 {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────
+ * Print-mode utility classes — applied even when not in
+ * @media print (e.g. when the user just sets printMode={true}
+ * to view the report on-screen the way it will export). These
+ * keep the screen preview faithful to the printed output.
+ * ──────────────────────────────────────────────────────────── */
+
+.print-mode * {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.print-mode #report-root {
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+/* Screen-only styles (not for print) */
+@media screen {
+  .report-content {
+    min-height: calc(100vh - 73px);
+  }
+}

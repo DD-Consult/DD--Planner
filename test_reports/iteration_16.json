@@ -1,0 +1,55 @@
+{
+  "summary": "Iteration 16 - End-to-end testing of Risk/Issue lifecycle, ProjectStatusCheckin UX changes (progress slider removed, inline risk adder added), blocker auto-promotion with dedup, and two new AI actions (create_status_update, update_risk). 13/13 backend pytest cases pass. Frontend UI flows verified: Risks tab CRUD, Add Risk dialog, status update dialog content correctness.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "POST /api/projects/{id}/risks — creates with mitigation, status, category (200)",
+    "PUT /api/risks/{id} — Active→Mitigated→Closed transitions persist (200)",
+    "DELETE /api/risks/{id} — removes risk; subsequent PUT returns 404",
+    "POST /api/status-updates without actual_progress — succeeds; defaults to project value",
+    "Blocker text auto-promoted to Issue (category=Issue, status=Active) after status update",
+    "Same blocker submitted twice → dedup verified (only 1 risk in register)",
+    "new_risks inline array on status-update payload creates risks with given fields",
+    "execute-action add_risk with mitigation/status/category persists all fields",
+    "execute-action update_risk with status change (→Closed) persists",
+    "execute-action create_status_update — creates SU + auto-promotes blockers; returns issues_created count",
+    "AI chat endpoint responds when queried about blockers (no 500s)",
+    "UI: ProjectDetail Risks tab shows 'Risk & Issue Register' title with 'Add Risk / Issue' button",
+    "UI: Risk dialog opens with Description, Type (Risk/Issue), Status (Active/Mitigated/Accepted/Closed), Impact, Probability, Mitigation fields",
+    "UI: Status update dialog has NO 'Actual Progress' label and NO slider elements",
+    "UI: Inline 'Raise a Risk / Issue' section with desc/category/impact/probability/mitigation inputs and add button",
+    "UI: Blockers input has helper text indicating auto-promotion to Issue",
+    "UI: 16 projects listed in Project Status Check-in card (expand/collapse works)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration16.py",
+    "/app/test_reports/pytest/pytest_iter16.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py line 1905: blockers are split ONLY on comma, not newline — inconsistent with the auto-promotion logic which uses re.split(r'[,\\n]+'). So a multi-line blockers input stores as single-item list in status_doc but produces multiple issues. Minor cosmetic inconsistency — consider unifying to split on both.",
+    "server.py still >6000 lines — continues to grow; should be split into modules (risks, status_updates, ai_actions, auth) for maintainability.",
+    "create_status_update action in execute-action does NOT check that the caller is allocated/admin for the project (while the main POST /api/status-updates endpoint does). Low-risk because any authed user with admin role can invoke, but worth aligning."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration16.py"
+  ],
+  "success_rate": {
+    "backend": "100% - 13/13 pytest passed",
+    "frontend": "100% - all UI expectations satisfied"
+  },
+  "test_credentials": {
+    "super_admin": "don@ddconsult.tech / Welcome123!"
+  },
+  "seed_data_creation": "All TEST_ prefixed risks created during tests are cleaned up via DELETE /api/risks/{id} in test teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Risk/Issue register fully functional: CRUD, quick-status change dropdown on row, edit dialog, delete. Status update flow: slider removed, inline risks section live. Blockers auto-promote to Issues with dedup. AI actions add_risk/update_risk/create_status_update all working. Backend test file at /app/backend/tests/test_iteration16.py — reuse for regression. Test project: 698c7799eea263b28c2715b3 (ASKDD Chatbot)."
+}

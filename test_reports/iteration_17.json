@@ -1,0 +1,67 @@
+{
+  "summary": "Iteration 17 — Post-refactor regression testing after server.py was split into 16 modular files. 27/27 backend pytest cases pass (14 new endpoint-coverage tests + 13 iter16 regression). Frontend dashboard, Projects list, Project detail and Reports pages load successfully with no console errors. Discovered and fixed ONE critical refactoring regression in serialize_doc that caused the frontend 'Project not found' error.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "POST /api/auth/login with don@ddconsult.tech/Welcome123! → 200 access_token",
+    "GET /api/auth/me returns super_admin role and email",
+    "POST /api/auth/login with wrong password → 400/401",
+    "GET /api/projects returns 19 projects with string id/start_date/end_date",
+    "GET /api/resources returns non-empty list",
+    "GET /api/allocations returns list with string dates (serialize_doc datetime→ISO)",
+    "GET /api/status-options returns dict with health + schedule keys",
+    "GET /api/reports/planned-vs-actual/overview returns summary + projects[]",
+    "GET /api/settings/ai returns provider/model config",
+    "GET /api/notifications returns list",
+    "GET /api/ai/chat/sessions returns list",
+    "POST /api/ai/chat — AI response within 90s",
+    "GET /api/projects/{id}/risks returns list (per-project)",
+    "GET /api/projects/{id}/allocations returns allocations all scoped to project_id",
+    "All 13 iter16 risk/status-update/AI-action regression tests still pass",
+    "UI: Login → Dashboard renders Command Center, Active Projects=18, Portfolio table",
+    "UI: Sidebar shows all nav items (Dashboard, Resources, Projects, Allocations, Users, Manage Timesheets, Time Off, Holidays, Reports, Settings)",
+    "UI: Reports page renders Planned vs Actuals totals, AI Portfolio Insights, per-project rows",
+    "UI: Projects list page shows all 19 projects with status, dates, actions",
+    "UI: Project detail page loads after serialize_doc fix (no more 'Project not found')"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_refactor_iter17.py",
+    "/app/backend/tests/test_iteration16.py",
+    "/app/test_reports/pytest/pytest_iter17.xml"
+  ],
+  "action_items": [
+    "Main agent: review the serialize_doc fix in /app/backend/utils.py — the refactored version silently lost the pre-refactor invariant that str(_id) always wins over any stored `id` field. I restored this behaviour and verified end-to-end, but main agent should confirm this is the desired semantics (alternative: run a one-time migration to drop the stale top-level `id` field from every projects/resources/etc. document)."
+  ],
+  "critical_code_review_comments": [
+    "[FIXED] /app/backend/utils.py serialize_doc: previous implementation iterated over dict items and, if a doc had BOTH `_id` (ObjectId) and a stale top-level `id` (string), the second iteration overwrote `result['id']` with the stale string. Pre-refactor code did `doc['id']=str(doc['_id']); del doc['_id']` which always overwrote. This caused `GET /api/projects` to return id=`694a4257962ae53169f6ee25` while the real _id was `698c7799eea263b28c2715b3`, making `GET /api/projects/{id}` 404 on the frontend.",
+    "/app/backend/routes/projects.py is now 1208 lines — itself a candidate for further splitting (project CRUD vs project sub-resources like phases/status-updates/risks).",
+    "routes/projects.py get_project uses `ObjectId(project_id)` without try/except — a malformed id string (non-hex) will raise bson.errors.InvalidId → 500 instead of 400/404. Same pattern repeats across many routes; consider a shared validator dependency.",
+    "serialize_doc special-cases top-level `id` vs `_id`, but nested dicts that also carry stale `id` fields will NOT be cleaned. Low-priority but worth noting.",
+    "server.py line 96 migration block (`phases_fixed`) loads ALL projects into memory on every startup — fine at current scale but not safe long-term.",
+    "CORS `allow_origins=['*']` + `allow_credentials=True` is an invalid combination per the CORS spec and is silently downgraded by browsers. Should be narrowed or credentials disabled."
+  ],
+  "updated_files": [
+    "/app/backend/utils.py (fixed serialize_doc regression)",
+    "/app/backend/tests/test_refactor_iter17.py (new regression suite)"
+  ],
+  "success_rate": {
+    "backend": "100% - 27/27 pytest passed",
+    "frontend": "100% - login, dashboard, projects list, project detail, reports all render"
+  },
+  "test_credentials": {
+    "super_admin": "don@ddconsult.tech / Welcome123!",
+    "resource": "amrit@ddconsult.tech / Welcome123!"
+  },
+  "seed_data_creation": "No new seed data; iter16 regression tests self-clean TEST_ prefixed risks.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Post-refactor baseline is GREEN. Refactor touched: server.py (slim 185-line entrypoint), database.py, utils.py, models/schemas.py, auth/dependencies.py, services/{ai_providers,ai_actions,email}.py, routes/{auth,resources,projects,allocations,timesheets,reports,ai,admin}.py. routes/projects.py is still 1208 lines. Main issue found & fixed: serialize_doc dropped the 'str(_id) wins over stale id field' invariant. If similar '404 not found' symptoms appear for /api/resources/{id} or /api/allocations/{id}, check that the list endpoints return the ObjectId-based id, not a stale id field. Test project used: 698c7799eea263b28c2715b3 (ASKDD Chatbot).",
+  "rca of the issue": "Root cause: /app/backend/utils.py serialize_doc regression. Pre-refactor: `if '_id' in doc: doc['id']=str(doc['_id']); del doc['_id']` — always overwrote. Post-refactor: dict-iteration approach that honored whichever of `_id` / `id` came later in insertion order. Projects in DB have BOTH fields (an ObjectId `_id` AND a stale string `id` from old seeding), and Python preserves insertion order → the stale `id` string overwrote `str(_id)`. Result: GET /api/projects returns id=<stale>, GET /api/projects/<stale> does find_one({_id: ObjectId(<stale>)}) → None → 404 → UI shows 'Project not found'. Reproduction: login as super admin → click any project row on /projects. Fix: in serialize_doc, skip top-level `id` when `_id` is present so `str(_id)` wins. Verified end-to-end: URL now /projects/698c7799eea263b28c2715b3 and detail renders."
+}

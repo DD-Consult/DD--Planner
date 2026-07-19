@@ -1,0 +1,39 @@
+# docker-compose.yml — Local development/testing with MongoDB
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_BACKEND_URL: ""   # empty = relative URLs (same origin)
+    ports:
+      - "8080:8080"
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - DB_NAME=resource_planner
+      - SECRET_KEY=local-dev-secret-change-in-production
+      - EMERGENT_LLM_KEY=${EMERGENT_LLM_KEY:-}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - EXPORT_API_KEY=${EXPORT_API_KEY:-}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: mongosh --eval "db.adminCommand('ping')" --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  mongo_data:

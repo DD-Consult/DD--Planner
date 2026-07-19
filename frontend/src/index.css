@@ -1,0 +1,76 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* DD Consulting Brand Colors - HSL format for shadcn compatibility */
+  --dd-navy: 220 49% 8%; /* #0B1220 - Primary dark */
+  --dd-blue: 214 87% 51%; /* #1570EF - Primary blue */
+  --dd-copper: 25 95% 53%; /* #F97316 - Accent copper/orange */
+  --dd-silver: 215 16% 65%; /* #94A3B8 - Silver grey */
+  --dd-dark-bg: 220 32% 15%; /* #1A2332 - Dark background variant */
+  
+  /* Base theme variables - HSL format */
+  --background: 210 40% 98%; /* #F8FAFC - Light grey background */
+  --foreground: 220 49% 8%; /* DD Navy */
+  --card: 0 0% 100%;
+  --card-foreground: 220 49% 8%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 49% 8%;
+  --primary: 214 87% 51%; /* DD Blue #1570EF */
+  --primary-foreground: 0 0% 100%; /* White text on primary */
+  --secondary: 215 16% 65%; /* DD Silver */
+  --secondary-foreground: 220 49% 8%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 25 95% 53%; /* DD Copper */
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 214 87% 51%; /* DD Blue */
+  --chart-1: 214 87% 51%; /* DD Blue */
+  --chart-2: 25 95% 53%; /* DD Copper */
+  --chart-3: 215 16% 65%; /* DD Silver */
+  --chart-4: 142 71% 45%; /* Success green */
+  --chart-5: 0 84% 60%; /* Error red */
+  --radius: 0.5rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

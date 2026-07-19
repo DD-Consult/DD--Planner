@@ -1,0 +1,972 @@
+{
+  "export_metadata": {
+    "source": "production",
+    "url": "https://smartplanning.emergent.host"
+  },
+  "collections": {
+    "users": [],
+    "resources": [
+      {
+        "id": "6949f32496943efb2c1d331c",
+        "name": "Henry",
+        "role": "Senior Developer",
+        "standard_capacity": 100,
+        "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Alice"
+      },
+      {
+        "id": "6949f32496943efb2c1d331d",
+        "name": "Amrit",
+        "role": "Junior Consultant",
+        "standard_capacity": 50,
+        "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Bob"
+      },
+      {
+        "id": "6949f32496943efb2c1d331e",
+        "name": "Priya",
+        "role": "Business Analyst",
+        "standard_capacity": 70,
+        "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Carol"
+      },
+      {
+        "id": "6949f32496943efb2c1d331f",
+        "name": "Don",
+        "role": "Manager",
+        "standard_capacity": 100,
+        "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=David"
+      },
+      {
+        "id": "696d6a1ecd5da7abaf8b8fff",
+        "name": "Super Admin",
+        "role": "Super Admin Test",
+        "standard_capacity": 100,
+        "avatar_url": ""
+      }
+    ],
+    "projects": [
+      {
+        "id": "694a4257962ae53169f6ee25",
+        "name": "ASKDD Chatbot",
+        "client_name": "Internal",
+        "status": "Active",
+        "start_date": "2025-12-01T00:00:00",
+        "end_date": "2026-01-02T00:00:00",
+        "phases": [
+          {
+            "name": "Execution Phase",
+            "start_date": "2025-12-01T00:00:00",
+            "end_date": "2026-01-02T00:00:00",
+            "status": "Active",
+            "id": "0308590b-f915-480a-ab1d-9f861077248d"
+          },
+          {
+            "name": "Voice Feature",
+            "start_date": "",
+            "end_date": "",
+            "status": "Not Started",
+            "id": "784c9b17-980f-4fce-aa3a-377d94f378ca"
+          },
+          {
+            "name": "Translation feature",
+            "start_date": "",
+            "end_date": "",
+            "status": "Not Started",
+            "id": "38de54a4-d824-4f07-a858-a4d0f79b0e44"
+          },
+          {
+            "name": "Auto pickup branding from image/doc",
+            "start_date": "",
+            "end_date": "",
+            "status": "Not Started",
+            "id": "4494f4cf-7170-4c88-9c00-2e9725ae520b"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": "The ASKDD Chatbot project has achieved 100% completion as of today, January 19, 2026, marking a successful conclusion ahead of the anticipated project timeline from December 1, 2025, to January 2, 2026. The team collaborated effectively throughout the lifecycle of the project, ensuring all delivery milestones were met on time and to the client\u2019s satisfaction.\n\nIn terms of team capacity, total allocations totaled 245%, with Henry playing a crucial role at 90% and a secondary allocation of 50%. Amrit contributed significantly as a QA Engineer with a 10% allocation, while Don, as a customer, provided 5% toward collaboration. Despite the high allocations, the team managed resources efficiently, ensuring a balanced workload. \n\nHowever, a medium-impact risk has been identified concerning the WhatsApp integration, specifically that it does not permit users to utilize WhatsApp Business alongside regular WhatsApp accounts. This may affect user experience; therefore, a strategy is required to address this concern proactively. Overall, the project is healthy, and the team is well-prepared to handle any emerging issues as we transition to post-launch support.",
+        "status_summary_updated_at": "2026-01-19T22:52:58.017232+00:00",
+        "health": "Green",
+        "schedule_status": "Delayed",
+        "actual_progress": 50
+      },
+      {
+        "id": "6951ccdfe6b16c72bf53e149",
+        "name": "Ellerston Digitisation",
+        "client_name": "Elerston Capital",
+        "status": "Active",
+        "start_date": "2026-01-21T00:00:00",
+        "end_date": "2026-04-03T00:00:00",
+        "phases": [
+          {
+            "name": "Discovery",
+            "start_date": "2026-01-21",
+            "end_date": "2026-01-30",
+            "status": "In Progress",
+            "id": "f21899c4-c579-4d44-8aae-d056e46cca37"
+          },
+          {
+            "name": "Develop Sprint 1",
+            "start_date": "2026-01-30",
+            "end_date": "2026-02-13",
+            "status": "Not Started",
+            "id": "676a3385-750a-4f22-8706-0b27e33b792a"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": "**Project Overview**\nEllerston Digitisation for Elerston Capital is currently Active with approximately 22% of the timeline elapsed.\n\n**Team & Resources**\nThe project has 4 resource allocation(s) assigned. The team is actively working on deliverables.\n\n**Risks & Concerns**\nNo significant risks have been identified at this time. Regular monitoring is recommended to ensure project success.",
+        "status_summary_updated_at": "2026-02-06T15:34:03.284928+00:00",
+        "health": "Green",
+        "schedule_status": "On Track",
+        "actual_progress": 20
+      },
+      {
+        "id": "6949f32496943efb2c1d3321",
+        "name": "Website Redesign",
+        "client_name": "Internal",
+        "status": "Active",
+        "start_date": "2025-12-23T00:00:00",
+        "end_date": "2026-02-28T00:00:00",
+        "phases": [
+          {
+            "name": "Discovery + Draft",
+            "start_date": "2025-12-23",
+            "end_date": "2026-01-05",
+            "status": "Completed",
+            "id": "52c31556-7ebe-4f89-be1d-e5f21a6ab8ae"
+          },
+          {
+            "name": "Revision + Publish",
+            "start_date": "2026-01-06",
+            "end_date": "2026-01-09",
+            "status": "In Progress",
+            "id": "8d2fe37a-c0e3-4c1f-b57f-7f767da38a07"
+          },
+          {
+            "name": "Optimise use cases",
+            "start_date": "2026-01-12",
+            "end_date": "2026-01-30",
+            "status": "In Progress",
+            "id": "7088ecfb-100c-4cc7-93fc-8f1670e642cb"
+          },
+          {
+            "name": "Optimise SEO + Artifacts",
+            "start_date": "2026-02-02",
+            "end_date": "2026-02-28",
+            "status": "In Progress",
+            "id": "217bc08d-7bf4-4aef-8186-ea5b2f2920c4"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": "The Website Redesign project is currently in an active status and stands at 93% completion, with the final deadline rapidly approaching on January 22, 2026. Overall, the project is on track to meet its timeline, thanks to significant progress over the past weeks, including the resolution of previously identified issues and the finalization of core design elements.\n\nRegarding team capacity and resource utilization, we have six team allocations with varying levels of engagement. Notably, Don is heavily involved at a 70% allocation, while Amrit is contributing at 10%. However, there are some inconsistencies in resource allocation as two entries for Henry and Don appear to suggest duplications. With the remaining time, ensuring that all team members are effectively utilized will be crucial for completing the project seamlessly. \n\nAt this point, it is worth highlighting that there are no identified risks, which is a positive sign as we approach project completion. Continuous monitoring will be essential as we finalize all aspects of the redesign to ensure on-time delivery and maintain the project's positive trajectory.",
+        "status_summary_updated_at": "2026-01-20T09:22:38.307158+00:00",
+        "health": "Green",
+        "schedule_status": "Delayed",
+        "actual_progress": 40
+      },
+      {
+        "id": "694b28039e2dca000e28a1a9",
+        "name": "FX1 - AI Auditing Module",
+        "client_name": "FX1",
+        "status": "Active",
+        "start_date": "2025-10-12T00:00:00",
+        "end_date": "2026-04-24T00:00:00",
+        "phases": [
+          {
+            "name": "Execution Phase",
+            "start_date": "2025-10-12T00:00:00",
+            "end_date": "2026-04-24T00:00:00",
+            "status": "Active",
+            "id": "8e61cf35-f18b-453e-a5ab-fc8d8b5c0ced"
+          },
+          {
+            "name": "Milestone 2 Documentation",
+            "start_date": "",
+            "end_date": "",
+            "status": "In Progress",
+            "id": "558f7829-b8bc-486d-a0a1-57f1cd3b46aa"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": null,
+        "status_summary_updated_at": null,
+        "health": null,
+        "schedule_status": null,
+        "actual_progress": null
+      },
+      {
+        "id": "695f96458531c5262379eb18",
+        "name": "Firerant",
+        "client_name": "Neon Snow - Jeremy",
+        "status": "Active",
+        "start_date": "2025-12-01T00:00:00",
+        "end_date": "2026-02-20T00:00:00",
+        "phases": [
+          {
+            "name": "Initiate",
+            "start_date": "2025-12-01",
+            "end_date": "2025-12-18",
+            "status": "Completed",
+            "id": "3c3dc49b-da9b-4691-bae7-556f396af88a"
+          },
+          {
+            "name": "Plan",
+            "start_date": "2025-12-15",
+            "end_date": "2025-12-26",
+            "status": "In Progress",
+            "id": "d73a69be-f5e4-4bd6-869b-127d05c1ec7d"
+          },
+          {
+            "name": "Build MVP 1 + Testing",
+            "start_date": "2025-12-15",
+            "end_date": "2026-01-09",
+            "status": "In Progress",
+            "id": "f3a1d601-0e7d-4b17-b00d-0ae0d071a092"
+          },
+          {
+            "name": "Revisions",
+            "start_date": "2026-01-15",
+            "end_date": "2026-01-23",
+            "status": "Not Started",
+            "id": "f2dfc90d-8cf1-4ed3-9af9-396e294cc47e"
+          },
+          {
+            "name": "Build MVP 2 + Testing",
+            "start_date": "2026-01-27",
+            "end_date": "2026-02-20",
+            "status": "Not Started",
+            "id": "0b0214ce-afd6-4284-915a-48b938e035d8"
+          },
+          {
+            "name": "Revision + Handover",
+            "start_date": "2026-02-23",
+            "end_date": "2026-02-27",
+            "status": "Not Started",
+            "id": "3bb9647f-750e-4c6f-a7e5-b7fcd6026315"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": "The Firerant project is currently in an active status, with 72% of the work completed as we approach the final phases of development. The timeline for the project runs from December 1, 2025, to February 20, 2026, allowing us a little over three weeks to finalize the remaining tasks. Overall, the project is progressing well and is on track to meet the established deadline.\n\nIn terms of team capacity and resource utilization, we currently have two team members allocated: Henry at a 60% allocation and Priya at a 10% allocation. This distribution indicates a solid capacity to tackle the remaining project requirements effectively. Given that no risks have been identified at this time, we are optimistic about maintaining our timeline and ensuring a smooth project completion.",
+        "status_summary_updated_at": "2026-01-29T23:27:53.559204+00:00",
+        "health": null,
+        "schedule_status": null,
+        "actual_progress": null
+      },
+      {
+        "id": "695f98b48531c5262379eb1a",
+        "name": "App Development",
+        "client_name": "Eastern Empire",
+        "status": "Active",
+        "start_date": "2025-12-01T00:00:00",
+        "end_date": "2026-02-27T00:00:00",
+        "phases": [
+          {
+            "name": "Execution Phase",
+            "start_date": "2025-12-01T00:00:00",
+            "end_date": "2026-02-27T00:00:00",
+            "status": "Active",
+            "id": "c8466db0-f4c4-4ec4-b026-0d25c2946e62"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": null,
+        "status_summary_updated_at": null,
+        "health": "Amber",
+        "schedule_status": "At Risk",
+        "actual_progress": 50
+      },
+      {
+        "id": "695f98e47b7696090a48c220",
+        "name": "Website Revamp and ASKDD Deploy",
+        "client_name": "Eastern Empire",
+        "status": "Active",
+        "start_date": "2025-12-01T00:00:00",
+        "end_date": "2026-01-23T00:00:00",
+        "phases": [
+          {
+            "name": "Design and customer review",
+            "start_date": "2026-01-12",
+            "end_date": "2026-01-26",
+            "status": "In Progress",
+            "id": "ade3dd4a-dee7-427f-9b46-6ed97f371c59"
+          },
+          {
+            "name": "Review and Publish",
+            "start_date": "2026-01-27",
+            "end_date": "2026-01-30",
+            "status": "Not Started",
+            "id": "85629024-6dd7-416f-9866-af22ca3202d6"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": null,
+        "status_summary_updated_at": null,
+        "health": "Green",
+        "schedule_status": "Delayed",
+        "actual_progress": 25
+      },
+      {
+        "id": "69642f984970d0cc2c6b42d4",
+        "name": "Aged Care",
+        "client_name": "AssureQA",
+        "status": "Active",
+        "start_date": "2025-10-01T00:00:00",
+        "end_date": "2026-02-01T00:00:00",
+        "phases": [
+          {
+            "name": "Milestone 1 feasiblity",
+            "start_date": "2025-10-01",
+            "end_date": "2025-12-19",
+            "status": "Completed",
+            "id": "8daf91df-3c06-411e-9dcc-149f11440806"
+          },
+          {
+            "name": "Milestone 2 Business plan and Demo Video",
+            "start_date": "2025-12-22",
+            "end_date": "2026-01-30",
+            "status": "Not Started",
+            "id": "29ec4af2-0d51-4fa2-a4ca-540301e1a34e"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": "The Aged Care project for AssureQA is actively progressing toward completion, currently at 93%. With a timeline that spans from October 1, 2025, to February 1, 2026, the team remains on track to meet the projected deadline. The remaining work primarily involves finalizing deliverables and ensuring all client specifications are met, with only 7% of the project left to complete.\n\nCurrently, the team is operating with minimal capacity, as Priya is allocated at just 10%. This limited allocation has not hindered progress significantly, given the project's advanced stage. Moreover, there are currently no identified risks or concerns, allowing the team to maintain focus and momentum as we move closer to project completion. Regular check-ins will be essential in the last weeks to ensure alignment and address any last-minute issues that may arise.",
+        "status_summary_updated_at": "2026-01-24T07:18:01.931068+00:00",
+        "health": null,
+        "schedule_status": null,
+        "actual_progress": null
+      },
+      {
+        "id": "696430ac4970d0cc2c6b42d5",
+        "name": "ServAI",
+        "client_name": "Internal",
+        "status": "Active",
+        "start_date": "2025-08-01T00:00:00",
+        "end_date": "2026-02-28T00:00:00",
+        "phases": [
+          {
+            "name": "Development",
+            "start_date": "2025-08-01",
+            "end_date": "2026-02-28",
+            "status": "In Progress",
+            "id": "5b7d82fd-d193-438e-aaeb-92736d8d13f6"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": null,
+        "status_summary_updated_at": null,
+        "health": "Green",
+        "schedule_status": "On Track",
+        "actual_progress": 70
+      },
+      {
+        "id": "696da4c7ebb635cfb0851352",
+        "name": "New CMS and CRM implementation",
+        "client_name": "SRMC",
+        "status": "Active",
+        "start_date": "2025-04-01T00:00:00",
+        "end_date": "2026-02-20T00:00:00",
+        "phases": [
+          {
+            "name": "Execution Phase",
+            "start_date": "2026-02-02",
+            "end_date": "2026-02-28",
+            "status": "Active",
+            "id": "ce638305-1be3-45ab-8dc2-67b145d32e13"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": null,
+        "status_summary_updated_at": null,
+        "health": "Green",
+        "schedule_status": "At Risk",
+        "actual_progress": 85
+      },
+      {
+        "id": "697c737454a7d0efc33727a2",
+        "name": "AI Digitsation",
+        "client_name": "MITO",
+        "status": "Pipeline",
+        "start_date": "2026-02-09T00:00:00",
+        "end_date": "2026-04-24T00:00:00",
+        "phases": [
+          {
+            "name": "Execution Phase",
+            "start_date": "2026-02-09T00:00:00",
+            "end_date": "2026-04-24T00:00:00",
+            "status": "Active",
+            "id": "c604075a-9736-470a-b7c5-b08b0a3e97e5"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": null,
+        "status_summary_updated_at": null,
+        "health": null,
+        "schedule_status": null,
+        "actual_progress": null
+      },
+      {
+        "id": "697ff720188cf260524a5783",
+        "name": "FX1 - Injury Management Module",
+        "client_name": "FX1",
+        "status": "Active",
+        "start_date": "2026-01-25T00:00:00",
+        "end_date": "2026-07-27T00:00:00",
+        "phases": [
+          {
+            "name": "MILESTONE 1 ",
+            "start_date": "2026-01-27",
+            "end_date": "2026-02-13",
+            "status": "In Progress"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": null,
+        "status_summary_updated_at": null,
+        "health": "Green",
+        "schedule_status": "On Track",
+        "actual_progress": 50
+      },
+      {
+        "id": "69809c036e358917d76a3650",
+        "name": "Hubspot",
+        "client_name": "Internal",
+        "status": "Pipeline",
+        "start_date": "2026-02-09T00:00:00",
+        "end_date": "2026-03-27T00:00:00",
+        "phases": [
+          {
+            "name": "Execution Phase",
+            "start_date": "2026-02-09T00:00:00",
+            "end_date": "2026-03-27T00:00:00",
+            "status": "Active"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": null,
+        "status_summary_updated_at": null,
+        "health": null,
+        "schedule_status": null,
+        "actual_progress": null
+      },
+      {
+        "id": "6981dc3dd06cf8b216606bc0",
+        "name": "Home Care Business Case and Implemetation",
+        "client_name": "Keyton Retirement Living",
+        "status": "Active",
+        "start_date": "2026-01-05T00:00:00",
+        "end_date": "2026-02-27T00:00:00",
+        "phases": [
+          {
+            "name": "RFP & Planning",
+            "start_date": "2026-01-05",
+            "end_date": "2026-02-27",
+            "status": "In Progress"
+          }
+        ],
+        "created_at": null,
+        "is_draft": false,
+        "status_summary": null,
+        "status_summary_updated_at": null,
+        "health": null,
+        "schedule_status": null,
+        "actual_progress": null
+      }
+    ],
+    "allocations": [
+      {
+        "id": "6949f32496943efb2c1d3325",
+        "resource_id": "6949f32496943efb2c1d331c",
+        "project_id": "6949f32496943efb2c1d3321",
+        "start_date": "2025-12-23T00:00:00",
+        "end_date": "2026-01-06T00:00:00",
+        "percentage": 0,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "6949f32496943efb2c1d3326",
+        "resource_id": "6949f32496943efb2c1d331c",
+        "project_id": "694a3e4ce67633f34f0b462a",
+        "start_date": "2025-12-23T00:00:00",
+        "end_date": "2026-01-06T00:00:00",
+        "percentage": 50,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "6949f32496943efb2c1d3328",
+        "resource_id": "6949f32496943efb2c1d331e",
+        "project_id": "6949f32496943efb2c1d3322",
+        "start_date": "2025-12-23T00:00:00",
+        "end_date": "2026-01-06T00:00:00",
+        "percentage": 60,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "694a4257962ae53169f6ee26",
+        "resource_id": "6949f32496943efb2c1d331c",
+        "project_id": "694a4257962ae53169f6ee25",
+        "start_date": "2025-12-01T00:00:00",
+        "end_date": "2025-12-26T00:00:00",
+        "percentage": 90,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "694b28039e2dca000e28a1aa",
+        "resource_id": "6949f32496943efb2c1d331e",
+        "project_id": "694b28039e2dca000e28a1a9",
+        "start_date": "2025-10-12T00:00:00",
+        "end_date": "2026-01-30T00:00:00",
+        "percentage": 20,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 0,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "6951cd62720a94714a169cc7",
+        "resource_id": "6949f32496943efb2c1d331c",
+        "project_id": "6949f32496943efb2c1d3321",
+        "start_date": "2025-12-20T00:00:00",
+        "end_date": "2025-12-28T00:00:00",
+        "percentage": 60,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 55,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "6949f32496943efb2c1d3327",
+        "resource_id": "6949f32496943efb2c1d331d",
+        "project_id": "6949f32496943efb2c1d3321",
+        "start_date": "2025-12-23T00:00:00",
+        "end_date": "2026-01-06T00:00:00",
+        "percentage": 10,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "6949f32496943efb2c1d3329",
+        "resource_id": "6949f32496943efb2c1d331f",
+        "project_id": "6949f32496943efb2c1d3321",
+        "start_date": "2025-12-23T00:00:00",
+        "end_date": "2025-12-30T00:00:00",
+        "percentage": 70,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "6949f32496943efb2c1d332a",
+        "resource_id": "6949f32496943efb2c1d331f",
+        "project_id": "6949f32496943efb2c1d3323",
+        "start_date": "2025-12-30T00:00:00",
+        "end_date": "2026-01-06T00:00:00",
+        "percentage": 100,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "6949f32496943efb2c1d332b",
+        "resource_id": "6949f32496943efb2c1d3320",
+        "project_id": "6949f32496943efb2c1d3322",
+        "start_date": "2025-12-28T00:00:00",
+        "end_date": "2026-01-06T00:00:00",
+        "percentage": 75,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "6949f32496943efb2c1d332c",
+        "resource_id": "6949f32496943efb2c1d331d",
+        "project_id": "6949f32496943efb2c1d3323",
+        "start_date": "2026-01-02T00:00:00",
+        "end_date": "2026-01-12T00:00:00",
+        "percentage": 40,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "6949f32496943efb2c1d332d",
+        "resource_id": "6949f32496943efb2c1d331e",
+        "project_id": "6949f32496943efb2c1d3323",
+        "start_date": "2025-12-31T00:00:00",
+        "end_date": "2026-01-06T00:00:00",
+        "percentage": 30,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "6949f32496943efb2c1d332e",
+        "resource_id": "6949f32496943efb2c1d3320",
+        "project_id": "6949f32496943efb2c1d3321",
+        "start_date": "2025-12-23T00:00:00",
+        "end_date": "2025-12-28T00:00:00",
+        "percentage": 40,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "694b28039e2dca000e28a1ab",
+        "resource_id": "6949f32496943efb2c1d331f",
+        "project_id": "694b28039e2dca000e28a1a9",
+        "start_date": "2025-10-12T00:00:00",
+        "end_date": "2026-01-30T00:00:00",
+        "percentage": 0,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 5,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "69512ee67401023215303d93",
+        "resource_id": "6949f32496943efb2c1d331c",
+        "project_id": "694a4257962ae53169f6ee25",
+        "start_date": "2025-12-29T00:00:00",
+        "end_date": "2025-12-29T00:00:00",
+        "percentage": 50,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "695f96458531c5262379eb19",
+        "resource_id": "6949f32496943efb2c1d331c",
+        "project_id": "695f96458531c5262379eb18",
+        "start_date": "2025-12-22T00:00:00",
+        "end_date": "2026-02-06T00:00:00",
+        "percentage": 60,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 40,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "695f98b48531c5262379eb1b",
+        "resource_id": "6949f32496943efb2c1d331d",
+        "project_id": "695f98b48531c5262379eb1a",
+        "start_date": "2025-12-01T00:00:00",
+        "end_date": "2026-02-28T00:00:00",
+        "percentage": 35,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 35,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "6964304256476217cff1d459",
+        "resource_id": "6949f32496943efb2c1d331e",
+        "project_id": "69642f984970d0cc2c6b42d4",
+        "start_date": "2025-10-11T00:00:00",
+        "end_date": "2026-01-31T00:00:00",
+        "percentage": 10,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 10,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "696430d34970d0cc2c6b42d6",
+        "resource_id": "6949f32496943efb2c1d331e",
+        "project_id": "696430ac4970d0cc2c6b42d5",
+        "start_date": "2026-01-11T00:00:00",
+        "end_date": "2026-02-28T00:00:00",
+        "percentage": 15,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 30,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "696431b24970d0cc2c6b42d7",
+        "resource_id": "6949f32496943efb2c1d331d",
+        "project_id": "696430ac4970d0cc2c6b42d5",
+        "start_date": "2026-01-11T00:00:00",
+        "end_date": "2026-02-28T00:00:00",
+        "percentage": 10,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "6964c6b8966cb6ddcfc0a9f8",
+        "resource_id": "6949f32496943efb2c1d331f",
+        "project_id": "6949f32496943efb2c1d3321",
+        "start_date": "2026-01-12T00:00:00",
+        "end_date": "2026-01-30T00:00:00",
+        "percentage": 5,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 8,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "696d6a77cd5da7abaf8b9000",
+        "resource_id": "6949f32496943efb2c1d331e",
+        "project_id": "6949f32496943efb2c1d3321",
+        "start_date": "2026-01-12T00:00:00",
+        "end_date": "2026-02-27T00:00:00",
+        "percentage": 5,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 0,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "696e03862cb559ea9a9286e0",
+        "resource_id": "6949f32496943efb2c1d331d",
+        "project_id": "694a4257962ae53169f6ee25",
+        "start_date": "2025-12-01T00:00:00",
+        "end_date": "2026-02-27T00:00:00",
+        "percentage": 10,
+        "hours": 71,
+        "allocation_type": "percentage",
+        "role": "QA Engineer",
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "696e03862cb559ea9a9286e1",
+        "resource_id": "6949f32496943efb2c1d331f",
+        "project_id": "694a4257962ae53169f6ee25",
+        "start_date": "2025-12-01T00:00:00",
+        "end_date": "2026-02-27T00:00:00",
+        "percentage": 5,
+        "hours": 36,
+        "allocation_type": "percentage",
+        "role": "Customer",
+        "actual_percentage": 5,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "696e063e2185290e03967e85",
+        "resource_id": "6949f32496943efb2c1d331e",
+        "project_id": "695f96458531c5262379eb18",
+        "start_date": "2026-01-19T00:00:00",
+        "end_date": "2026-02-02T00:00:00",
+        "percentage": 10,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 0,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "696e07322185290e03967e86",
+        "resource_id": "6949f32496943efb2c1d331c",
+        "project_id": "694a4257962ae53169f6ee25",
+        "start_date": "2026-01-19T00:00:00",
+        "end_date": "2026-01-30T00:00:00",
+        "percentage": 10,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 60,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "696f4906ca6f6b148422f904",
+        "resource_id": "6949f32496943efb2c1d331f",
+        "project_id": "696430ac4970d0cc2c6b42d5",
+        "start_date": "2026-01-20T00:00:00",
+        "end_date": "2026-01-30T00:00:00",
+        "percentage": 10,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 15,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "6971688640eea21f0e162e2f",
+        "resource_id": "6949f32496943efb2c1d331f",
+        "project_id": "6951ccdfe6b16c72bf53e149",
+        "start_date": "2026-01-23T00:00:00",
+        "end_date": "2026-04-03T00:00:00",
+        "percentage": 30,
+        "hours": 170,
+        "allocation_type": "percentage",
+        "role": "Project Lead",
+        "actual_percentage": 50,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "6971688740eea21f0e162e30",
+        "resource_id": "6949f32496943efb2c1d331e",
+        "project_id": "6951ccdfe6b16c72bf53e149",
+        "start_date": "2026-01-23T00:00:00",
+        "end_date": "2026-04-03T00:00:00",
+        "percentage": 20,
+        "hours": 114,
+        "allocation_type": "percentage",
+        "role": "Analyst",
+        "actual_percentage": 20,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "6971688740eea21f0e162e31",
+        "resource_id": "6949f32496943efb2c1d331d",
+        "project_id": "6951ccdfe6b16c72bf53e149",
+        "start_date": "2026-01-23T00:00:00",
+        "end_date": "2026-04-03T00:00:00",
+        "percentage": 50,
+        "hours": 284,
+        "allocation_type": "percentage",
+        "role": "Consultant",
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "697becd7288905aef0cb4c3f",
+        "resource_id": "6949f32496943efb2c1d331e",
+        "project_id": "6951ccdfe6b16c72bf53e149",
+        "start_date": "2026-01-29T00:00:00",
+        "end_date": "2026-02-12T00:00:00",
+        "percentage": 20,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 20,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "697ffe2f188cf260524a5784",
+        "resource_id": "6949f32496943efb2c1d331e",
+        "project_id": "697ff720188cf260524a5783",
+        "start_date": "2026-01-25T00:00:00",
+        "end_date": "2026-07-27T00:00:00",
+        "percentage": 20,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": 25,
+        "confirmation_status": "Confirmed"
+      },
+      {
+        "id": "69809c036e358917d76a3651",
+        "resource_id": "6949f32496943efb2c1d331e",
+        "project_id": "69809c036e358917d76a3650",
+        "start_date": "2026-02-09T00:00:00",
+        "end_date": "2026-03-27T00:00:00",
+        "percentage": 25,
+        "hours": null,
+        "allocation_type": "percentage",
+        "role": null,
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "6986083c0332eaa47094c428",
+        "resource_id": "6949f32496943efb2c1d331f",
+        "project_id": "697ff720188cf260524a5783",
+        "start_date": "2026-01-25T00:00:00",
+        "end_date": "2026-02-13T00:00:00",
+        "percentage": 3,
+        "hours": 6,
+        "allocation_type": "hours",
+        "role": "Support",
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "698609b20332eaa47094c429",
+        "resource_id": "6949f32496943efb2c1d331f",
+        "project_id": "6981dc3dd06cf8b216606bc0",
+        "start_date": "2026-01-05T00:00:00",
+        "end_date": "2026-02-27T00:00:00",
+        "percentage": 3,
+        "hours": 16,
+        "allocation_type": "hours",
+        "role": "Project Lead",
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      },
+      {
+        "id": "698c6d4791777b7df6a1c5c1",
+        "resource_id": "6949f32496943efb2c1d331e",
+        "project_id": "6981dc3dd06cf8b216606bc0",
+        "start_date": "2026-01-05T00:00:00",
+        "end_date": "2026-02-27T00:00:00",
+        "percentage": 10,
+        "hours": 43,
+        "allocation_type": "percentage",
+        "role": "Analyst",
+        "actual_percentage": null,
+        "confirmation_status": "Pending"
+      }
+    ],
+    "allocation_roles": {
+      "roles": [
+        "Project Lead",
+        "Developer",
+        "Designer",
+        "QA Engineer",
+        "Consultant",
+        "Analyst",
+        "Support",
+        "Architect",
+        "Product Manager"
+      ]
+    },
+    "timesheets": [],
+    "status_updates": [],
+    "risks": []
+  }
+}
