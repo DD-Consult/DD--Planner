@@ -12,7 +12,7 @@ from database import (
     wbs_tasks_collection, EMERGENT_LLM_KEY,
 )
 from auth.dependencies import get_current_user, require_admin
-from utils import serialize_doc
+from utils import serialize_doc, compute_allocation_hours
 from services.ai_providers import call_emergent_fallback
 
 router = APIRouter()
@@ -149,8 +149,9 @@ async def get_time_tracking_summary(current_user: dict = Depends(get_current_use
     Get dashboard-level time tracking summary.
     Includes team utilization, pending timesheets, projects at risk.
     """
-    # Get current week start
-    today = datetime.now()
+    # Get current week start (Sydney time — consistent with timesheet windows)
+    from database import SYDNEY_TZ
+    today = datetime.now(SYDNEY_TZ)
     day_of_week = today.weekday()
     week_start = today - timedelta(days=day_of_week)
     week_start_str = week_start.strftime("%Y-%m-%d")
@@ -729,9 +730,8 @@ async def get_resource_utilization(
         if overlap_start > overlap_end:
             continue
         
-        biz_days = count_business_days(overlap_start, overlap_end)
-        pct = a.get("percentage", 0) / 100.0
-        hours = biz_days * 8.0 * pct
+        # Canonical formula (40h/week, business days, hours-type supported)
+        hours = compute_allocation_hours(a, start_dt, end_dt)
         
         if rid not in alloc_map:
             alloc_map[rid] = {}
@@ -1066,25 +1066,7 @@ async def get_portfolio_view(
         alloc_cursor = allocations_collection.find({"project_id": project_id})
         allocations = await alloc_cursor.to_list(length=1000)
         
-        baseline_hours = 0.0
-        for alloc in allocations:
-            # Calculate hours: percentage * 38 hours/week * number of weeks
-            start = alloc.get("start_date")
-            end = alloc.get("end_date")
-            percentage = alloc.get("percentage", 0)
-            
-            if start and end:
-                if isinstance(start, datetime):
-                    start = start.date()
-                if isinstance(end, datetime):
-                    end = end.date()
-                
-                days = (end - start).days + 1
-                # Use business days for baseline calculation
-                from utils import count_business_days
-                biz_days = count_business_days(start, end)
-                weekly_hours = (percentage / 100.0) * 38.0  # 38 hours = 100%
-                baseline_hours += weekly_hours * (biz_days / 5.0)  # 5 business days per week
+        baseline_hours = sum(compute_allocation_hours(alloc) for alloc in allocations)
         
         # Calculate actual hours (from timesheets)
         timesheet_cursor = timesheets_collection.find({"project_id": project_id})

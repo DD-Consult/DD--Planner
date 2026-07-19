@@ -845,15 +845,15 @@ const ProjectDetail = () => {
     return { completed, total };
   }, [project]);
 
-  // COMPUTED: Total Effort (Hours)
+  // COMPUTED: Total Effort (Hours) — business days only, consistent with backend
   const totalEffort = useMemo(() => {
     if (!allocations) return 0;
     
     let total = 0;
     allocations.forEach(alloc => {
-      const days = safeDifferenceInDays(alloc.end_date, alloc.start_date) + 1; // Include end date
+      const days = Math.abs(differenceInBusinessDays(new Date(alloc.end_date), new Date(alloc.start_date))) + 1;
       
-      // Formula: (Allocation % / 100) * Days * 8 hours per day
+      // Formula: (Allocation % / 100) * Business Days * 8 hours per day
       const hours = (alloc.percentage / 100) * days * 8;
       total += hours;
     });
@@ -863,7 +863,7 @@ const ProjectDetail = () => {
 
   // Calculate effort for individual allocation
   const calculateAllocationEffort = (allocation) => {
-    const days = safeDifferenceInDays(allocation.end_date, allocation.start_date) + 1;
+    const days = Math.abs(differenceInBusinessDays(new Date(allocation.end_date), new Date(allocation.start_date))) + 1;
     return Math.round((allocation.percentage / 100) * days * 8);
   };
 

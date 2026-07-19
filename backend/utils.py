@@ -166,14 +166,14 @@ def get_allocation_for_phase(allocation: dict, phase_id: str) -> int:
     return allocation.get("percentage", 0)
 
 
-def get_allocation_hours_for_phase(allocation: dict, phase_id: str, default_weekly_hours: float = 38.0) -> float:
+def get_allocation_hours_for_phase(allocation: dict, phase_id: str, default_weekly_hours: float = 40.0) -> float:
     """
     Calculate weekly hours for a specific phase based on allocation percentage.
     
     Args:
         allocation: Allocation document from MongoDB
         phase_id: Phase ID to get hours for
-        default_weekly_hours: Standard full-time hours per week (default: 38)
+        default_weekly_hours: Standard full-time hours per week (default: 40)
         
     Returns:
         Weekly hours for the phase allocation
@@ -212,3 +212,94 @@ def snap_to_weekday(d):
     if d.weekday() == 6:  # Sunday
         return d + timedelta(days=1)
     return d
+
+
+# ============================================================
+# CANONICAL HOUR CALCULATIONS — single source of truth
+# Standard work week: 40 hours (8h/day × Mon-Fri)
+# ============================================================
+
+HOURS_PER_WEEK = 40.0
+HOURS_PER_DAY = 8.0
+
+
+def coerce_date(d):
+    """Coerce datetime/str/date into a date, or None."""
+    if d is None:
+        return None
+    if isinstance(d, datetime):
+        return d.date()
+    if isinstance(d, date):
+        return d
+    try:
+        return datetime.fromisoformat(str(d)[:10]).date()
+    except Exception:
+        return None
+
+
+def allocation_weekly_hours(allocation: dict) -> float:
+    """Canonical weekly hours for an allocation (100% = 40h/week).
+    'hours' allocation type = TOTAL hours spread evenly over the allocation range."""
+    if allocation.get("allocation_type") == "hours" and allocation.get("hours") is not None:
+        s = coerce_date(allocation.get("start_date"))
+        e = coerce_date(allocation.get("end_date"))
+        total_biz = count_business_days(s, e) if s and e else 0
+        if total_biz <= 0:
+            return 0.0
+        return float(allocation["hours"]) / (total_biz / 5.0)
+    return ((allocation.get("percentage") or 0) / 100.0) * HOURS_PER_WEEK
+
+
+def compute_allocation_hours(allocation: dict, clip_start=None, clip_end=None) -> float:
+    """Canonical TOTAL hours for an allocation, optionally clipped to a window.
+    Formula: weekly_hours × (business_days_in_window / 5)."""
+    s = coerce_date(allocation.get("start_date"))
+    e = coerce_date(allocation.get("end_date"))
+    if not s or not e:
+        return 0.0
+    cs = max(s, coerce_date(clip_start)) if clip_start else s
+    ce = min(e, coerce_date(clip_end)) if clip_end else e
+    if cs > ce:
+        return 0.0
+    biz = count_business_days(cs, ce)
+    return allocation_weekly_hours(allocation) * (biz / 5.0)
+
+
+def compute_phase_allocated_hours(allocation: dict, phase: dict) -> float:
+    """Canonical phase attribution for allocated hours:
+    1. Per-phase percentage (phase_allocations) wins when set.
+    2. Else phase_names filter excludes non-matching phases.
+    3. Hours are clipped to the phase date range (no double counting)."""
+    phase_id = phase.get("id")
+    p_start = coerce_date(phase.get("start_date"))
+    p_end = coerce_date(phase.get("end_date"))
+
+    for pa in (allocation.get("phase_allocations") or []):
+        if pa.get("phase_id") == phase_id and pa.get("percentage") is not None:
+            s = coerce_date(allocation.get("start_date"))
+            e = coerce_date(allocation.get("end_date"))
+            if not s or not e:
+                return 0.0
+            cs = max(s, p_start) if p_start else s
+            ce = min(e, p_end) if p_end else e
+            if cs > ce:
+                return 0.0
+            biz = count_business_days(cs, ce)
+            return (pa["percentage"] / 100.0) * HOURS_PER_WEEK * (biz / 5.0)
+
+    names = allocation.get("phase_names") or []
+    if names and phase.get("name") not in names:
+        return 0.0
+    if p_start and p_end:
+        return compute_allocation_hours(allocation, p_start, p_end)
+    return compute_allocation_hours(allocation)
+
+
+def leaf_estimated_hours(tasks: list) -> float:
+    """Sum estimated_hours over LEAF WBS tasks only (avoids double counting parents)."""
+    parent_ids = {str(t.get("parent_id")) for t in tasks if t.get("parent_id")}
+    return sum(
+        float(t.get("estimated_hours") or 0)
+        for t in tasks
+        if str(t.get("id") or t.get("_id")) not in parent_ids
+    )

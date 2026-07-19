@@ -151,7 +151,9 @@ async def get_project(project_id: str, current_user: dict = Depends(get_current_
         wbs_tasks = await wbs_tasks_collection.find({"project_id": project_id}).to_list(length=10000)
         
         if wbs_tasks:
-            total_estimated = sum(task.get("estimated_hours", 0) for task in wbs_tasks)
+            # Leaf tasks only — parents carry rolled-up estimates (avoid double counting)
+            from utils import leaf_estimated_hours
+            total_estimated = leaf_estimated_hours(wbs_tasks)
             tasks_completed = sum(1 for t in wbs_tasks if t.get("status") == "done")
             tasks_total = len(wbs_tasks)
             
@@ -244,33 +246,8 @@ async def get_project_budget_health(project_id: str, current_user: dict = Depend
     budgeted_hours = project.get("budgeted_hours")
     phases = project.get("phases", [])
     
-    # Helper function to compute hours from an allocation
-    def compute_allocation_hours(alloc: dict) -> float:
-        """Compute total hours for an allocation over its date range.
-        Uses business days (Mon-Fri) × 8 hours/day."""
-        alloc_type = alloc.get("allocation_type", "percentage")
-        start = alloc.get("start_date")
-        end = alloc.get("end_date")
-        
-        # Convert datetime to date if needed
-        if isinstance(start, datetime):
-            start = start.date()
-        if isinstance(end, datetime):
-            end = end.date()
-        
-        # Calculate business days (Mon-Fri)
-        from utils import count_business_days
-        biz_days = count_business_days(start, end)
-        
-        # Standard formula: allocated_hours = (percentage / 100) × business_days × 8
-        if alloc_type == "hours" and alloc.get("hours"):
-            # For hour-based allocations, calculate weekly hours then convert
-            weekly_hours = alloc["hours"]
-            weeks = biz_days / 5.0
-            return weekly_hours * weeks
-        else:
-            percentage = alloc.get("percentage", 0)
-            return (percentage / 100.0) * biz_days * 8.0
+    # Canonical allocation-hours computation (40h/week, business days, hours = total over range)
+    from utils import compute_allocation_hours, compute_phase_allocated_hours
     
     # Get all allocations for this project
     allocations_cursor = allocations_collection.find({"project_id": project_id})
@@ -308,13 +285,9 @@ async def get_project_budget_health(project_id: str, current_user: dict = Depend
         phase_name = phase.get("name", "")
         phase_budgeted = phase.get("budgeted_hours")
         
-        # Find allocations that include this phase name
-        phase_allocations = [
-            alloc for alloc in allocations
-            if phase_name in (alloc.get("phase_names") or [])
-        ]
-        
-        phase_allocated = sum(compute_allocation_hours(alloc) for alloc in phase_allocations)
+        # Canonical phase attribution: per-phase % wins, else phase_names filter,
+        # clipped to phase date range (no double counting across phases)
+        phase_allocated = sum(compute_phase_allocated_hours(alloc, phase) for alloc in allocations)
         
         # Get actual hours from timesheets for this phase
         phase_timesheets = [ts for ts in timesheets if ts.get("phase_id") == phase_id]

@@ -7,10 +7,14 @@ from bson import ObjectId
 from database import (
     timesheets_collection, allocations_collection, resources_collection,
     projects_collection, wbs_tasks_collection, SYDNEY_TZ,
+    holidays_collection, leaves_collection,
 )
 from models.schemas import TimesheetCreate, TimesheetUpdate, TimesheetResponse
 from auth.dependencies import get_current_user, require_admin
-from utils import serialize_doc, find_user_resource, calculate_weekly_hours, is_timesheet_update_allowed
+from utils import (
+    serialize_doc, find_user_resource, calculate_weekly_hours, is_timesheet_update_allowed,
+    get_allocation_for_phase, allocation_weekly_hours, HOURS_PER_WEEK, count_business_days,
+)
 
 router = APIRouter()
 
@@ -295,6 +299,38 @@ async def auto_fill_timesheets(week_start: str, current_user: dict = Depends(get
     
     allocations = await cursor.to_list(length=1000)
     
+    # Non-working business days this week: public holidays + this resource's leaves
+    week_start_dt = datetime.combine(week_start_date, datetime.min.time())
+    week_end_dt = datetime.combine(week_end_date, datetime.max.time())
+    non_working_days = set()
+    try:
+        holidays = await holidays_collection.find(
+            {"date": {"$gte": week_start_dt, "$lte": week_end_dt}}
+        ).to_list(length=100)
+        for h in holidays:
+            hd = h.get("date")
+            hd = hd.date() if isinstance(hd, datetime) else hd
+            if hd and hd.weekday() < 5:
+                non_working_days.add(hd)
+        leaves = await leaves_collection.find({
+            "resource_id": resource_id,
+            "start_date": {"$lte": week_end_dt},
+            "end_date": {"$gte": week_start_dt},
+        }).to_list(length=100)
+        for lv in leaves:
+            ls, le = lv.get("start_date"), lv.get("end_date")
+            ls = ls.date() if isinstance(ls, datetime) else ls
+            le = le.date() if isinstance(le, datetime) else le
+            if not ls or not le:
+                continue
+            d = max(ls, week_start_date)
+            while d <= min(le, week_end_date):
+                if d.weekday() < 5:
+                    non_working_days.add(d)
+                d += timedelta(days=1)
+    except Exception as e:
+        print(f"[Auto-fill] Holiday/leave lookup failed (non-critical): {e}")
+    
     created_count = 0
     updated_count = 0
     skipped_count = 0
@@ -368,6 +404,32 @@ async def auto_fill_timesheets(week_start: str, current_user: dict = Depends(get
             else:
                 continue  # Skip if no valid phases
         
+        # Keep only phases whose date range overlaps this week (when dates are set)
+        def _phase_overlaps_week(pid):
+            p = next((ph for ph in phases if ph.get("id") == pid), None)
+            if not p:
+                return True
+            ps, pe = p.get("start_date"), p.get("end_date")
+            try:
+                if isinstance(ps, str):
+                    ps = datetime.fromisoformat(ps.replace('Z', '+00:00')).date()
+                elif isinstance(ps, datetime):
+                    ps = ps.date()
+                if isinstance(pe, str):
+                    pe = datetime.fromisoformat(pe.replace('Z', '+00:00')).date()
+                elif isinstance(pe, datetime):
+                    pe = pe.date()
+            except Exception:
+                return True
+            if not ps or not pe:
+                return True
+            return ps <= week_end_date and pe >= week_start_date
+        
+        if len(phase_ids_to_process) > 1:
+            overlapping = [pid for pid in phase_ids_to_process if _phase_overlaps_week(pid)]
+            if overlapping:
+                phase_ids_to_process = overlapping
+        
         # Create/update timesheet for each phase
         for phase_id in phase_ids_to_process:
             # ========== NEW: WBS Task Assignment Logic ==========
@@ -423,18 +485,33 @@ async def auto_fill_timesheets(week_start: str, current_user: dict = Depends(get
                 "week_start_date": datetime.combine(week_start_date, datetime.min.time())
             })
             
-            # Calculate planned hours for this week
+            # Calculate planned hours for this week (phase-aware, canonical 40h/week)
             allocation_start = allocation["start_date"].date() if isinstance(allocation["start_date"], datetime) else allocation["start_date"]
             allocation_end = allocation["end_date"].date() if isinstance(allocation["end_date"], datetime) else allocation["end_date"]
-            percentage = allocation.get("percentage", 0)
             
-            planned_hours = calculate_weekly_hours(percentage, allocation_start, allocation_end, week_start_date, week_end_date)
+            if allocation.get("allocation_type") == "hours" and allocation.get("hours") is not None:
+                # hours-type = total over range → derive effective weekly percentage
+                effective_pct = (allocation_weekly_hours(allocation) / HOURS_PER_WEEK) * 100.0
+            else:
+                # Use phase-specific percentage when defined, else project-level
+                effective_pct = get_allocation_for_phase(allocation, phase_id)
+            
+            planned_hours = calculate_weekly_hours(effective_pct, allocation_start, allocation_end, week_start_date, week_end_date)
+            
+            # Deduct public holidays and approved leave days from the plan
+            overlap_start = max(allocation_start, week_start_date)
+            overlap_end = min(allocation_end, week_end_date)
+            if planned_hours > 0 and non_working_days and overlap_start <= overlap_end:
+                overlap_biz = count_business_days(overlap_start, overlap_end)
+                blocked = sum(1 for d in non_working_days if overlap_start <= d <= overlap_end)
+                if overlap_biz > 0 and blocked > 0:
+                    planned_hours = planned_hours * max(0, overlap_biz - blocked) / overlap_biz
             
             if planned_hours <= 0:
                 continue  # Skip if no hours for this week
             
-            # Distribute hours across phases if multiple phases
-            if len(phase_ids_to_process) > 1:
+            # Split equally across phases ONLY when no per-phase percentages exist
+            if len(phase_ids_to_process) > 1 and not allocation.get("phase_allocations"):
                 planned_hours = planned_hours / len(phase_ids_to_process)
             
             if existing:

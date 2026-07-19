@@ -31,7 +31,7 @@ from database import (
     timesheets_collection,
     wbs_tasks_collection,
 )
-from utils import count_business_days
+from utils import count_business_days, compute_allocation_hours, compute_phase_allocated_hours, leaf_estimated_hours
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -157,21 +157,8 @@ async def validate_all_wbs_estimates(project_id: str, project: dict) -> List[Dic
 
 def _allocated_hours_for_range(allocations: List[dict], start: Optional[date] = None, end: Optional[date] = None) -> float:
     """Compute total allocated hours across allocations, optionally clipped to [start, end].
-    Uses business days (Mon-Fri) × 8 hours/day for all calculations."""
-    total = 0.0
-    for a in allocations:
-        a_start = _parse_date(a.get("start_date"))
-        a_end = _parse_date(a.get("end_date"))
-        pct = _safe_float(a.get("percentage"))
-        if not a_start or not a_end or pct <= 0:
-            continue
-        clip_start = max(a_start, start) if start else a_start
-        clip_end = min(a_end, end) if end else a_end
-        if clip_start > clip_end:
-            continue
-        business_days = count_business_days(clip_start, clip_end)
-        total += (pct / 100.0) * business_days * 8.0
-    return total
+    Delegates to the canonical formula (40h/week, business days, hours-type = total)."""
+    return sum(compute_allocation_hours(a, start, end) for a in allocations)
 
 
 async def validate_allocations(
@@ -199,16 +186,12 @@ async def validate_allocations(
             "allocated_hours": total_allocated,
         })
 
-    # Per-phase allocation check (allocations are clipped to phase date range)
+    # Per-phase allocation check (canonical phase attribution)
     for phase in (project.get("phases") or []):
         phase_budget = _safe_float(phase.get("budgeted_hours"))
         if phase_budget <= 0:
             continue
-        phase_start = _parse_date(phase.get("start_date"))
-        phase_end = _parse_date(phase.get("end_date"))
-        if not phase_start or not phase_end:
-            continue
-        phase_alloc = _allocated_hours_for_range(allocations, phase_start, phase_end)
+        phase_alloc = sum(compute_phase_allocated_hours(a, phase) for a in allocations)
         if phase_alloc > phase_budget:
             warnings.append({
                 "code": "allocations_exceed_phase_budget",
@@ -315,13 +298,10 @@ async def reconciliation_summary(project_id: str) -> Dict[str, Any]:
             if t.get("phase_id") == phase_id and str(t.get("id") or t.get("_id")) not in parent_ids
         )
 
-        # Allocated (clipped to phase dates)
+        # Allocated (canonical phase attribution: per-phase %, phase_names, date clipping)
         phase_start = _parse_date(phase.get("start_date"))
         phase_end = _parse_date(phase.get("end_date"))
-        phase_allocated = (
-            _allocated_hours_for_range(allocations, phase_start, phase_end)
-            if phase_start and phase_end else None
-        )
+        phase_allocated = sum(compute_phase_allocated_hours(a, phase) for a in allocations)
 
         # Actual (timesheets tagged with this phase)
         phase_actual = sum(

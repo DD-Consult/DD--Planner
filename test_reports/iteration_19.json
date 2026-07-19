@@ -1,0 +1,35 @@
+{
+  "summary": "Validated canonical 40h/week calculation layer end-to-end. 13/14 tests pass. Consistency tests 1-4 (project + phase + hours + my-allocations), auto-fill (phase-aware + holiday deduction), insights fix, and regression (list/CRUD/portfolio/capacity/planned-vs-actual) all pass. WBS leaf-only aggregation is BROKEN in 3 places due to an id-comparison bug in the refactor.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/projects/{id}/wbs/budget-status, GET /api/projects/{id} (wbs_summary), GET /api/projects/{id}/budget-reconciliation (totals.estimated)",
+        "issue": "WBS leaf-only aggregation returns parent+child total (40) instead of leaf-only (20). All three endpoints report the wrong number. Root cause: leaf_estimated_hours() (utils.py:298-305) compares `str(t.get('id') or t.get('_id'))` to the parent_ids set. But `t.get('id')` is the internal UUID string set in wbs.py:222, whereas children store parent_id = the parent's PUBLIC id, which serialize_doc() derives from `_id` (ObjectId hex string), NOT the UUID. So the parent's identifier used in leaf-detection never matches any parent_id, and NO parent is ever excluded. Same buggy comparison exists in services/budget_reconciliation.py lines 263-268 and in projects.py path that calls leaf_estimated_hours(wbs_tasks).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration19_consistency.py",
+    "/app/test_reports/pytest/iteration19_results.xml"
+  ],
+  "action_items": [
+    "Fix leaf detection: in utils.leaf_estimated_hours(), use `str(t.get('_id'))` as the task identifier when comparing to parent_ids (children reference the ObjectId-derived public id, not the internal UUID field). Or normalize on task creation so that `parent_id` stores the internal UUID `id` and `id` remains the public identifier consistently. Apply the same fix in services/budget_reconciliation.py:263-268 (or make it call leaf_estimated_hours). Retest test_wbs_leaf_only after fix."
+  ],
+  "critical_code_review_comments": [
+    "Dual identity of WBS tasks (internal UUID `id` + Mongo `_id` exposed as `id` by serialize_doc) is a footgun. serialize_doc explicitly drops the UUID `id` when `_id` is present (utils.py:24-27), so any code that reads t.get('id') from a raw Mongo doc gets the internal UUID, but any HTTP client sees the ObjectId. leaf_estimated_hours() falls into exactly this trap. Recommend picking one canonical identifier (either drop the UUID or drop _id-serialization) or always compute `str(t.get('_id'))` when comparing internal doc references.",
+    "get_capacity_report is at /api/reports/capacity, but the review request called it /api/allocations/capacity-report. Not a bug, just a naming inconsistency worth noting for docs."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration19_consistency.py (new; comprehensive iteration-19 test suite)"
+  ],
+  "success_rate": {"backend": "93% (13/14)", "frontend": "n/a (skipped)"},
+  "test_credentials": "admin@test.com / admin123 (super_admin, OAuth2 form login)",
+  "seed_data_creation": "All test data uses TEST_ prefix and is cleaned up in fixture teardown or finally blocks. Verified no residual TEST_ resources/projects/holidays/timesheets after the run.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test file is /app/backend/tests/test_iteration19_consistency.py. It hits http://localhost:8001 directly (external URL may be hibernated). Login uses OAuth2 form fields (username/password). WBS leaf-only bug is the only failing assertion; once fixed, run only TestWbsLeafOnly to verify (all three numbers total_wbs_hours, wbs_summary.total_estimated_hours, reconciliation.totals.estimated must equal 20 for a parent(20)+child(20) tree).",
+  "rca of the issue": "WBS leaf-only refactor bug — root cause: leaf_estimated_hours(tasks) in utils.py builds parent_ids from `t.get('parent_id')` and compares each task's identifier as `str(t.get('id') or t.get('_id'))`. In persisted docs, `t.get('id')` is the internal UUID that create_wbs_task sets (wbs.py:222). But children store parent_id = the value returned to the client by serialize_doc, which for docs that have `_id` is `str(_id)` (utils.py:24 and 25-27 explicitly drops the legacy `id`). Therefore parent_ids contains ObjectId-hex strings, while the parent's own identifier used in the leaf filter is the UUID — they never match, the parent is treated as a leaf, and its hours are double-counted with its children. Reproduction: POST parent (est 20h), then POST child (parent_id=parent.json()['id'], est 20h); GET /wbs/budget-status returns total_wbs_hours=40 instead of 20. Mongo confirmed: parent.id=UUID, parent._id=ObjectId, child.parent_id=ObjectId(str). Mitigation options: (a) in leaf_estimated_hours use `str(t.get('_id') or t.get('id'))` (prefer _id since that's what clients get); (b) or store parent_id as the internal UUID during create; (c) or drop the internal UUID entirely and only use _id. Same fix must be applied to the duplicated logic in services/budget_reconciliation.py:263-268."
+}

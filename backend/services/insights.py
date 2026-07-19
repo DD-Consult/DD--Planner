@@ -107,8 +107,8 @@ async def compute_health_score(project_id: str) -> dict:
         
         # Sum actual hours from timesheets
         timesheet_pipeline = [
-            {"$match": {"project_id": project_id, "status": "approved"}},
-            {"$group": {"_id": None, "total_hours": {"$sum": "$hours"}}}
+            {"$match": {"project_id": project_id}},
+            {"$group": {"_id": None, "total_hours": {"$sum": "$actual_hours"}}}
         ]
         timesheet_result = await timesheets_collection.aggregate(timesheet_pipeline).to_list(length=1)
         actual_hours = timesheet_result[0]["total_hours"] if timesheet_result else 0
@@ -253,7 +253,7 @@ async def compute_health_score(project_id: str) -> dict:
         
         if wbs_tasks:
             total_tasks = len(wbs_tasks)
-            done_tasks = sum(1 for t in wbs_tasks if t.get("status") == "Done")
+            done_tasks = sum(1 for t in wbs_tasks if t.get("status") == "done")
             task_completion_pct = (done_tasks / total_tasks * 100) if total_tasks > 0 else 0
             
             if start_date and end_date:
@@ -379,15 +379,15 @@ async def predict_completion(project_id: str) -> dict:
         
         tasks_per_week = 0
         if wbs_tasks and elapsed_business_days > 0:
-            done_tasks = sum(1 for t in wbs_tasks if t.get("status") == "Done")
+            done_tasks = sum(1 for t in wbs_tasks if t.get("status") == "done")
             elapsed_weeks = elapsed_business_days / 5
             if elapsed_weeks > 0:
                 tasks_per_week = done_tasks / elapsed_weeks
         
         # Budget prediction
         timesheet_pipeline = [
-            {"$match": {"project_id": project_id, "status": "approved"}},
-            {"$group": {"_id": None, "total_hours": {"$sum": "$hours"}}}
+            {"$match": {"project_id": project_id}},
+            {"$group": {"_id": None, "total_hours": {"$sum": "$actual_hours"}}}
         ]
         timesheet_result = await timesheets_collection.aggregate(timesheet_pipeline).to_list(length=1)
         current_actual_hours = timesheet_result[0]["total_hours"] if timesheet_result else 0

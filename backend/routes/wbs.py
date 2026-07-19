@@ -145,7 +145,9 @@ async def validate_wbs_budget(project_id: str, new_task_hours: float = 0, exclud
             pass  # Invalid ObjectId, skip exclusion
     
     tasks = await wbs_tasks_collection.find(query).to_list(length=10000)
-    existing_total = sum(t.get("estimated_hours", 0) for t in tasks)
+    # Leaf tasks only — parents carry rolled-up estimates (avoid double counting)
+    from utils import leaf_estimated_hours
+    existing_total = leaf_estimated_hours(tasks)
     
     # Calculate new total
     total_wbs_hours = existing_total + new_task_hours

@@ -134,7 +134,7 @@ async def create_allocation(allocation: AllocationCreate, admin: dict = Depends(
         # 8 hours per business day standard
         total_available_hours = biz_days * 8
         if total_available_hours > 0:
-            allocation_doc["percentage"] = min(100, int((allocation_doc["hours"] / total_available_hours) * 100))
+            allocation_doc["percentage"] = min(100, round((allocation_doc["hours"] / total_available_hours) * 100))
     
     # Ensure percentage has a default value
     if allocation_doc.get("percentage") is None:
@@ -572,20 +572,17 @@ async def validate_allocation(request_data: AllocationValidateRequest, current_u
             "message": "No budget set for this project. Allocation can proceed without budget checks."
         }
     
-    # Helper function to compute hours from allocation
+    # Helper function to compute hours from allocation (canonical: 40h/week, hours = total over range)
     def compute_allocation_hours(alloc_start: date, alloc_end: date, alloc_percentage: int = None, alloc_hours: int = None, alloc_type: str = "percentage") -> float:
         """Compute total hours for an allocation over its date range using business days."""
-        from utils import count_business_days
-        biz_days = count_business_days(alloc_start, alloc_end)
-        weeks = biz_days / 5.0
-        
-        # Determine weekly hours (38 hours = 100% capacity)
-        if alloc_type == "hours" and alloc_hours is not None:
-            weekly_hours = alloc_hours
-        else:
-            weekly_hours = ((alloc_percentage or 0) / 100.0) * 38.0
-        
-        return weekly_hours * weeks
+        from utils import compute_allocation_hours as _canonical
+        return _canonical({
+            "start_date": alloc_start,
+            "end_date": alloc_end,
+            "percentage": alloc_percentage,
+            "hours": alloc_hours,
+            "allocation_type": alloc_type,
+        })
     
     # Get all existing allocations for this project (excluding the one being edited if any)
     allocations_cursor = allocations_collection.find({"project_id": project_id})
@@ -815,15 +812,12 @@ async def get_my_allocations(
         biz_days_in_period = count_business_days(effective_start, effective_end)
         weeks_in_period = biz_days_in_period / 5.0
         
-        # Determine weekly hours based on allocation type
+        # Determine weekly hours based on allocation type (canonical: 40h/week)
+        from utils import allocation_weekly_hours
         allocation_type = alloc.get("allocation_type", "percentage")
         percentage = alloc.get("percentage", 0)
         hours = alloc.get("hours")
-        
-        if allocation_type == "hours" and hours is not None:
-            weekly_hours = float(hours)
-        else:
-            weekly_hours = (percentage / 100.0) * 38.0
+        weekly_hours = allocation_weekly_hours(alloc)
         
         # Total hours in this period
         period_hours = weekly_hours * weeks_in_period
@@ -883,14 +877,8 @@ async def get_my_allocations(
             alloc_end = alloc_end.date()
         
         if alloc_start <= reference_date <= alloc_end:
-            allocation_type = alloc.get("allocation_type", "percentage")
-            percentage = alloc.get("percentage", 0)
-            hours = alloc.get("hours")
-            
-            if allocation_type == "hours" and hours is not None:
-                total_weekly_hours += float(hours)
-            else:
-                total_weekly_hours += (percentage / 100.0) * 38.0
+            from utils import allocation_weekly_hours
+            total_weekly_hours += allocation_weekly_hours(alloc)
     
     return {
         "period": period,
