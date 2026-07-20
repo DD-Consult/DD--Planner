@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 22 — Resource lifecycle (deactivate/reactivate/delete) + user disable/enable/delete + AI action guards + capacity report + frontend UI. 12/13 pytest tests PASSED (1 asserting a real bug); 38/38 regression tests (iter19-21) pass; all UI checks pass. BUG FOUND (HIGH): AI action `delete_resource` does NOT check `project_lead_id`, allowing a project lead resource to be deleted despite the REST endpoint correctly blocking it — this actually deleted the seed 'Riley Resource' during testing (it had 0 allocations at that moment but was lead of Website Redesign). Riley Resource + linkage + WR project_lead_id were manually restored.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/ai/chat/execute-action (action=delete_resource)",
+        "issue": "_h_delete_resource in /app/backend/services/ai_actions_extended.py L178-196 only counts allocations + timesheets. It ignores projects_collection.count_documents({'project_lead_id': rid}), which the REST endpoint DELETE /api/resources/{id} correctly checks. A super_admin (skipping confirm token) can therefore delete a resource that leads a project, orphaning the project's lead. Reproduced: created resource, set as project_lead, called AI delete_resource → success:True 'no history existed'. Riley Resource was actually deleted during this test run (allocations happened to be 0) — required manual DB restore.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration22_lifecycle.py",
+    "/app/test_reports/pytest/iteration22.xml"
+  ],
+  "action_items": [
+    "Fix /app/backend/services/ai_actions_extended.py::_h_delete_resource — add lead_count = await projects_collection.count_documents({'project_lead_id': rid}); include it in the guard: if al or ts or lead_count: return _err(...). Mirror the REST implementation at /app/backend/routes/resources.py L74-82. After fix, re-run test_iteration22_lifecycle.py::TestAIActions::test_delete_resource_that_is_project_lead_should_fail — must go from FAIL to PASS."
+  ],
+  "critical_code_review_comments": [
+    "BUG: AI delete_resource handler is inconsistent with REST endpoint — missing project_lead_id check. Since super_admin bypasses confirmation, this is a one-call foot-gun that can silently orphan project leads.",
+    "Positive: REST DELETE /api/resources/{id} correctly returns 409 with 'has history (X allocations, Y timesheets, lead of Z projects). Deactivate instead' message.",
+    "Positive: deactivate_resource_core correctly: (a) deletes future allocations (start_date > today), (b) trims running allocations end_date to today, (c) sets users.disabled=true for linked accounts, (d) sets resource.active=false with deactivated_at.",
+    "Positive: get_current_user in /app/backend/auth/dependencies.py L52-53 rejects disabled users with 403, invalidating existing JWTs on every /api call — verified with real token.",
+    "Positive: _guard_user_target correctly blocks (a) self-modification with 400, (b) plain admin trying to modify admin/super_admin with 403.",
+    "Positive: capacity report at /api/reports/capacity filters resources where active is not False — deactivated resources properly excluded.",
+    "Positive: destructive AI actions require confirm_token for non-super-admins (needs_confirmation flow verified end-to-end with plain admin token); super_admins bypass — this is documented behavior at services/ai_action_registry.py L232.",
+    "Positive: Frontend Resources page correctly shows Active/Inactive badges + Deactivate/Reactivate buttons + destructive-delete toast ('Riley Resource has history (1 allocation(s), 0 timesheet(s), lead of 1 project(s)). Deactivate instead...'). Users page correctly shows Disabled badge after toggle.",
+    "Note: services/ai_actions_extended.py is 885 lines — exceeds 700-line guideline; consider splitting per-tier.",
+    "Note: /app/backend/routes/allocations.py is 1029 lines — exceeds 700-line guideline; consider splitting into allocations / timesheets / capacity / my-allocations modules."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration22_lifecycle.py (new)"],
+  "success_rate": {"backend": "92.3% (12/13; the 1 failure is a real HIGH-severity bug)", "frontend": "100%"},
+  "test_credentials": "admin@test.com/admin123 (super_admin), riley@test.com/riley123 (resource; restored to enabled), client@test.com/client123",
+  "seed_data_creation": "Restored: Riley Resource (_id 6a5d78c7b9384e8caf2ecdba, active:True, role 'Full Stack Developer', standard_capacity 100); users.riley resource_id link; Website Redesign project_lead_id → Riley id; added 1 running allocation for Riley on WR (50%, today-10d → today+90d) so she has history for next agent. All test_* users deleted. All TEST_UI_* resources deleted. Client user re-enabled.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reusable regression file: /app/backend/tests/test_iteration22_lifecycle.py (12 pass, 1 fail asserting the AI delete_resource lead-guard bug). Uses TEST_BACKEND_URL env var (defaults http://localhost:8001). After main agent adds the project_lead_id check to _h_delete_resource, TestAIActions::test_delete_resource_that_is_project_lead_should_fail must pass. IMPORTANT: If Riley Resource is missing/broken again, restore with the mongo snippet in this iteration's RCA. Also note: iter19 consistency suite leaked resources named TEST_ConsistencyR1_*, TEST_HoursR_*, TEST_AF_* — pre-existing, not from this run.",
+  "rca of the issue": "Root cause: The AI action `delete_resource` handler in /app/backend/services/ai_actions_extended.py::_h_delete_resource copies the REST endpoint's history guard but omits the lead check. The REST endpoint at routes/resources.py L72-82 checks alloc_count + ts_count + lead_count (projects_collection.count_documents({'project_lead_id': resource_id})) before allowing hard-delete. The AI handler only checks al + ts. Because super_admin also bypasses the destructive confirmation flow (services/ai_action_registry.py L232 `if is_destructive and not is_super`), a single super_admin AI call can hard-delete a project's lead resource, leaving a dangling project_lead_id string reference. This actually happened during test execution: Riley Resource (id 6a5d78c7...) was deleted; WR's project_lead_id became a dead pointer. Reproduction: (1) create resource X, (2) PUT /api/projects/{pid} project_lead_id=X, (3) POST /api/ai/chat/execute-action {action:'delete_resource', resource_id:X} as super_admin → success:True. Fix: add `lead_count = await projects_collection.count_documents({'project_lead_id': rid})` and change guard to `if al or ts or lead_count`, mirroring routes/resources.py. Also consider a data-integrity migration: on any resource hard-delete, $unset project_lead_id on projects that reference it."
+}

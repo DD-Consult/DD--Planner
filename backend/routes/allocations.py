@@ -77,6 +77,13 @@ async def get_allocations(current_user: dict = Depends(get_current_user)):
 async def create_allocation(allocation: AllocationCreate, admin: dict = Depends(require_admin)):
     allocation_doc = allocation.dict()
     
+    # Block allocations for deactivated resources
+    resource = await resources_collection.find_one({"_id": ObjectId(allocation.resource_id)})
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    if resource.get("active") is False:
+        raise HTTPException(status_code=400, detail=f"'{resource.get('name')}' is deactivated — reactivate the resource before allocating")
+    
     # Fetch project to validate dates
     project = await projects_collection.find_one({"_id": ObjectId(allocation.project_id)})
     if not project:
@@ -299,8 +306,8 @@ async def get_capacity_report(
     if start > end:
         raise HTTPException(status_code=400, detail="start_date must be before end_date")
     
-    # Get all resources
-    cursor = resources_collection.find()
+    # Get all resources (active only — deactivated resources don't count toward capacity)
+    cursor = resources_collection.find({"active": {"$ne": False}})
     resources = await cursor.to_list(length=1000)
     
     # Get all allocations

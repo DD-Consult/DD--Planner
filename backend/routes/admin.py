@@ -841,8 +841,8 @@ async def check_timesheet_reminders(admin: dict = Depends(require_admin)):
     week_start = (sydney_now - timedelta(days=days_since_monday)).date()
     week_start_str = week_start.strftime("%Y-%m-%d")
     
-    # Get all resources
-    resources_cursor = resources_collection.find({}, {"_id": 0})
+    # Get all resources (skip deactivated — no reminders for departed team members)
+    resources_cursor = resources_collection.find({"active": {"$ne": False}}, {"_id": 0})
     resources = await resources_cursor.to_list(length=200)
     
     reminders_sent = 0
@@ -943,6 +943,8 @@ async def check_allocation_reminders(admin: dict = Depends(require_admin)):
             
             if not resource or not project:
                 continue
+            if resource.get("active") is False:
+                continue  # No reminders for deactivated resources
             
             # Find user for this resource
             user = await users_collection.find_one({"resource_id": resource_id})

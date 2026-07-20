@@ -10,6 +10,8 @@ import {
   getClientUsers,
   updateClientUser,
   deleteClientUser,
+  setUserStatus,
+  deleteUser,
   getProjects
 } from '../api';
 import { Button } from '../components/ui/button';
@@ -42,7 +44,7 @@ import {
   TableRow,
 } from '../components/ui/table';
 import { Checkbox } from '../components/ui/checkbox';
-import { UserPlus, Shield, User, AlertCircle, Key, Pencil, Trash2, Copy, Users as UsersIcon } from 'lucide-react';
+import { UserPlus, Shield, User, AlertCircle, Key, Pencil, Trash2, Copy, Users as UsersIcon, Ban, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
 const Users = () => {
@@ -171,6 +173,41 @@ const Users = () => {
       toast.error(error.response?.data?.detail || 'Failed to reset password');
     },
   });
+
+  const userStatusMutation = useMutation({
+    mutationFn: ({ userId, disabled }) => setUserStatus(userId, disabled),
+    onSuccess: (data) => {
+      toast.success(data.data.message || 'User status updated');
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.detail || 'Failed to update user status');
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: (userId) => deleteUser(userId),
+    onSuccess: (data) => {
+      toast.success(data.data.message || 'User deleted');
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.detail || 'Failed to delete user');
+    },
+  });
+
+  const handleToggleUserStatus = (user) => {
+    const action = user.disabled ? 'enable' : 'disable';
+    if (window.confirm(`Are you sure you want to ${action} ${user.email}?${user.disabled ? '' : ' They will be logged out and unable to sign in.'}`)) {
+      userStatusMutation.mutate({ userId: user.id, disabled: !user.disabled });
+    }
+  };
+
+  const handleDeleteUser = (user) => {
+    if (window.confirm(`Permanently delete the login account for ${user.email}? Project history is not affected.`)) {
+      deleteUserMutation.mutate(user.id);
+    }
+  };
 
   const generatePassword = () => {
     const numbers = Math.floor(Math.random() * 90000) + 10000;
@@ -420,7 +457,12 @@ const Users = () => {
                       <TableCell>{getRoleBadge(user.role)}</TableCell>
                       <TableCell>{getResourceName(user.resource_id)}</TableCell>
                       <TableCell>
-                        {user.must_change_password ? (
+                        {user.disabled ? (
+                          <Badge variant="outline" className="border-[#D92D20] text-[#B42318]" data-testid={`user-status-disabled-${user.id}`}>
+                            <AlertCircle size={12} className="mr-1" />
+                            Disabled
+                          </Badge>
+                        ) : user.must_change_password ? (
                           <Badge variant="outline" className="border-[#F4B740] text-[#7A4E00]">
                             <AlertCircle size={12} className="mr-1" />
                             Password Reset Required
@@ -456,6 +498,26 @@ const Users = () => {
                             className="h-9 w-9"
                           >
                             <Key size={14} />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => handleToggleUserStatus(user)}
+                            title={user.disabled ? 'Enable account' : 'Disable account (blocks login immediately)'}
+                            className={`h-9 w-9 ${user.disabled ? 'text-[#067647]' : 'text-[#B54708]'}`}
+                            data-testid={`toggle-user-status-${user.id}`}
+                          >
+                            {user.disabled ? <UserCheck size={14} /> : <Ban size={14} />}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => handleDeleteUser(user)}
+                            title="Delete login account (project history unaffected)"
+                            className="h-9 w-9 text-[#B42318]"
+                            data-testid={`delete-user-${user.id}`}
+                          >
+                            <Trash2 size={14} />
                           </Button>
                         </div>
                       </TableCell>

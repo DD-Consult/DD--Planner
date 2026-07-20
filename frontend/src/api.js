@@ -132,6 +132,11 @@ export const getResources = () => api.get('/resources');
 export const createResource = (data) => api.post('/resources', data);
 export const updateResource = (id, data) => api.put(`/resources/${id}`, data);
 export const deleteResource = (id) => api.delete(`/resources/${id}`);
+export const deactivateResource = (id) => api.post(`/resources/${id}/deactivate`);
+export const reactivateResource = (id) => api.post(`/resources/${id}/reactivate`);
+export const setUserStatus = (userId, disabled) =>
+  api.put(`/admin/users/${userId}/status?disabled=${disabled}`);
+export const deleteUser = (userId) => api.delete(`/admin/users/${userId}`);
 
 // Projects
 export const getProjects = () => api.get('/projects');

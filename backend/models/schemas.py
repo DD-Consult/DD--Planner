@@ -53,6 +53,7 @@ class ResourceUpdate(BaseModel):
     role: Optional[str] = None
     standard_capacity: Optional[int] = None
     avatar_url: Optional[str] = None
+    active: Optional[bool] = None
 
 
 class ResourceResponse(BaseModel):
@@ -61,6 +62,7 @@ class ResourceResponse(BaseModel):
     role: str
     standard_capacity: int
     avatar_url: Optional[str] = None
+    active: bool = True
 
 
 class ProjectStatus:

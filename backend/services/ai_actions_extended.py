@@ -183,11 +183,35 @@ async def _h_delete_resource(action: dict, user: dict) -> dict:
     if not res:
         return _err("Resource not found")
     name = res.get("name", "?")
-    # Cascade: remove their allocations + timesheets
-    await allocations_collection.delete_many({"resource_id": rid})
-    await timesheets_collection.delete_many({"resource_id": rid})
+    # Hard delete only when there is NO history — otherwise suggest deactivation
+    al = await allocations_collection.count_documents({"resource_id": rid})
+    ts = await timesheets_collection.count_documents({"resource_id": rid})
+    if al or ts:
+        return _err(
+            f"'{name}' has history ({al} allocation(s), {ts} timesheet(s)). "
+            f"Use deactivate_resource instead — it preserves history, ends future allocations and disables their login."
+        )
     await resources_collection.delete_one({"_id": ObjectId(rid)})
-    return _ok(f"Resource '{name}' deleted (cascade: allocations + timesheets removed)")
+    await users_collection.update_many({"resource_id": rid}, {"$unset": {"resource_id": ""}})
+    return _ok(f"Resource '{name}' deleted (no history existed)")
+
+
+async def _h_deactivate_resource(action: dict, user: dict) -> dict:
+    rid = action.get("resource_id")
+    if not rid or not ObjectId.is_valid(rid):
+        return _err("Invalid resource_id")
+    from utils import deactivate_resource_core
+    result = await deactivate_resource_core(rid)
+    return _ok(result["message"]) if result.get("success") else _err(result.get("message", "Failed"))
+
+
+async def _h_reactivate_resource(action: dict, user: dict) -> dict:
+    rid = action.get("resource_id")
+    if not rid or not ObjectId.is_valid(rid):
+        return _err("Invalid resource_id")
+    from utils import reactivate_resource_core
+    result = await reactivate_resource_core(rid)
+    return _ok(result["message"]) if result.get("success") else _err(result.get("message", "Failed"))
 
 
 async def _h_sync_phase_to_wbs(action: dict, user: dict) -> dict:
@@ -651,7 +675,24 @@ register("delete_resource",
          required_fields=["resource_id"],
          is_destructive=True,
          category="resource",
-         description="Delete a team member (cascade: their allocations and timesheets are removed)",
+         description="Hard-delete a team member — only allowed if they have NO allocations/timesheets; otherwise use deactivate_resource",
+         example={"resource_id": "<id>"},
+         audit_entity_type="resource")
+
+register("deactivate_resource",
+         handler=_h_deactivate_resource,
+         required_fields=["resource_id"],
+         is_destructive=True,
+         category="resource",
+         description="Deactivate a team member (e.g. they left the company): preserves history, ends future allocations today, disables their login",
+         example={"resource_id": "<id>"},
+         audit_entity_type="resource")
+
+register("reactivate_resource",
+         handler=_h_reactivate_resource,
+         required_fields=["resource_id"],
+         category="resource",
+         description="Reactivate a previously deactivated team member and re-enable their login",
          example={"resource_id": "<id>"},
          audit_entity_type="resource")
 

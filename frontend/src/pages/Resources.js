@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getResources, createResource, updateResource, deleteResource, getMe } from '../api';
+import { getResources, createResource, updateResource, deleteResource, deactivateResource, reactivateResource, getMe } from '../api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -12,7 +12,9 @@ import {
   DialogDescription,
 } from '../components/ui/dialog';
 import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Badge } from '../components/ui/badge';
+import { Plus, Edit, Trash2, UserX, UserCheck } from 'lucide-react';
+import { toast } from '../hooks/use-toast';
 import {
   Table,
   TableBody,
@@ -72,6 +74,31 @@ const Resources = ({ token }) => {
     mutationFn: deleteResource,
     onSuccess: () => {
       queryClient.invalidateQueries(['resources']);
+      toast({ title: 'Resource deleted' });
+    },
+    onError: (error) => {
+      const detail = error?.response?.data?.detail;
+      toast({
+        title: error?.response?.status === 409 ? 'Cannot delete — has history' : 'Delete failed',
+        description: typeof detail === 'string' ? detail : 'Use Deactivate to preserve history.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const deactivateMutation = useMutation({
+    mutationFn: deactivateResource,
+    onSuccess: (response) => {
+      queryClient.invalidateQueries(['resources']);
+      toast({ title: 'Resource deactivated', description: response?.data?.message });
+    },
+  });
+
+  const reactivateMutation = useMutation({
+    mutationFn: reactivateResource,
+    onSuccess: (response) => {
+      queryClient.invalidateQueries(['resources']);
+      toast({ title: 'Resource reactivated', description: response?.data?.message });
     },
   });
 
@@ -105,9 +132,19 @@ const Resources = ({ token }) => {
   };
 
   const handleDelete = (id) => {
-    if (window.confirm('Are you sure you want to delete this resource?')) {
+    if (window.confirm('Permanently delete this resource? Only possible if they have no allocations or timesheets — otherwise use Deactivate.')) {
       deleteMutation.mutate(id);
     }
+  };
+
+  const handleDeactivate = (resource) => {
+    if (window.confirm(`Deactivate ${resource.name}? Their history is kept, future allocations are removed, current allocations end today, and any linked login is disabled.`)) {
+      deactivateMutation.mutate(resource.id);
+    }
+  };
+
+  const handleReactivate = (resource) => {
+    reactivateMutation.mutate(resource.id);
   };
 
   const isAdmin = userData?.role === 'admin' || userData?.role === 'super_admin';
@@ -143,12 +180,13 @@ const Resources = ({ token }) => {
                 <TableHead>Resource</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Standard Capacity</TableHead>
+                <TableHead>Status</TableHead>
                 {isAdmin && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {resources?.map((resource) => (
-                <TableRow key={resource.id} data-testid={`resource-${resource.id}`}>
+                <TableRow key={resource.id} data-testid={`resource-${resource.id}`} className={resource.active === false ? 'opacity-60' : ''}>
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="w-10 h-10">
@@ -160,6 +198,17 @@ const Resources = ({ token }) => {
                   </TableCell>
                   <TableCell>{resource.role}</TableCell>
                   <TableCell>{resource.standard_capacity}%</TableCell>
+                  <TableCell>
+                    {resource.active === false ? (
+                      <Badge variant="outline" className="border-[#98A2B3] text-[#667085]" data-testid={`resource-status-inactive-${resource.id}`}>
+                        Inactive
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="border-[#16B364] text-[#065F46]" data-testid={`resource-status-active-${resource.id}`}>
+                        Active
+                      </Badge>
+                    )}
+                  </TableCell>
                   {isAdmin && (
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -171,10 +220,34 @@ const Resources = ({ token }) => {
                         >
                           <Edit size={14} />
                         </Button>
+                        {resource.active === false ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleReactivate(resource)}
+                            title="Reactivate resource"
+                            className="text-[#067647]"
+                            data-testid={`reactivate-resource-${resource.id}`}
+                          >
+                            <UserCheck size={14} />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeactivate(resource)}
+                            title="Deactivate (keeps history, ends allocations, disables login)"
+                            className="text-[#B54708]"
+                            data-testid={`deactivate-resource-${resource.id}`}
+                          >
+                            <UserX size={14} />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleDelete(resource.id)}
+                          title="Delete permanently (only if no history)"
                           data-testid={`delete-resource-${resource.id}`}
                         >
                           <Trash2 size={14} />

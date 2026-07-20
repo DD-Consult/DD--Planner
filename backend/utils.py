@@ -1,5 +1,5 @@
 from bson import ObjectId
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import re
 
 from database import resources_collection, SYDNEY_TZ
@@ -97,6 +97,65 @@ async def find_user_resource(current_user: dict):
             return r
 
     return None
+
+
+async def deactivate_resource_core(resource_id: str) -> dict:
+    """Soft-delete a resource: keep all history, end future allocations today,
+    disable linked login accounts. Returns a summary dict."""
+    from database import resources_collection as rc, allocations_collection, users_collection
+    res = await rc.find_one({"_id": ObjectId(resource_id)})
+    if not res:
+        return {"success": False, "message": "Resource not found"}
+    now = datetime.now(timezone.utc)
+    today = datetime(now.year, now.month, now.day)
+    removed = await allocations_collection.delete_many({
+        "resource_id": resource_id, "start_date": {"$gt": today},
+    })
+    trimmed = await allocations_collection.update_many(
+        {"resource_id": resource_id, "start_date": {"$lte": today}, "end_date": {"$gt": today}},
+        {"$set": {"end_date": today}},
+    )
+    await rc.update_one(
+        {"_id": ObjectId(resource_id)},
+        {"$set": {"active": False, "deactivated_at": now.isoformat()}},
+    )
+    users = await users_collection.update_many(
+        {"resource_id": resource_id}, {"$set": {"disabled": True}}
+    )
+    return {
+        "success": True,
+        "name": res.get("name", "?"),
+        "future_allocations_removed": removed.deleted_count,
+        "allocations_ended_today": trimmed.modified_count,
+        "users_disabled": users.modified_count,
+        "message": (
+            f"Resource '{res.get('name')}' deactivated. "
+            f"{removed.deleted_count} future allocation(s) removed, "
+            f"{trimmed.modified_count} active allocation(s) ended today, "
+            f"{users.modified_count} linked login(s) disabled. History preserved."
+        ),
+    }
+
+
+async def reactivate_resource_core(resource_id: str) -> dict:
+    """Reactivate a resource and re-enable linked login accounts."""
+    from database import resources_collection as rc, users_collection
+    res = await rc.find_one({"_id": ObjectId(resource_id)})
+    if not res:
+        return {"success": False, "message": "Resource not found"}
+    await rc.update_one(
+        {"_id": ObjectId(resource_id)},
+        {"$set": {"active": True}, "$unset": {"deactivated_at": ""}},
+    )
+    users = await users_collection.update_many(
+        {"resource_id": resource_id}, {"$set": {"disabled": False}}
+    )
+    return {
+        "success": True,
+        "name": res.get("name", "?"),
+        "users_enabled": users.modified_count,
+        "message": f"Resource '{res.get('name')}' reactivated. {users.modified_count} linked login(s) re-enabled.",
+    }
 
 
 async def user_leads_project(current_user: dict, project_id: str) -> bool:

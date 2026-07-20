@@ -49,6 +49,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     user = await users_collection.find_one({"email": email})
     if user is None:
         raise credentials_exception
+    if user.get("disabled"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled. Contact an administrator.")
     return serialize_doc(user)
 
 

@@ -39,6 +39,11 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if user.get("disabled"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled. Contact an administrator.",
+        )
     
     access_token = create_access_token(data={"sub": user["email"]})
     user_data = serialize_doc(user)
@@ -240,6 +245,49 @@ async def reset_user_password(
         raise HTTPException(status_code=404, detail="User not found")
         
     return {"message": f"Password reset to '{default_password}'"}
+
+
+def _guard_user_target(target: dict, admin: dict, verb: str):
+    """Self-protection + role hierarchy guards for user admin operations."""
+    if str(target["_id"]) == str(admin.get("id") or admin.get("_id")):
+        raise HTTPException(status_code=400, detail=f"You cannot {verb} your own account")
+    if target.get("role") in (UserRole.ADMIN, UserRole.SUPER_ADMIN) and admin.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail=f"Only a Super Admin can {verb} admin accounts")
+
+
+@router.put("/api/admin/users/{user_id}/status")
+async def set_user_status(
+    user_id: str,
+    disabled: bool,
+    admin: dict = Depends(require_admin_or_above)
+):
+    """Disable or enable a user account. Disabled users cannot log in and existing sessions are rejected."""
+    target = await users_collection.find_one({"_id": ObjectId(user_id)})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    _guard_user_target(target, admin, "disable" if disabled else "enable")
+    
+    await users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"disabled": disabled}}
+    )
+    return {"message": f"User '{target.get('email')}' {'disabled' if disabled else 'enabled'}"}
+
+
+@router.delete("/api/admin/users/{user_id}")
+async def delete_user(
+    user_id: str,
+    admin: dict = Depends(require_admin_or_above)
+):
+    """Delete a user login account (any role). Never touches project history — 
+    resources, allocations and timesheets are keyed to resources, not users."""
+    target = await users_collection.find_one({"_id": ObjectId(user_id)})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    _guard_user_target(target, admin, "delete")
+    
+    await users_collection.delete_one({"_id": ObjectId(user_id)})
+    return {"message": f"User '{target.get('email')}' deleted"}
 
 
 @router.post("/api/admin/clients", response_model=ClientUserResponse)
