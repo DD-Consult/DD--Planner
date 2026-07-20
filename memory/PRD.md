@@ -249,4 +249,16 @@ DD Planner is a full-stack resource planning and project management application 
 - **Specialist Sub-Agents**: @resource / @budget / @risk / @schedule routing via `services/specialist_agents.py`
 - **Agent Memory**: `ai_memory` collection + full CRUD `/api/ai/memory` + `save_memory` AI action + `AIMemoryPanel.js` in project settings + auto-injection into chat prompts
 - New MongoDB collections: `ai_memory`, `ai_health_reports`
+
+## Session: Resource/Staff View Audit & Fixes (Feb 2026)
+
+### Issues Found & Fixed
+1. **Allocations scoped**: `GET /api/allocations` now filters to own `resource_id` for non-admin users. `/allocations` route restricted to `admin`/`super_admin` only. `My Allocations` nav item now resource-only (removed from admin nav to avoid duplication).
+2. **Leaves scoped**: `GET /api/leaves` filters by own resource for non-admin. `POST /api/leaves` — resources can create their own leave (no `resource_id` required; auto-filled by backend). `DELETE` — resources can only delete their own entries (403 otherwise). Admins still have full control.
+3. **My Timesheets page**: New `GET /api/timesheets/history` returns own timesheet entries grouped by week. New `/my-timesheets` route + `MyTimesheets.js` with: read-only history view, autofill current week, submit button, amber warning banner "Timesheet history is read-only. To make corrections, please contact your admin.", "Load older weeks" pagination.
+4. **Leaves.js** rewritten to be role-aware: admin sees full team list + Resource column; resource sees only own entries + hides Resource column.
+5. **AddLeaveDialog**: Added `preselectedResourceId` prop — when set (resource users), hides resource picker and auto-fills from linked resource.
+6. **LeaveCreate schema**: `resource_id` changed to `Optional[str]` (backend auto-fills for resource users).
+- 21/21 new tests green (iter 26), 113/113 total regression green
+
 - 39/39 tests green (iter 25), 74/74 total regression
