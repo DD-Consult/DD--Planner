@@ -80,30 +80,62 @@ async def clear_ai_settings(current_user: dict = Depends(require_super_admin)):
 
 @router.get("/api/leaves", response_model=List[LeaveResponse])
 async def get_leaves(current_user: dict = Depends(get_current_user)):
-    cursor = leaves_collection.find()
+    role = current_user.get("role", "")
+    is_admin = role in ("admin", "super_admin")
+    if is_admin:
+        cursor = leaves_collection.find()
+    else:
+        # Resources see only their own leaves
+        from utils import find_user_resource
+        resource = await find_user_resource(current_user)
+        if not resource:
+            return []
+        cursor = leaves_collection.find({"resource_id": str(resource["_id"])})
     leaves = await cursor.to_list(length=10000)
     return serialize_doc(leaves)
 
 
 @router.post("/api/leaves", response_model=LeaveResponse)
-async def create_leave(leave: LeaveCreate, admin: dict = Depends(require_admin)):
+async def create_leave(leave: LeaveCreate, current_user: dict = Depends(get_current_user)):
+    role = current_user.get("role", "")
+    is_admin = role in ("admin", "super_admin")
     leave_doc = leave.dict()
+    if not is_admin:
+        # Resources can only create leave for themselves
+        from utils import find_user_resource
+        resource = await find_user_resource(current_user)
+        if not resource:
+            raise HTTPException(status_code=403, detail="No resource profile linked to your account. Contact an admin.")
+        # Force resource_id to own resource
+        leave_doc["resource_id"] = str(resource["_id"])
+    else:
+        # Admins must specify a resource_id
+        if not leave_doc.get("resource_id"):
+            raise HTTPException(status_code=400, detail="resource_id is required")
     # Convert date to datetime for MongoDB
     if isinstance(leave_doc.get("start_date"), date):
         leave_doc["start_date"] = datetime.combine(leave_doc["start_date"], datetime.min.time())
     if isinstance(leave_doc.get("end_date"), date):
         leave_doc["end_date"] = datetime.combine(leave_doc["end_date"], datetime.min.time())
-    
     result = await leaves_collection.insert_one(leave_doc)
     leave_doc["_id"] = result.inserted_id
     return serialize_doc(leave_doc)
 
 
 @router.delete("/api/leaves/{leave_id}")
-async def delete_leave(leave_id: str, admin: dict = Depends(require_admin)):
-    result = await leaves_collection.delete_one({"_id": ObjectId(leave_id)})
-    if result.deleted_count == 0:
+async def delete_leave(leave_id: str, current_user: dict = Depends(get_current_user)):
+    role = current_user.get("role", "")
+    is_admin = role in ("admin", "super_admin")
+    leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
+    if not leave:
         raise HTTPException(status_code=404, detail="Leave not found")
+    if not is_admin:
+        # Resources can only delete their own leave
+        from utils import find_user_resource
+        resource = await find_user_resource(current_user)
+        if not resource or leave.get("resource_id") != str(resource["_id"]):
+            raise HTTPException(status_code=403, detail="You can only delete your own time off entries.")
+    await leaves_collection.delete_one({"_id": ObjectId(leave_id)})
     return {"message": "Leave deleted"}
 
 

@@ -617,6 +617,80 @@ async def submit_week_timesheets(week_start: str, current_user: dict = Depends(g
     }
 
 
+@router.get("/api/timesheets/history")
+async def get_my_timesheet_history(
+    weeks: int = 12,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get own timesheet history for the past N weeks (default 12 = 3 months).
+    Returns entries grouped by week_start_date, enriched with project/phase names.
+    Accessible to all authenticated users — always scoped to own resource.
+    """
+    resource = await find_user_resource(current_user)
+    if not resource:
+        return {"weeks": [], "resource": None, "total_weeks_with_data": 0}
+    resource_id = str(resource["_id"])
+
+    # Date boundary
+    today = datetime.now(timezone.utc)
+    cutoff = today - timedelta(weeks=weeks)
+
+    cursor = timesheets_collection.find({
+        "resource_id": resource_id,
+        "$or": [
+            {"week_start_date": {"$gte": cutoff}},
+            {"week_start_date": {"$gte": cutoff.replace(tzinfo=None)}},
+        ]
+    }).sort("week_start_date", -1)
+    raw_timesheets = await cursor.to_list(length=2000)
+
+    # Bulk-fetch projects
+    project_ids_set = {t.get("project_id") for t in raw_timesheets if t.get("project_id")}
+    project_map: dict = {}
+    if project_ids_set:
+        try:
+            proj_cursor = projects_collection.find(
+                {"_id": {"$in": [ObjectId(p) for p in project_ids_set if ObjectId.is_valid(p)]}},
+                {"name": 1, "client_name": 1, "phases": 1}
+            )
+            async for p in proj_cursor:
+                project_map[str(p["_id"])] = p
+        except Exception:
+            pass
+
+    # Enrich and group by week
+    weeks_map: dict = {}
+    for ts in raw_timesheets:
+        doc = serialize_doc(ts)
+        pid = doc.get("project_id", "")
+        proj = project_map.get(pid, {})
+        doc["project_name"] = proj.get("name", "Unknown Project")
+        doc["client_name"] = proj.get("client_name", "")
+        # Resolve phase name
+        phase_name = "—"
+        for ph in proj.get("phases", []):
+            if ph.get("id") == doc.get("phase_id"):
+                phase_name = ph.get("name", "—")
+                break
+        doc["phase_name"] = phase_name
+
+        # Group key: first 10 chars of week_start_date string
+        ws = str(doc.get("week_start_date", ""))[:10]
+        if ws not in weeks_map:
+            weeks_map[ws] = {"week_start": ws, "entries": [], "total_planned": 0.0, "total_actual": 0.0}
+        weeks_map[ws]["entries"].append(doc)
+        weeks_map[ws]["total_planned"] += float(doc.get("planned_hours") or 0)
+        weeks_map[ws]["total_actual"] += float(doc.get("actual_hours") or 0)
+
+    sorted_weeks = sorted(weeks_map.values(), key=lambda w: w["week_start"], reverse=True)
+    return {
+        "resource": serialize_doc(resource),
+        "weeks": sorted_weeks,
+        "total_weeks_with_data": len(sorted_weeks),
+    }
+
+
 # =============================================================================
 # REPORTING ENDPOINTS (Planned vs Actual Analysis)
 # =============================================================================

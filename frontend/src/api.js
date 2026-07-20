@@ -285,6 +285,10 @@ export const getMyWeekTimesheets = (weekStart) =>
 export const getTimesheets = (weekStart) =>
   api.get(`/timesheets/my-week?week_start=${weekStart}&view=all`);
 
+// Get own timesheet history (last N weeks, grouped by week)
+export const getMyTimesheetHistory = (weeks = 12) =>
+  api.get('/timesheets/history', { params: { weeks } });
+
 // Update a timesheet entry
 export const updateTimesheet = (id, data) =>
   api.put(`/timesheets/${id}`, data);

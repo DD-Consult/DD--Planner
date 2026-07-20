@@ -24,6 +24,7 @@ import Holidays from './pages/Holidays';
 import Leaves from './pages/Leaves';
 import Users from './pages/Users';
 import ManageTimesheets from './pages/ManageTimesheets';
+import MyTimesheets from './pages/MyTimesheets';
 import Reports from './pages/Reports';
 import TimesheetReports from './pages/TimesheetReports';
 import PrintReport from './pages/PrintReport';
@@ -200,7 +201,7 @@ function App() {
                     <Route 
                       path="/allocations" 
                       element={
-                        <ProtectedRoute allowedRoles={['admin', 'super_admin', 'resource', 'contractor']}>
+                        <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                           <Allocations token={token} />
                         </ProtectedRoute>
                       } 
@@ -229,6 +230,15 @@ function App() {
                           <ManageTimesheets token={token} />
                         </ProtectedRoute>
                       } 
+                    />
+
+                    <Route
+                      path="/my-timesheets"
+                      element={
+                        <ProtectedRoute allowedRoles={['resource', 'contractor', 'admin', 'super_admin']}>
+                          <MyTimesheets token={token} />
+                        </ProtectedRoute>
+                      }
                     />
 
                     <Route 

@@ -25,7 +25,19 @@ class TimesheetConfirmation(BaseModel):
 
 @router.get("/api/allocations", response_model=List[AllocationResponse])
 async def get_allocations(current_user: dict = Depends(get_current_user)):
-    cursor = allocations_collection.find().limit(500)
+    role = current_user.get("role", "")
+    is_admin = role in ("admin", "super_admin")
+
+    if is_admin:
+        cursor = allocations_collection.find().limit(500)
+    else:
+        # Resources/contractors see only their own allocations
+        from utils import find_user_resource
+        resource = await find_user_resource(current_user)
+        if not resource:
+            return []
+        cursor = allocations_collection.find({"resource_id": str(resource["_id"])}).limit(500)
+
     allocations = await cursor.to_list(length=500)
 
     # Build lookup maps for resource and project names

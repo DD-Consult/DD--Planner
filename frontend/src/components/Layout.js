@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { setAuthToken, getMe, getResources, getProjects, getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead } from '../api';
-import { LayoutDashboard, Users, Briefcase, Calendar, LogOut, Settings as SettingsIcon, CalendarOff, CalendarDays, FlaskConical, Clock, Sparkles, BarChart3, Bell, Check, X, User, Building2, Menu } from 'lucide-react';
+import { LayoutDashboard, Users, Briefcase, Calendar, LogOut, Settings as SettingsIcon, CalendarOff, CalendarDays, FlaskConical, Clock, Sparkles, BarChart3, Bell, Check, X, User, Building2, Menu, ClipboardList } from 'lucide-react';
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
@@ -452,8 +452,9 @@ const Layout = ({ children, token, onLogout }) => {
     { path: '/resources', label: 'Resources', icon: Users, roles: ['admin', 'super_admin'], tooltip: 'Manage team members' },
     { path: '/projects', label: 'Projects', icon: Briefcase, roles: ['admin', 'super_admin', 'resource'], tooltip: 'View and manage all projects' },
     { path: '/portfolio', label: 'Portfolio', icon: Building2, roles: ['admin', 'super_admin'], tooltip: 'Company-wide portfolio view with timeline and hours analysis' },
-    { path: '/my-allocations', label: 'My Allocations', icon: User, roles: ['resource', 'contractor', 'admin', 'super_admin'], tooltip: 'View your project allocations and capacity' },
-    { path: '/allocations', label: 'Allocations', icon: Calendar, roles: ['admin', 'super_admin', 'resource', 'contractor'], tooltip: 'Manage resource assignments' },
+    { path: '/my-allocations', label: 'My Allocations', icon: User, roles: ['resource', 'contractor'], tooltip: 'View your project allocations and capacity' },
+    { path: '/allocations', label: 'Allocations', icon: Calendar, roles: ['admin', 'super_admin'], tooltip: 'Manage resource assignments' },
+    { path: '/my-timesheets', label: 'My Timesheets', icon: ClipboardList, roles: ['resource', 'contractor'], tooltip: 'View your timesheet history and autofill current week' },
     { path: '/users', label: 'Users', icon: Users, roles: ['admin', 'super_admin'], tooltip: 'Manage user accounts and roles' },
     { path: '/manage-timesheets', label: 'Manage Timesheets', icon: Clock, roles: ['super_admin'], tooltip: 'View and edit all user timesheets' },
     { path: '/leaves', label: 'Time Off', icon: CalendarOff, roles: ['admin', 'super_admin', 'resource'], tooltip: 'Track vacations and holidays' },

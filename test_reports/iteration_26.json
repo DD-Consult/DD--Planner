@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 26 — Resource-scoping fixes fully tested and passing. 21/21 tests green. Covers: allocations scoping (admin sees all, riley sees only own and all hers match her resource_id), leaves scoping (admin sees all; riley sees own; riley can POST without resource_id and backend auto-fills; riley gets 403 on DELETE of another's leave; admin gets 400 on POST without resource_id), new /api/timesheets/history endpoint (correct shape, riley entries scoped to her resource_id, custom weeks param, admin response), /api/my-allocations regression, and admin allocation creation regression.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/timesheets/history",
+        "issue": "Early-exit path (when user has no linked resource) returned {weeks:[], resource:null} WITHOUT total_weeks_with_data. Fixed in timesheets.py line 633 to return total_weeks_with_data:0 in that path."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration26_resource_scoping.py",
+    "/app/test_reports/pytest/iteration26.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "timesheets.py get_my_timesheet_history: early-exit when resource is None now returns total_weeks_with_data:0 (fixed in this iteration).",
+    "leaves DELETE: currently does a live DB lookup every call to find_user_resource. Acceptable for now given load.",
+    "allocations.py GET /api/allocations: resource scoping correctly uses find_user_resource(). Admin path uses .limit(500); resource path also uses .limit(500). No issues."
+  ],
+  "updated_files": [
+    "/app/backend/routes/timesheets.py",
+    "/app/backend/tests/test_iteration26_resource_scoping.py"
+  ],
+  "success_rate": {
+    "backend": "100% (21/21)",
+    "frontend": "N/A (backend-only test)"
+  },
+  "test_credentials": {
+    "super_admin": "admin@test.com / admin123 (super_admin role in local preview DB)",
+    "resource": "riley@test.com / riley123"
+  },
+  "seed_data_creation": "Test leaves created and cleaned up within test run. No persistent test data left.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "21/21 tests pass for iteration 26 resource-scoping fixes. Key test file: /app/backend/tests/test_iteration26_resource_scoping.py. Tests cover: (1) TestHealthRegression, (2) TestAllocationsScoping — 4 tests: admin sees all, riley sees own, riley count <= admin, riley allocations all have her resource_id, (3) TestLeavesScoping — 6 tests: admin/riley list, riley create without resource_id (auto-fill verified), admin 400 on missing resource_id, riley delete own, riley 403 on other's leave, (4) TestTimesheetHistory — 4 tests: shape check, scoped entries, admin shape, custom weeks param, (5) TestMyAllocationsRegression, (6) TestAdminAllocationRegression — create+cleanup. One minor bug fixed: /api/timesheets/history early-exit path now consistently returns total_weeks_with_data:0."
+}

@@ -22,10 +22,12 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Calendar, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
-export const AddLeaveDialog = ({ isOpen, onClose, resources }) => {
+export const AddLeaveDialog = ({ isOpen, onClose, resources, preselectedResourceId }) => {
   const queryClient = useQueryClient();
+  const isPreselected = !!preselectedResourceId;
+
   const [formData, setFormData] = useState({
-    resource_id: undefined,
+    resource_id: preselectedResourceId || undefined,
     start_date: '',
     end_date: '',
     type: 'vacation',
@@ -33,11 +35,11 @@ export const AddLeaveDialog = ({ isOpen, onClose, resources }) => {
   });
   const [error, setError] = useState('');
   
-  // Reset form when dialog opens/closes
+  // Reset form when dialog opens/closes — keep preselected resource
   useEffect(() => {
     if (!isOpen) {
       setFormData({
-        resource_id: undefined,
+        resource_id: preselectedResourceId || undefined,
         start_date: '',
         end_date: '',
         type: 'vacation',
@@ -45,7 +47,14 @@ export const AddLeaveDialog = ({ isOpen, onClose, resources }) => {
       });
       setError('');
     }
-  }, [isOpen]);
+  }, [isOpen, preselectedResourceId]);
+
+  // Auto-select when preselectedResourceId changes while open
+  useEffect(() => {
+    if (preselectedResourceId) {
+      setFormData((prev) => ({ ...prev, resource_id: preselectedResourceId }));
+    }
+  }, [preselectedResourceId]);
 
   const createMutation = useMutation({
     mutationFn: createLeave,
@@ -79,7 +88,8 @@ export const AddLeaveDialog = ({ isOpen, onClose, resources }) => {
     setError('');
 
     // Validation
-    if (formData.resource_id === undefined || formData.resource_id === '' || !formData.start_date || !formData.end_date) {
+    const effectiveResourceId = formData.resource_id || preselectedResourceId;
+    if (!effectiveResourceId || !formData.start_date || !formData.end_date) {
       setError('Please fill in all required fields');
       return;
     }
@@ -89,7 +99,7 @@ export const AddLeaveDialog = ({ isOpen, onClose, resources }) => {
       return;
     }
 
-    createMutation.mutate(formData);
+    createMutation.mutate({ ...formData, resource_id: effectiveResourceId });
   };
 
   return (
@@ -103,27 +113,29 @@ export const AddLeaveDialog = ({ isOpen, onClose, resources }) => {
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Resource Selection */}
-          <div>
-            <Label htmlFor="resource">Resource *</Label>
-            <Select
-              value={formData.resource_id || ''}
-              onValueChange={(value) => {
-                setFormData({ ...formData, resource_id: value });
-              }}
-            >
-              <SelectTrigger id="resource" data-testid="leave-resource-select">
-                <SelectValue placeholder="Select a resource" />
-              </SelectTrigger>
-              <SelectContent>
-                {resources?.filter((resource) => resource.active !== false).map((resource) => (
-                  <SelectItem key={resource.id} value={resource.id}>
-                    {resource.name} - {resource.role}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Resource Selection — hidden for resource users (auto-assigned) */}
+          {!isPreselected && (
+            <div>
+              <Label htmlFor="resource">Resource *</Label>
+              <Select
+                value={formData.resource_id || ''}
+                onValueChange={(value) => {
+                  setFormData({ ...formData, resource_id: value });
+                }}
+              >
+                <SelectTrigger id="resource" data-testid="leave-resource-select">
+                  <SelectValue placeholder="Select a resource" />
+                </SelectTrigger>
+                <SelectContent>
+                  {resources?.filter((resource) => resource.active !== false).map((resource) => (
+                    <SelectItem key={resource.id} value={resource.id}>
+                      {resource.name} - {resource.role}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Leave Type */}
           <div>

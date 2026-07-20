@@ -297,7 +297,7 @@ class BulkRiskCreate(BaseModel):
 
 
 class LeaveCreate(BaseModel):
-    resource_id: str
+    resource_id: Optional[str] = None  # Optional: backend auto-fills for resource users
     start_date: date
     end_date: date
     type: str

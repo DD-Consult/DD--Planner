@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getLeaves, deleteLeave, getResources } from '../api';
+import { getLeaves, deleteLeave, getResources, getMyResource } from '../api';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import {
@@ -15,12 +15,25 @@ import { CalendarOff, Plus, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { AddLeaveDialog } from '../components/AddLeaveDialog';
+import { useQuery as useMe } from '@tanstack/react-query';
+import { getMe } from '../api';
 
 const Leaves = () => {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  // Fetch leaves
+  // Get current user role
+  const { data: meData } = useMe({
+    queryKey: ['me'],
+    queryFn: async () => {
+      const res = await getMe();
+      return res.data;
+    },
+  });
+  const isAdmin = meData?.role === 'admin' || meData?.role === 'super_admin';
+  const isResource = !isAdmin && (meData?.role === 'resource' || meData?.role === 'contractor');
+
+  // Fetch leaves (backend already scopes for non-admins)
   const { data: leaves, isLoading: leavesLoading } = useQuery({
     queryKey: ['leaves'],
     queryFn: async () => {
@@ -29,20 +42,38 @@ const Leaves = () => {
     },
   });
 
-  // Fetch resources for the dialog
+  // Fetch resources for the dialog — admins get full list, resources get own
   const { data: resources } = useQuery({
     queryKey: ['resources'],
     queryFn: async () => {
       const response = await getResources();
       return response.data;
     },
+    enabled: isAdmin,
   });
+
+  // Resource user: fetch own resource profile for the dialog
+  const { data: ownResourceData } = useQuery({
+    queryKey: ['myResource'],
+    queryFn: async () => {
+      const res = await getMyResource();
+      return res.data;
+    },
+    enabled: isResource,
+  });
+
+  // Build resource list for AddLeaveDialog
+  const dialogResources = isAdmin
+    ? (resources || []).filter((r) => r.active !== false)
+    : ownResourceData
+    ? [{ id: ownResourceData.id, name: ownResourceData.name, role: ownResourceData.role }]
+    : [];
 
   // Delete leave mutation
   const deleteMutation = useMutation({
     mutationFn: deleteLeave,
     onSuccess: () => {
-      toast.success('Leave deleted successfully');
+      toast.success('Leave deleted');
       queryClient.invalidateQueries({ queryKey: ['leaves'] });
       queryClient.invalidateQueries({ queryKey: ['capacity'] });
     },
@@ -52,7 +83,7 @@ const Leaves = () => {
   });
 
   const handleDelete = (id) => {
-    if (window.confirm('Are you sure you want to delete this leave entry?')) {
+    if (window.confirm('Are you sure you want to delete this time off entry?')) {
       deleteMutation.mutate(id);
     }
   };
@@ -60,7 +91,9 @@ const Leaves = () => {
   const getLeaveTypeColor = (type) => {
     const colors = {
       vacation: 'bg-[#E6F7FB] text-[#0B5566] border-[#B2E7F5]',
+      'Annual Leave': 'bg-[#E6F7FB] text-[#0B5566] border-[#B2E7F5]',
       sick: 'bg-[#FFF8E5] text-[#7A4E00] border-[#FCD34D]',
+      'Sick Leave': 'bg-[#FFF8E5] text-[#7A4E00] border-[#FCD34D]',
       personal: 'bg-[#F0F2F5] text-[#475467] border-[#D0D5DD]',
       other: 'bg-[#F7F7F8] text-[#667085] border-[#E6E8EC]',
     };
@@ -68,6 +101,7 @@ const Leaves = () => {
   };
 
   const getResourceName = (resourceId) => {
+    if (ownResourceData && ownResourceData.id === resourceId) return ownResourceData.name;
     const resource = resources?.find((r) => r.id === resourceId);
     return resource ? `${resource.name} (${resource.role})` : resourceId;
   };
@@ -79,13 +113,19 @@ const Leaves = () => {
         <div>
           <h1 className="text-3xl font-semibold flex items-center gap-3" style={{ fontFamily: 'Space Grotesk' }}>
             <CalendarOff size={32} />
-            Time Off Management
+            {isAdmin ? 'Time Off Management' : 'My Time Off'}
           </h1>
           <p className="text-sm text-[#667085] mt-1">
-            Manage vacation, sick leave, and other time off for resources
+            {isAdmin
+              ? 'Manage vacation, sick leave, and other time off for resources'
+              : 'View and manage your personal time off entries'}
           </p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)} data-testid="add-leave-button">
+        <Button
+          onClick={() => setIsDialogOpen(true)}
+          data-testid="add-leave-button"
+          disabled={isResource && !ownResourceData}
+        >
           <Plus size={16} className="mr-2" />
           Add Time Off
         </Button>
@@ -96,7 +136,7 @@ const Leaves = () => {
         {leavesLoading ? (
           <div className="p-8 text-center text-[#667085]">
             <Loader2 className="animate-spin mx-auto mb-2" size={24} />
-            Loading leaves...
+            Loading time off entries...
           </div>
         ) : leaves?.length === 0 ? (
           <div className="p-8 text-center">
@@ -111,7 +151,7 @@ const Leaves = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Resource</TableHead>
+                {isAdmin && <TableHead>Resource</TableHead>}
                 <TableHead>Type</TableHead>
                 <TableHead>Start Date</TableHead>
                 <TableHead>End Date</TableHead>
@@ -121,10 +161,12 @@ const Leaves = () => {
             </TableHeader>
             <TableBody>
               {leaves?.map((leave) => (
-                <TableRow key={leave._id} data-testid={`leave-row-${leave._id}`}>
-                  <TableCell className="font-medium">
-                    {getResourceName(leave.resource_id)}
-                  </TableCell>
+                <TableRow key={leave._id || leave.id} data-testid={`leave-row-${leave._id || leave.id}`}>
+                  {isAdmin && (
+                    <TableCell className="font-medium">
+                      {getResourceName(leave.resource_id)}
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Badge className={getLeaveTypeColor(leave.type)}>
                       {leave.type}
@@ -143,9 +185,9 @@ const Leaves = () => {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDelete(leave._id)}
-                      disabled={deleteMutation.isLoading}
-                      data-testid={`delete-leave-${leave._id}`}
+                      onClick={() => handleDelete(leave._id || leave.id)}
+                      disabled={deleteMutation.isPending}
+                      data-testid={`delete-leave-${leave._id || leave.id}`}
                     >
                       <Trash2 size={16} className="text-[#EF4444]" />
                     </Button>
@@ -161,7 +203,8 @@ const Leaves = () => {
       <AddLeaveDialog
         isOpen={isDialogOpen}
         onClose={() => setIsDialogOpen(false)}
-        resources={resources}
+        resources={dialogResources}
+        preselectedResourceId={isResource ? ownResourceData?.id : undefined}
       />
     </div>
   );
