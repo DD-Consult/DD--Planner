@@ -230,3 +230,9 @@ DD Planner is a full-stack resource planning and project management application 
 
 ### Testing
 - 13/13 pass: backend/tests/test_iteration22_lifecycle.py; 38/38 regression (iters 19-21); frontend UI verified by testing agent
+
+## Session: Hide Deactivated Resources Everywhere (June 2026)
+- Deactivated resources now hidden from: ALL pickers/dropdowns (17 sites: allocations dialogs, project wizard, lead pickers, WBS assignee, leaves, timesheet filters), Allocations timeline rows, Dashboard roles, and report endpoints (planned-vs-actual breakdown, time-tracking summary, resource-utilization, capacity) + AI chat/suggestion contexts
+- Resources page intentionally still shows them (Inactive badge) for management; historical name lookups unaffected (GET /api/resources returns all, filtering per-consumer)
+- Testing agent found 2 leaked pickers (Allocations dialog, ProjectWizard alloc step) — fixed & UI-verified; 51/51 regression green
+- Data fix: restored Riley as Website Redesign lead; purged leaked TEST_ resources from earlier test runs
