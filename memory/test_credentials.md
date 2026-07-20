@@ -18,3 +18,6 @@
 ## Local Preview DB (project_planner)
 - Super Admin: `admin@test.com` / `admin123` (promoted from admin to super_admin during consistency testing)
 - Client: `client@test.com` / `client123`
+
+## AI Chat Test Accounts (local preview DB)
+- Resource: `riley@test.com` / `riley123` (linked resource "Riley Resource", allocated only to "Website Redesign")

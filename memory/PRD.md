@@ -172,3 +172,25 @@ DD Planner is a full-stack resource planning and project management application 
 - Rename `wbs_summary.completion_percentage` (it's hours-burn, not completion) — unused in UI currently
 - Consider making HOURS_PER_WEEK a configurable org setting
 - Capacity report endpoint is /api/reports/capacity (docs naming)
+
+## Session: AI Agent Review, Conversational Tone & Non-Admin Lockdown (June 2026)
+
+### AI Action Inventory (reviewed)
+- 46 actions total: 17 legacy (`services/ai_actions.py`) + 29 registry (`services/ai_actions_extended.py`, tiers 1-3)
+- Safety layers: admin permission, confirm tokens for destructive ops (10-min TTL), audit log, single-level undo, hallucination guard
+
+### Changes Implemented
+1. **Conversational persona** in chat system prompt (routes/ai.py): colleague-on-Slack tone, prose-first, numbers woven into sentences, bullets only for 3+ comparisons, natural action confirmations ("✅ Done — ...")
+2. **SECURITY FIX (critical)**: dispatch_action permission check moved BEFORE legacy fallback — previously ANY authenticated user (resource/client) could execute all 17 legacy actions (add_risk, remove_allocation, delete_wbs_task, create_project...) via chat or /api/ai/chat/execute-action
+3. **Role-scoped chat data**: resource/contractor → only allocated/lead projects + own timesheets; client → only allowed_project_ids, no timesheets, no allocation percentages (team names OK); users-list & change-log context blocks admin-only; leaves → own only for non-admins
+4. **Read-only mode** for non-admins: no action docs in prompt, conversational refusal + drafts the change request for an admin; action blocks stripped as defense-in-depth
+5. Fixed `create_leave` AI handler storing `reason` → now stores `type`/`notes` (matches Leave schema/UI)
+
+### Testing
+- 12/12 pass: backend/tests/test_iteration20_ai_security.py (report: test_reports/iteration_20.json)
+- Reusable regression suites: test_iteration19_consistency.py (budget math), test_iteration20_ai_security.py (AI permissions)
+
+### Known review findings NOT yet fixed (user to decide)
+- Legacy `remove_allocation` / `delete_wbs_task` auto-execute for admins with no confirm token (registry deletes require one)
+- `manage_phases` replaces whole phases array — partial list from AI could drop phases silently
+- routes/ai.py is 1800+ lines — candidate for splitting
