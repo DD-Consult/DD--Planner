@@ -236,3 +236,17 @@ DD Planner is a full-stack resource planning and project management application 
 - Resources page intentionally still shows them (Inactive badge) for management; historical name lookups unaffected (GET /api/resources returns all, filtering per-consumer)
 - Testing agent found 2 leaked pickers (Allocations dialog, ProjectWizard alloc step) — fixed & UI-verified; 51/51 regression green
 - Data fix: restored Riley as Website Redesign lead; purged leaked TEST_ resources from earlier test runs
+
+
+## Session: Destructive Action Guards & manage_phases Fix (Feb 2026)
+- `remove_allocation` and `delete_wbs_task` now require confirmation tokens (registered with `is_destructive=True`)
+- `manage_phases` defaults to merge mode — only supplied phases change; others preserved. `mode='replace'` for full replace.
+- 74/74 regression tests green (iter 24)
+
+## Session: AI Agent — Agentic Features (Feb 2026)
+- **Multi-Step Batch Plans**: `action_plan` AI format + `POST /api/ai/chat/execute-plan` + PlanCard frontend
+- **Proactive Health Monitor**: `services/health_monitor.py` + daily background task + `POST /api/ai/health-monitor/run` + `GET /api/ai/health-monitor/report`
+- **Specialist Sub-Agents**: @resource / @budget / @risk / @schedule routing via `services/specialist_agents.py`
+- **Agent Memory**: `ai_memory` collection + full CRUD `/api/ai/memory` + `save_memory` AI action + `AIMemoryPanel.js` in project settings + auto-injection into chat prompts
+- New MongoDB collections: `ai_memory`, `ai_health_reports`
+- 39/39 tests green (iter 25), 74/74 total regression
