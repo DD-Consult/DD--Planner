@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 27 — Full resource/staff end-to-end flow for riley@test.com fully tested. 29/29 backend tests pass. Frontend UI verified. All key features working: correct sidebar nav for resource role, My Allocations shows '50% · 20.0h/wk' format with correct 20.0h for 50% allocation, allocations/leaves/timesheets all scoped to riley's own resource, admin regression passing.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration27_resource_flow.py",
+    "/app/test_reports/pytest/iteration27.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "capacityHelpers.js formatAllocation() correctly uses 40h base — (percentage/100)*40. No issues.",
+    "MyAllocations.js allocation column shows 'X% · Y.0h/wk' using alloc.weekly_hours from backend. Correct.",
+    "Layout.js navItems: resource role correctly shows Dashboard, Projects, My Allocations, My Timesheets, Time Off, Holidays — and hides Resources, Portfolio, Allocations, Users, Reports, Manage Timesheets. Correct.",
+    "GET /api/allocations scoping in allocations.py: resources see only own allocations via find_user_resource(). Verified admin sees 19+, riley sees only hers.",
+    "GET /api/leaves scoping in ai.py: resources see only own leaves. Riley DELETE own=200, another=403. Working correctly.",
+    "GET /api/timesheets/history in timesheets.py: always scoped to own resource. Riley resource present in response."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration27_resource_flow.py"
+  ],
+  "success_rate": {
+    "backend": "100% (29/29)",
+    "frontend": "100% — all pages load correctly, correct nav, correct allocation format"
+  },
+  "test_credentials": {
+    "resource": "riley@test.com / riley123 (role=resource, linked to Riley Resource)",
+    "admin": "admin@test.com / admin123 (role=super_admin in local preview DB)"
+  },
+  "seed_data_creation": "Test leaves created and cleaned up within test run (TEST_iter27_riley_leave, TEST_iter27_other_leave). No persistent test data left.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "29/29 backend tests pass for iteration 27 full resource flow. Key test file: /app/backend/tests/test_iteration27_resource_flow.py. Test classes: TestHealthRegression, TestRileyLogin (role=resource, /api/auth/me), TestMyAllocations (shape + weekly_hours=(pct/100)*40 + 50%=20.0h verified), TestAllocationsScoping (admin>=19, riley<admin, all riley's are hers), TestLeavesScoping (admin all, riley own only), TestLeavesCreateDelete (auto-fill resource_id, admin 400 without resource_id, riley delete own 200, riley delete other 403), TestTimesheetHistory (shape, scoped, custom weeks param, admin shape), TestAdminRegression. UI confirmed: sidebar nav correct, My Allocations shows '50% · 20.0h/wk', My Timesheets shows read-only banner + autofill button, Time Off page loads. Note: /api/me is at /api/auth/me (not /api/me).",
+  "rca_of_issues": "No issues found. Two fixes from main agent verified: (1) formatAllocation now uses 40h base (percentage/100)*40 matching backend — 50%=20.0h confirmed both via API and UI. (2) MyAllocations.js uses alloc.weekly_hours from backend pre-calculated value displayed as 'X% · Y.0h/wk'."
+}

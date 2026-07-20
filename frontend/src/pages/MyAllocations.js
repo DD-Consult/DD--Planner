@@ -6,7 +6,6 @@ import { format, parseISO } from 'date-fns';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Calendar, Clock, Briefcase, AlertTriangle, TrendingUp, User } from 'lucide-react';
-import { formatAllocation } from '../utils/capacityHelpers';
 
 const MyAllocations = () => {
   const [period, setPeriod] = useState('month');
@@ -252,8 +251,11 @@ const MyAllocations = () => {
                       <div>
                         <div className="text-xs text-[#667085] mb-1">Allocation</div>
                         <div className="text-base font-semibold text-[#0B1220]">
-                          {alloc.percentage !== null && alloc.percentage !== undefined ? formatAllocation(alloc.percentage, summary?.standard_capacity || 100) : 
-                           alloc.hours !== null && alloc.hours !== undefined ? `${alloc.hours}h` : 'N/A'}
+                          {alloc.percentage !== null && alloc.percentage !== undefined
+                            ? `${alloc.percentage}% · ${alloc.weekly_hours !== undefined ? `${alloc.weekly_hours.toFixed(1)}h/wk` : ''}`
+                            : alloc.hours !== null && alloc.hours !== undefined
+                            ? `${alloc.hours}h total`
+                            : 'N/A'}
                         </div>
                       </div>
                       <div>
