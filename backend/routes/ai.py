@@ -1497,7 +1497,7 @@ Available actions:
 - create_project: {{"action":"create_project","name":"Project Name","client_name":"Client","status":"Active|Pipeline","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","budgeted_hours":100,"project_lead_id":null,"description":"Create new project"}}
 - create_allocation: {{"action":"create_allocation","resource_id":"...","project_id":"...","percentage":N,"start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","description":"..."}}
 - update_allocation: {{"action":"update_allocation","allocation_id":"...","percentage":N,"start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","description":"..."}}
-- remove_allocation: {{"action":"remove_allocation","allocation_id":"...","description":"Remove X from project Y"}}
+- remove_allocation [destructive — requires `confirm_token`]: {{"action":"remove_allocation","allocation_id":"...","description":"Remove X from project Y"}}
 - update_project_status: {{"action":"update_project_status","project_id":"...","status":"Active|Pipeline|Completed","description":"..."}}
 - update_project_dates: {{"action":"update_project_dates","project_id":"...","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","description":"Reschedule project"}}
 - add_risk: {{"action":"add_risk","project_id":"...","description":"risk text","impact":"Low|Medium|High|Critical","probability":"Low|Medium|High","mitigation":"optional mitigation plan","status":"Active|Mitigated|Accepted|Closed (default Active)","category":"Risk|Issue (default Risk)","summary":"..."}}
@@ -1510,7 +1510,7 @@ WBS (Work Breakdown Structure) ACTIONS (FIX #4):
 - generate_wbs: {{"action":"generate_wbs","project_id":"...","complexity":"simple|standard|detailed (default: standard)","additional_context":"optional context for AI generation","description":"Generate a Work Breakdown Structure for Project X"}}
 - create_wbs_task: {{"action":"create_wbs_task","project_id":"...","name":"Task Name","description":"Task description","estimated_hours":16,"priority":"low|medium|high|critical (default: medium)","phase_name":"Phase name","assigned_to":"resource_id (optional)","description":"Create task 'Backend API' in Project X"}}
 - update_wbs_task: {{"action":"update_wbs_task","task_id":"...","status":"todo|in_progress|done|on_hold|blocked","priority":"low|medium|high|critical","estimated_hours":20,"description":"Update task status or details"}}
-- delete_wbs_task: {{"action":"delete_wbs_task","task_id":"...","description":"Delete task and all its subtasks"}}
+- delete_wbs_task [destructive — requires `confirm_token`]: {{"action":"delete_wbs_task","task_id":"...","description":"Delete task and all its subtasks"}}
 - assign_wbs_task: {{"action":"assign_wbs_task","task_id":"...","resource_id":"...","description":"Assign task to team member"}}
 
 When user asks to "plan the project", "break down tasks", "create a WBS", or "decompose the project", use generate_wbs.
@@ -1575,7 +1575,7 @@ For the project(s) they lead ONLY, you can execute a limited action set. Same co
 
 Allowed actions (for led projects only):
 - update_project — patch fields: {{"action": "update_project", "project_id": "<id>", "name": "...", "budgeted_hours": 600, "status": "Active", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "description": "..."}} (include only fields to change)
-- manage_phases — REPLACE the full phases array (always send ALL phases, including unchanged ones): {{"action": "manage_phases", "project_id": "<id>", "phases": [{{"name": "Discovery", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "budgeted_hours": 80}}]}}
+- manage_phases — ADD or UPDATE phases without touching others (default merge mode). Only pass the phase(s) you want to change; existing phases are preserved. Use `"mode": "replace"` only to fully overwrite: {{"action": "manage_phases", "project_id": "<id>", "phases": [{{"name": "Discovery", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "budgeted_hours": 80}}], "mode": "merge"}}
 - reschedule_project — shift all dates: {{"action": "reschedule_project", "project_id": "<id>", "shift_days": 14}}
 - update_project_dates: {{"action": "update_project_dates", "project_id": "<id>", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"}}
 - update_project_status: {{"action": "update_project_status", "project_id": "<id>", "status": "Active"}}

@@ -105,37 +105,84 @@ async def _h_delete_project(action: dict, user: dict) -> dict:
 
 
 async def _h_manage_phases(action: dict, user: dict) -> dict:
-    """Replace the phases array. Caller passes [{name, start_date, end_date, status, id?, budgeted_hours?}]."""
+    """Merge or replace the phases array.
+
+    Default mode is 'merge' (upsert): phases in the action payload are added or
+    updated by name/id match; existing phases NOT in the payload are kept intact.
+    Pass `"mode": "replace"` to fully replace the array (old behaviour).
+    """
     pid = action.get("project_id")
     if not pid or not ObjectId.is_valid(pid):
         return _err("Invalid project_id")
-    new_phases = action.get("phases") or []
-    if not isinstance(new_phases, list):
+    incoming = action.get("phases") or []
+    if not isinstance(incoming, list):
         return _err("`phases` must be a list")
-    # Preserve IDs where the caller didn't supply one (preserve existing by name match)
+
     proj = await projects_collection.find_one({"_id": ObjectId(pid)})
     if not proj:
         return _err("Project not found")
-    existing = {p.get("name", "").strip().lower(): p.get("id") for p in (proj.get("phases") or []) if p.get("id")}
-    cleaned: List[dict] = []
-    for ph in new_phases:
-        if not isinstance(ph, dict) or not ph.get("name"):
-            continue
-        new_ph = {
-            "id": ph.get("id") or existing.get(ph["name"].strip().lower()) or str(uuid_module.uuid4()),
+
+    existing_phases: List[dict] = list(proj.get("phases") or [])
+    mode = (action.get("mode") or "merge").lower()
+
+    def _normalise(ph: dict) -> dict:
+        """Return a clean phase dict from raw input."""
+        result = {
+            "id": ph.get("id") or str(uuid_module.uuid4()),
             "name": ph["name"],
             "start_date": ph.get("start_date"),
             "end_date": ph.get("end_date"),
             "status": ph.get("status", "Not Started"),
         }
         if ph.get("budgeted_hours") is not None:
-            new_ph["budgeted_hours"] = ph["budgeted_hours"]
-        cleaned.append(new_ph)
+            result["budgeted_hours"] = ph["budgeted_hours"]
+        return result
+
+    if mode == "replace":
+        # Legacy: throw away existing, use only what was supplied
+        cleaned = [_normalise(ph) for ph in incoming if isinstance(ph, dict) and ph.get("name")]
+    else:
+        # MERGE (default): upsert incoming phases into existing list
+        # Build lookup maps from existing phases
+        by_id: dict[str, int] = {}
+        by_name: dict[str, int] = {}
+        for i, ph in enumerate(existing_phases):
+            if ph.get("id"):
+                by_id[ph["id"]] = i
+            by_name[ph.get("name", "").strip().lower()] = i
+
+        cleaned = list(existing_phases)  # start from existing
+        for ph in incoming:
+            if not isinstance(ph, dict) or not ph.get("name"):
+                continue
+            # Determine if this phase already exists (by id or name)
+            idx = by_id.get(ph.get("id", ""))
+            if idx is None:
+                idx = by_name.get(ph["name"].strip().lower())
+
+            if idx is not None:
+                # UPDATE existing phase — only overwrite fields that were supplied
+                existing_ph = dict(cleaned[idx])
+                if ph.get("id"):
+                    existing_ph["id"] = ph["id"]
+                existing_ph["name"] = ph["name"]
+                for f in ("start_date", "end_date", "status", "budgeted_hours"):
+                    if ph.get(f) is not None:
+                        existing_ph[f] = ph[f]
+                cleaned[idx] = existing_ph
+            else:
+                # ADD new phase — assign id if missing
+                new_ph = _normalise(ph)
+                cleaned.append(new_ph)
+                by_id[new_ph["id"]] = len(cleaned) - 1
+                by_name[new_ph["name"].strip().lower()] = len(cleaned) - 1
+
     await projects_collection.update_one(
         {"_id": ObjectId(pid)},
         {"$set": {"phases": cleaned, "updated_at": datetime.now(timezone.utc).isoformat()}},
     )
-    return _ok(f"Phases updated ({len(cleaned)} phase(s))")
+    action_taken = "replaced" if mode == "replace" else "merged"
+    return _ok(f"Phases {action_taken} — project now has {len(cleaned)} phase(s)")
 
 
 async def _h_delete_risk(action: dict, user: dict) -> dict:
@@ -616,6 +663,49 @@ async def _h_run_data_cleanup_scan(action: dict, user: dict) -> dict:
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Destructive legacy action wrappers (needed to gate with confirmation token)
+# ─────────────────────────────────────────────────────────────────────────
+
+async def _h_remove_allocation(action: dict, user: dict) -> dict:
+    """Delete a resource allocation (destructive — requires confirmation)."""
+    aid = action.get("allocation_id")
+    if not aid or not ObjectId.is_valid(aid):
+        return _err("Invalid allocation_id")
+    alloc = await allocations_collection.find_one({"_id": ObjectId(aid)})
+    if not alloc:
+        return _err("Allocation not found")
+    # Build a human-readable summary for the confirmation message
+    from database import resources_collection as _res_col, projects_collection as _proj_col
+    res = await _res_col.find_one({"_id": ObjectId(alloc["resource_id"])}) if ObjectId.is_valid(alloc.get("resource_id", "")) else None
+    proj = await _proj_col.find_one({"_id": ObjectId(alloc["project_id"])}) if ObjectId.is_valid(alloc.get("project_id", "")) else None
+    res_name = (res or {}).get("name", "?")
+    proj_name = (proj or {}).get("name", "?")
+    await allocations_collection.delete_one({"_id": ObjectId(aid)})
+    return _ok(f"Allocation removed — {res_name} is no longer assigned to '{proj_name}'")
+
+
+async def _h_delete_wbs_task(action: dict, user: dict) -> dict:
+    """Delete a WBS task and all its direct children (destructive — requires confirmation)."""
+    tid = action.get("task_id")
+    if not tid or not ObjectId.is_valid(tid):
+        return _err("Invalid task_id")
+    task = await wbs_tasks_collection.find_one({"_id": ObjectId(tid)})
+    if not task:
+        return _err("Task not found")
+    task_name = task.get("name", "?")
+    task_internal_id = task.get("id") or str(task["_id"])
+    # Delete task itself plus any children that reference it as parent
+    await wbs_tasks_collection.delete_many({
+        "$or": [
+            {"_id": ObjectId(tid)},
+            {"parent_id": str(tid)},          # children referencing mongo _id as string
+            {"parent_id": task_internal_id},   # children referencing internal uuid id
+        ]
+    })
+    return _ok(f"WBS task '{task_name}' deleted (including any child tasks)")
+
+
 # ═════════════════════════════════════════════════════════════════════════
 # REGISTRATION — register all handlers with the registry
 # ═════════════════════════════════════════════════════════════════════════
@@ -642,8 +732,8 @@ register("manage_phases",
          handler=_h_manage_phases,
          required_fields=["project_id", "phases"],
          category="project",
-         description="Replace the project's phases array (preserves IDs by name match)",
-         example={"project_id": "<id>", "phases": [{"name": "Discovery", "start_date": "2026-05-01", "end_date": "2026-05-15", "status": "Active", "budgeted_hours": 80}]},
+         description="Add, update, or remove phases on a project. Default mode='merge': only supplied phases are changed; other existing phases are kept. Pass mode='replace' to fully replace the array.",
+         example={"project_id": "<id>", "phases": [{"name": "Discovery", "start_date": "2026-05-01", "end_date": "2026-05-15", "status": "Active", "budgeted_hours": 80}], "mode": "merge"},
          audit_entity_type="phase")
 
 register("delete_risk",
@@ -720,6 +810,24 @@ register("reschedule_project",
          description="Shift project start, end, and all phase dates by N days (positive = later, negative = earlier)",
          example={"project_id": "<id>", "shift_days": 14},
          audit_entity_type="project")
+
+register("remove_allocation",
+         handler=_h_remove_allocation,
+         required_fields=["allocation_id"],
+         is_destructive=True,
+         category="allocation",
+         description="Remove a resource allocation from a project — requires confirmation token",
+         example={"allocation_id": "<id>"},
+         audit_entity_type="allocation")
+
+register("delete_wbs_task",
+         handler=_h_delete_wbs_task,
+         required_fields=["task_id"],
+         is_destructive=True,
+         category="wbs",
+         description="Delete a WBS task and all its child tasks — requires confirmation token",
+         example={"task_id": "<id>"},
+         audit_entity_type="wbs")
 
 # Tier 2
 register("create_timesheet",
