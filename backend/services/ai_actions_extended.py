@@ -396,7 +396,8 @@ async def _h_create_leave(action: dict, user: dict) -> dict:
         "resource_id": action["resource_id"],
         "start_date": _parse_date(action["start_date"]),
         "end_date": _parse_date(action["end_date"]),
-        "reason": action.get("reason", ""),
+        "type": action.get("type") or action.get("reason") or "Annual Leave",
+        "notes": action.get("notes") or action.get("reason") or "",
         "status": action.get("status", "Approved"),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -725,7 +726,7 @@ register("create_leave",
          required_fields=["resource_id", "start_date", "end_date"],
          category="leave",
          description="Record a leave / vacation entry",
-         example={"resource_id": "<id>", "start_date": "2026-06-01", "end_date": "2026-06-05", "reason": "Annual leave"},
+         example={"resource_id": "<id>", "start_date": "2026-06-01", "end_date": "2026-06-05", "type": "Annual Leave", "notes": "optional"},
          audit_entity_type="leave")
 
 register("delete_leave",

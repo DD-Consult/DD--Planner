@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 20 - AI chat security lockdown & role-scoping tests. 12/12 pytest tests passed. Verified: (a) non-admin (resource + client) users cannot execute legacy actions (add_risk) or registry actions (create_resource) via POST /api/ai/chat/execute-action - both return success:false with 'Admin access required'; DB confirmed clean of leaked artefacts. (b) admin still successfully executes actions. (c) /api/ai/chat data scoping - resource Riley only sees 'Website Redesign' (no Data Migration/Legacy System/Mobile App leak); client only sees Website Redesign + Mobile App (no Data Migration/Legacy System); client response contains no allocation percentages. (d) Read-only conversational refusal - riley asking to delete a project does NOT auto-execute, contains no ```action``` block, and conversationally explains admin needed. (e) Admin chat auto-execute regression: add_risk via natural language executed and produced '✅ Done'; risk persisted in DB then cleaned up. (f) Lazy user block visible to admin, hidden from resource (no admin/client emails leaked). (g) Conversational tone soft check passed - admin project-status response is prose, not a raw pipe-table dump.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration20_ai_security.py",
+    "/app/test_reports/pytest/iteration20.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Positive: dispatch_action in services/ai_action_registry.py correctly enforces admin permission BEFORE the legacy fallback - verified end-to-end that resource/client tokens are refused for both registry and legacy action codepaths.",
+    "Positive: /api/ai/chat (routes/ai.py ~L1099-1120) role scoping filters projects/allocations/status_updates/timesheets by allowed_pids for non-admin and blanks timesheets for clients, matching REST API permission model.",
+    "Positive: auto_executed guarded behind is_admin - non-admins get read-only conversational refusals without action blocks.",
+    "Note: routes/ai.py is 1844 lines - exceeds 700-line guideline. Consider splitting chat/execute-action/session mgmt into sub-modules for maintainability (not blocking).",
+    "Note: /api/ai/chat/execute-action response returns success:false with error message on refusal (HTTP 200). Semantically fine but a 403 would be more RESTful. Not blocking - current behavior is intentional for chat UX."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration20_ai_security.py (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "admin@test.com/admin123 (super_admin), riley@test.com/riley123 (resource - Website Redesign only), client@test.com/client123 (client - Website Redesign + Mobile App)",
+  "seed_data_creation": "None persisted. Test-created risks were auto-deleted at end of each test. Any TEST_Hacker_* resources are guarded with cleanup fallback.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 20 fully validates the AI chat security lockdown & role-scoping. Test file /app/backend/tests/test_iteration20_ai_security.py is stable and reusable as regression. Uses BASE_URL=http://localhost:8001 directly per main-agent guidance (external preview URL may hibernate). Test creates & cleans up 1 risk in Legacy System (TEST_admin_ok_iter20 + TEST_iter20_vendor). Fixtures scoped module-level for speed.",
+  "rca of the issue": "No bugs found. One test assertion was initially too strict (expected auto_executed===True but backend returns dict {action, result:{success:true}} on success) - assertion widened to accept truthy dict indicating success. This was a test-code issue, not a product bug."
+}

@@ -1096,6 +1096,34 @@ async def ai_chat(req: ChatMessage, current_user: dict = Depends(get_current_use
     timesheets = await timesheets_collection.find().to_list(length=5000)
     status_updates = await status_updates_collection.find().to_list(length=500)
 
+    # ── ROLE-BASED DATA SCOPING — mirror the REST API permission model ──
+    role = (current_user.get("role") or "").lower()
+    is_admin = role in ("admin", "super_admin")
+    my_rid = None
+    allowed_pids = None  # None = unrestricted (admin)
+
+    if not is_admin:
+        from utils import find_user_resource
+        if role == "client":
+            allowed_pids = {str(pid) for pid in current_user.get("allowed_project_ids", [])}
+        else:
+            resource_doc = await find_user_resource(current_user)
+            my_rid = str(resource_doc["_id"]) if resource_doc else None
+            allowed_pids = {a.get("project_id") for a in allocations if a.get("resource_id") == my_rid}
+            allowed_pids |= {str(p["_id"]) for p in projects if p.get("project_lead_id") == my_rid}
+
+        projects = [p for p in projects if str(p["_id"]) in allowed_pids]
+        allocations = [a for a in allocations if a.get("project_id") in allowed_pids]
+        status_updates = [s for s in status_updates if s.get("project_id") in allowed_pids]
+        if role == "client":
+            timesheets = []  # clients never see timesheet data
+            team_rids = {a.get("resource_id") for a in allocations}
+            resources = [r for r in resources if str(r["_id"]) in team_rids]
+        else:
+            timesheets = [t for t in timesheets if t.get("resource_id") == my_rid]
+            team_rids = {a.get("resource_id") for a in allocations} | ({my_rid} if my_rid else set())
+            resources = [r for r in resources if str(r["_id"]) in team_rids]
+
     # Build maps EARLY so lazy-load blocks below can use them
     resource_map = {str(r["_id"]): r.get("name", "Unknown") for r in resources}
     project_map = {str(p["_id"]): p.get("name", "Unknown") for p in projects}
@@ -1120,6 +1148,8 @@ async def ai_chat(req: ChatMessage, current_user: dict = Depends(get_current_use
 
     if needs_wbs:
         wbs_tasks = await wbs_tasks_collection.find().to_list(length=5000)
+        if not is_admin:
+            wbs_tasks = [t for t in wbs_tasks if t.get("project_id") in allowed_pids]
         # Group by project for compact display
         wbs_by_proj = {}
         for t in wbs_tasks:
@@ -1171,18 +1201,20 @@ async def ai_chat(req: ChatMessage, current_user: dict = Depends(get_current_use
         try:
             from database import leaves_collection
             leaves = await leaves_collection.find().to_list(length=500)
+            if not is_admin:
+                leaves = [lv for lv in leaves if lv.get("resource_id") == my_rid]
             if leaves:
                 l_lines = [f"\nLEAVE ENTRIES ({len(leaves)}):"]
                 for lv in leaves[:30]:
                     r_name = resource_map.get(lv.get("resource_id", ""), "?")
                     s = str(lv.get("start_date", ""))[:10]
                     e = str(lv.get("end_date", ""))[:10]
-                    l_lines.append(f"  • {r_name}: {s} → {e} ({lv.get('reason','-')}) [id: {str(lv.get('_id'))}]")
+                    l_lines.append(f"  • {r_name}: {s} → {e} ({lv.get('type') or lv.get('reason','-')}) [id: {str(lv.get('_id'))}]")
                 extra_context_blocks.append("\n".join(l_lines))
         except Exception:
             pass
 
-    if needs_users:
+    if needs_users and is_admin:
         try:
             from database import users_collection
             users = await users_collection.find().to_list(length=500)
@@ -1256,10 +1288,17 @@ async def ai_chat(req: ChatMessage, current_user: dict = Depends(get_current_use
         status = "OVER-UTILIZED" if total_pct > 100 else ("AT CAPACITY" if total_pct == 100 else "Available")
         res_lines.append(f"- {r.get('name')} | {r.get('role')} | Total alloc: {total_pct}% | {status}")
 
+    # Clients may know WHO is on their projects, but not internal allocation %/utilization
+    if role == "client":
+        alloc_lines = ["(allocation percentages are internal-only)"]
+        res_lines = [f"- {r.get('name')} | {r.get('role')}" for r in resources]
+
     # Weekly timesheet analysis (last 4 weeks) - Planned vs Actual hours
+    # Non-admins only see their own row (matches REST API scoping)
+    visible_resources = resources if is_admin else [r for r in resources if str(r["_id"]) == my_rid]
     four_weeks_ago = sydney_now - timedelta(days=28)
     timesheet_analysis = []
-    for r in resources:
+    for r in visible_resources:
         rid = str(r["_id"])
         r_name = r.get("name", "Unknown")
         # Get active allocations for this resource
@@ -1311,7 +1350,7 @@ async def ai_chat(req: ChatMessage, current_user: dict = Depends(get_current_use
 
     curr_week_status_lines = []
     prev_week_status_lines = []
-    for r in resources:
+    for r in visible_resources:
         rid = str(r["_id"])
         r_name = r.get("name", "Unknown")
         curr_week_status_lines.append(f"- {r_name}: {_summarize_resource_week(rid, week_start, week_end)}")
@@ -1354,6 +1393,8 @@ async def ai_chat(req: ChatMessage, current_user: dict = Depends(get_current_use
 
     # Active risks & issues (not closed/mitigated)
     all_risks = await risks_collection.find().to_list(length=2000)
+    if not is_admin:
+        all_risks = [rk for rk in all_risks if rk.get("project_id") in allowed_pids]
     active_risk_lines = []
     for rk in all_risks:
         rk_status = rk.get("status", "Active")
@@ -1422,7 +1463,7 @@ STATS: {sum(1 for p in projects if p.get('status')=='Active')} active, {sum(1 fo
     # Build the extended actions documentation block from the registry
     extended_actions_prompt = build_actions_prompt()
 
-    system_prompt = f"""You are DD Planner AI — the team's project-operations copilot inside DD Planner. You have live access to every project, resource, allocation, timesheet, risk, and status update, and you can take real actions on the user's behalf.
+    system_prompt_header = f"""You are DD Planner AI — the team's project-operations copilot inside DD Planner. You have live access to every project, resource, allocation, timesheet, risk, and status update, and you can take real actions on the user's behalf.
 
 TONE & STYLE (very important — this defines you):
 - Talk like a sharp, friendly colleague on the team, not like a reporting tool. Write the way a great chief-of-staff would reply on Slack.
@@ -1437,7 +1478,9 @@ TONE & STYLE (very important — this defines you):
 Your capabilities:
 1. ANALYSIS: Answer questions about project health, budgets, utilisation, risks, and trends.
 2. RECOMMENDATIONS: Suggest resource optimizations, flag risks, and provide strategic insights.
-3. ACTIONS: You can execute actions. When the user wants to perform an action, include a JSON action block in your response using this exact format:
+"""
+
+    actions_section = f"""3. ACTIONS: You can execute actions. When the user wants to perform an action, include a JSON action block in your response using this exact format:
 
 ```action
 {{"action": "create_allocation", "resource_id": "...", "project_id": "...", "percentage": 50, "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "description": "Assign Alice to Project X at 50%"}}
@@ -1509,7 +1552,16 @@ PROJECT IDs:
 
 RESOURCE IDs:
 {resource_id_list}
+"""
 
+    readonly_section = f"""READ-ONLY MODE (CRITICAL):
+The current user ({user_email}, role: {current_user.get('role')}) does NOT have admin rights.
+- You MUST NOT emit any ```action``` JSON blocks. Actions are disabled for this account and will be rejected by the system.
+- If they ask you to change, create, or delete anything, explain it warmly and conversationally: changes need an admin — offer to draft the exact details they can pass along ("I can't make that change from your account, but here's exactly what to ask an admin for: ...").
+- The data you can see is already scoped to the projects this user is allowed to view. Never speculate about other projects, budgets, team members, or company-wide figures — if it's not in your data, it's not theirs to see.
+"""
+
+    system_prompt = system_prompt_header + (actions_section if is_admin else readonly_section) + f"""
 Guidelines:
 - Answer the actual question first, conversationally; add supporting detail after.
 - When discussing budgets, mention hours and percentages naturally in your sentences.
@@ -1586,15 +1638,22 @@ Guidelines:
         # doesn't have to click a confirm button.
         auto_action_executed = None
         undo_spec = None
+        if not is_admin:
+            # Defense in depth: strip any action block a non-admin response may contain
+            _stripped = re.sub(r"```(?:action|json)\s*\{[\s\S]*?\}\s*```", "", ai_response_text)
+            if _stripped != ai_response_text:
+                ai_response_text = _stripped.rstrip() + "\n\n🔒 Making changes needs an admin account — happy to draft the details for you to pass along."
         try:
-            # Match both ```action and ```json code blocks (LLMs sometimes use either)
-            action_match = re.search(r"```(?:action|json)\s*(\{[\s\S]*?\})\s*```", ai_response_text)
+            action_match = None
             raw_json = None
+            if is_admin:
+                # Match both ```action and ```json code blocks (LLMs sometimes use either)
+                action_match = re.search(r"```(?:action|json)\s*(\{[\s\S]*?\})\s*```", ai_response_text)
             
             if action_match:
                 raw_json = action_match.group(1)
                 print(f"[AI Chat] Found fenced action block")
-            else:
+            elif is_admin:
                 # Gemini often returns bare JSON without fences - try to extract it
                 # Look for a JSON object containing "action" key
                 bare_match = re.search(r'(\{[^{}]*"action"\s*:\s*"[^"]+[^{}]*\})', ai_response_text, re.DOTALL)

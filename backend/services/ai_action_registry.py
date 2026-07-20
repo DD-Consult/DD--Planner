@@ -163,6 +163,14 @@ async def dispatch_action(action: dict, current_user: dict) -> dict:
     """Validate, permission-check, confirm (if destructive), execute, and
     audit-log an AI-proposed action."""
     name = action.get("action")
+
+    # ── Permission check FIRST — applies to registry AND legacy actions ──
+    role = (current_user.get("role") or "").lower()
+    is_super = role == "super_admin"
+    is_admin = role in ("admin", "super_admin")
+    if not is_admin:
+        return {"success": False, "message": "🔒 Admin access required for AI actions."}
+
     spec = ACTIONS.get(name)
     if not spec:
         # Legacy fallback: try the old executor in ai_actions.py for actions not
@@ -182,12 +190,7 @@ async def dispatch_action(action: dict, current_user: dict) -> dict:
             "message": f"Missing required field(s) for {name}: {', '.join(missing)}",
         }
 
-    # ── Permission check ──
-    role = (current_user.get("role") or "").lower()
-    is_super = role == "super_admin"
-    is_admin = role in ("admin", "super_admin")
-    if not is_admin:
-        return {"success": False, "message": "🔒 Admin access required for AI actions."}
+    # ── Super-admin permission check ──
     if spec["permission"] == "super_admin" and not is_super:
         return {
             "success": False,
