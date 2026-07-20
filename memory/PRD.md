@@ -262,3 +262,12 @@ DD Planner is a full-stack resource planning and project management application 
 - 21/21 new tests green (iter 26), 113/113 total regression green
 
 - 39/39 tests green (iter 25), 74/74 total regression
+
+## Session: Resource Flow E2E Test + Allocation Hours Bug Fix (Jul 2026)
+
+### Bug Fixed: Allocation Hours Inconsistency
+- **Root cause**: `formatAllocation(percentage, standard_capacity)` in `capacityHelpers.js` multiplied allocation % by `standard_capacity` — e.g. 50% on an 80%-capacity resource showed "16h" in "Allocation" column but "20h" in "Hours/Week" column.
+- **Backend was always correct**: `allocation_weekly_hours()` in `utils.py` uses `(percentage/100) * 40` ignoring `standard_capacity`.
+- **Fix**: `formatAllocation` now uses 40h base always. `MyAllocations.js` "Allocation" column shows `X% · Y.0h/wk` using backend pre-calculated `alloc.weekly_hours`.
+- 29/29 E2E tests green (iter 27), 163/163 total regression
+
