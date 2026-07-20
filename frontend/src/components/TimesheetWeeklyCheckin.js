@@ -371,7 +371,7 @@ const TimesheetWeeklyCheckin = () => {
                     <SelectValue placeholder="Select resource" />
                   </SelectTrigger>
                   <SelectContent>
-                    {allResources.map((r) => (
+                    {allResources.filter((r) => r.active !== false).map((r) => (
                       <SelectItem key={r.id} value={r.id}>
                         {r.name} — {r.role}
                       </SelectItem>

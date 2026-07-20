@@ -241,7 +241,7 @@ async def ai_command(command: AICommandRequest, current_user: dict = Depends(get
     import httpx
     
     # Fetch context: active resources and projects
-    resources_cursor = resources_collection.find()
+    resources_cursor = resources_collection.find({"active": {"$ne": False}})
     resources = await resources_cursor.to_list(length=1000)
     resource_names = [r["name"] for r in resources]
     
@@ -763,8 +763,8 @@ async def plan_future_allocation(
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
     
-    # Get all resources
-    all_resources = await resources_collection.find().to_list(length=1000)
+    # Get all resources (active only — deactivated resources are not plannable)
+    all_resources = await resources_collection.find({"active": {"$ne": False}}).to_list(length=1000)
     
     # Get allocations overlapping with the date range
     allocations = await allocations_collection.find().to_list(length=10000)
@@ -1285,8 +1285,10 @@ async def ai_chat(req: ChatMessage, current_user: dict = Depends(get_current_use
         alloc_lines.append(f"- {res_name} -> {proj_name} | {pct}% | {start} to {end} | alloc_id: {alloc_id}")
 
     # Resource summaries with utilization analysis
+    # Hide deactivated resources from team/utilization lists (names still resolve via maps)
+    active_resources = [r for r in resources if r.get("active") is not False]
     res_lines = []
-    for r in resources:
+    for r in active_resources:
         rid = str(r["_id"])
         r_allocs = [a for a in allocations if a.get("resource_id") == rid]
         total_pct = sum(a.get("percentage", 0) for a in r_allocs)
@@ -1296,11 +1298,11 @@ async def ai_chat(req: ChatMessage, current_user: dict = Depends(get_current_use
     # Clients may know WHO is on their projects, but not internal allocation %/utilization
     if role == "client":
         alloc_lines = ["(allocation percentages are internal-only)"]
-        res_lines = [f"- {r.get('name')} | {r.get('role')}" for r in resources]
+        res_lines = [f"- {r.get('name')} | {r.get('role')}" for r in active_resources]
 
     # Weekly timesheet analysis (last 4 weeks) - Planned vs Actual hours
     # Non-admins only see their own row (matches REST API scoping)
-    visible_resources = resources if is_admin else [r for r in resources if str(r["_id"]) == my_rid]
+    visible_resources = active_resources if is_admin else [r for r in active_resources if str(r["_id"]) == my_rid]
     four_weeks_ago = sydney_now - timedelta(days=28)
     timesheet_analysis = []
     for r in visible_resources:

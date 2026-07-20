@@ -355,7 +355,7 @@ const ProjectWizard = ({ open, onOpenChange }) => {
                       <SelectValue placeholder="Select project lead" />
                     </SelectTrigger>
                     <SelectContent>
-                      {resources?.map(r => (
+                      {resources?.filter(r => r.active !== false).map(r => (
                         <SelectItem key={r.id} value={r.id}>{r.name} ({r.role})</SelectItem>
                       ))}
                     </SelectContent>

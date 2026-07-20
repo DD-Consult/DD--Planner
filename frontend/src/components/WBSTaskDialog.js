@@ -338,7 +338,7 @@ const WBSTaskDialog = ({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">Unassigned</SelectItem>
-                  {resources && resources.map(r => (
+                  {resources && resources.filter(r => r.active !== false).map(r => (
                     <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
                   ))}
                 </SelectContent>

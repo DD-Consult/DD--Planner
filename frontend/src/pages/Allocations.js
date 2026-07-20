@@ -274,7 +274,7 @@ const Allocations = () => {
       relevantAllocations = allocations.filter(a => a.project_id === selectedProject);
     }
 
-    const resourceData = resources.map(resource => {
+    const resourceData = resources.filter(resource => resource.active !== false).map(resource => {
       const resourceAllocs = relevantAllocations.filter(a => a.resource_id === resource.id);
       const weeklyAllocations = weeks.map(week => {
         const activeAllocs = resourceAllocs.filter(alloc => {

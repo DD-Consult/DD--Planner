@@ -1085,7 +1085,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
                     <SelectValue placeholder="Assign To" />
                   </SelectTrigger>
                   <SelectContent>
-                    {resources?.map(resource => (
+                    {resources?.filter(resource => resource.active !== false).map(resource => (
                       <SelectItem key={resource.id} value={resource.id}>
                         {resource.name}
                       </SelectItem>

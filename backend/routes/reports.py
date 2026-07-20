@@ -106,9 +106,12 @@ async def get_project_time_report(project_id: str, current_user: dict = Depends(
     resources_cursor = resources_collection.find()
     all_resources = await resources_cursor.to_list(length=1000)
     resource_map = {str(r["_id"]): r.get("name", "Unknown") for r in all_resources}
+    inactive_ids = {str(r["_id"]) for r in all_resources if r.get("active") is False}
     
     resource_breakdown_list = []
     for resource_id, data in resource_breakdown.items():
+        if resource_id in inactive_ids:
+            continue
         variance = data["actual_hours"] - data["planned_hours"]
         utilization_rate = (data["actual_hours"] / data["planned_hours"] * 100) if data["planned_hours"] > 0 else 0
         
@@ -222,8 +225,11 @@ async def get_time_tracking_summary(current_user: dict = Depends(get_current_use
         resources_cursor = resources_collection.find()
         all_resources = await resources_cursor.to_list(length=1000)
         resource_map = {str(r["_id"]): r.get("name", "Unknown") for r in all_resources}
+        inactive_ids = {str(r["_id"]) for r in all_resources if r.get("active") is False}
         
         for resource_id, data in resource_utilization.items():
+            if resource_id in inactive_ids:
+                continue
             utilization = (data["actual"] / data["planned"] * 100) if data["planned"] > 0 else 0
             if utilization > max_utilization:
                 max_utilization = utilization
@@ -697,10 +703,17 @@ async def get_resource_utilization(
         if t.get("project_id"): all_project_ids.add(t["project_id"])
     
     resources_map = {}
+    inactive_rids = set()
     if all_resource_ids:
         res_cursor = resources_collection.find({"_id": {"$in": [ObjectId(rid) for rid in all_resource_ids]}})
         for r in await res_cursor.to_list(1000):
             resources_map[str(r["_id"])] = {"name": r.get("name", "Unknown"), "role": r.get("role", "")}
+            if r.get("active") is False:
+                inactive_rids.add(str(r["_id"]))
+    # Deactivated resources are excluded from utilization reporting
+    all_resource_ids -= inactive_rids
+    allocs = [a for a in allocs if a.get("resource_id") not in inactive_rids]
+    timesheets = [t for t in timesheets if t.get("resource_id") not in inactive_rids]
     
     projects_map = {}
     if all_project_ids:

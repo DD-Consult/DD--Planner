@@ -241,7 +241,7 @@ const Dashboard = ({ token }) => {
   const handlePreviousWeek = () => setDateRange({ start: format(addDays(new Date(dateRange.start), -7), 'yyyy-MM-dd'), end: format(addDays(new Date(dateRange.end), -7), 'yyyy-MM-dd') });
   const handleNextWeek = () => setDateRange({ start: format(addDays(new Date(dateRange.start), 7), 'yyyy-MM-dd'), end: format(addDays(new Date(dateRange.end), 7), 'yyyy-MM-dd') });
   const handleToday = () => setDateRange({ start: format(new Date(), 'yyyy-MM-dd'), end: format(addDays(new Date(), 13), 'yyyy-MM-dd') });
-  const uniqueRoles = [...new Set(resources?.map(r => r.role) || [])];
+  const uniqueRoles = [...new Set(resources?.filter(r => r.active !== false).map(r => r.role) || [])];
   const filteredCapacityData = capacityData ? { ...capacityData, resources: capacityData.resources.filter(r => r.name.toLowerCase().includes(searchTerm.toLowerCase()) && (roleFilter === 'all' || r.role === roleFilter)) } : null;
   const filteredResources = resources?.filter(r => r.name.toLowerCase().includes(searchTerm.toLowerCase()) && (roleFilter === 'all' || r.role === roleFilter));
 

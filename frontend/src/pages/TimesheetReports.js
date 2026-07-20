@@ -361,7 +361,7 @@ const TimesheetReports = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Resources</SelectItem>
-                    {resources.map((r) => (
+                    {resources.filter((r) => r.active !== false).map((r) => (
                       <SelectItem key={r.id} value={r.id}>
                         {r.name}
                       </SelectItem>

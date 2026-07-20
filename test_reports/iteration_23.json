@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 23 — Inactive-resource exclusion across pickers/reports/AI. Backend fully compliant (5/5 report endpoints + AI chat exclude 'ZZ Inactive Test'). 51/51 regression tests (iter19-22) PASS. Frontend: 8 of 10 UI checks PASS. TWO PICKERS STILL LEAK inactive resources: (1) 'Add Allocation' dialog on /allocations page (Allocations.js L1004 — missing .filter(r=>r.active!==false); testid=allocation-resource-select) — VERIFIED in UI, ZZ Inactive Test is selectable there; (2) ProjectWizard.js L554 (testid=wizard-resource-select) allocation step — code review confirms missing filter (not UI-verified because wizard flow requires new-project creation).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "pages/Allocations.js (Add/Edit Allocation dialog)",
+        "issue": "Resource dropdown lists inactive resources — 'ZZ Inactive Test' (active:false) appears in the SelectContent. Line 1004 uses `resources?.map(...)` without the `.filter(r => r.active !== false)` predicate that every other picker on this codebase applies. Confirmed in browser: dropdown for the 'Add Allocation' modal on /allocations showed 'ZZ Inactive Test - Test Role' alongside Alice/Bob/Riley/etc.",
+        "selector": "[data-testid='allocation-resource-select']",
+        "priority": "HIGH"
+      },
+      {
+        "component": "components/ProjectWizard.js (allocation step)",
+        "issue": "Line 554 uses `resources?.map(...)` for the 'Select Resource' dropdown of the wizard's allocation step; missing the `.filter(r => r.active !== false)` filter. (The wizard's OTHER picker at L358, phase lead, is filtered correctly.) Not UI-reproduced (would require running the full new-project wizard), but the code path is identical to the /allocations bug above.",
+        "selector": "[data-testid='wizard-resource-select']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration19_consistency.py",
+    "/app/backend/tests/test_iteration20_ai_security.py",
+    "/app/backend/tests/test_iteration21_lead_permissions.py",
+    "/app/backend/tests/test_iteration22_lifecycle.py",
+    "/app/test_reports/pytest/iteration23.xml"
+  ],
+  "action_items": [
+    "Fix /app/frontend/src/pages/Allocations.js L1004: change `{resources?.map((resource) => (` to `{resources?.filter((resource) => resource.active !== false).map((resource) => (` — mirrors the AllocationEditor.js L441 pattern.",
+    "Fix /app/frontend/src/components/ProjectWizard.js L554: same edit — add `.filter((r) => r.active !== false)` in front of `.map((resource) => (`.",
+    "After both fixes, verify: open /allocations → Add Allocation → resource dropdown does NOT contain any resource with active:false; run through the New Project Wizard → allocation step dropdown likewise excludes inactive.",
+    "Optional data-quality cleanup: leftover TEST_ prefixed resources (TEST_AILead_Delete, TEST_ConsistencyR1_7a3ab7, TEST_HoursR_456e3d, TEST_AF_10bc63) still populate every picker; iter22 seed_data notes they were pre-existing. TEST_AILead_Delete is even wearing the crown as Project Lead of Website Redesign (should be Riley per test_credentials.md); consider restoring project_lead_id → Riley id 6a5d78c7b9384e8caf2ecdba."
+  ],
+  "critical_code_review_comments": [
+    "BUG: /app/frontend/src/pages/Allocations.js L1004 renders SelectItem for every resource without checking active — inconsistent with the 15+ other pickers in this repo. Grep-based audit: 15 places filter, 2 do not (the two flagged above).",
+    "BUG: /app/frontend/src/components/ProjectWizard.js L554 (allocation SelectContent) same omission. Note the SAME file at L358 (phase-lead) does have the filter — inconsistency within one file.",
+    "Positive: backend exclusion is thorough — /api/reports/resource-utilization, /api/reports/time-tracking/summary, /api/reports/capacity, /api/reports/planned-vs-actual/project/{id}, and AI chat 'list all team members' response ALL correctly omit ZZ Inactive Test (which had a real 2026-01-01→2026-06-30 allocation on Website Redesign).",
+    "Positive: Resources page correctly shows inactive resource with data-testid=resource-status-inactive-{id} so managers can reactivate.",
+    "Positive: DELETE /api/resources/{id} correctly refuses (409) with message 'has history (X allocations, Y timesheets, lead of Z projects). Deactivate instead' — verified.",
+    "Note: pages/Allocations.js is 1101 lines and pages/ProjectDetail.js is 3086 lines — both exceed 700-line guideline; the ProjectDetail file is now 3x over budget. Consider splitting: ProjectDetail into Overview/Team/Risks/WBS/TimeTracking/Settings sub-modules, and Allocations into Timeline/WeeklyGrid/AllocationDialog sub-modules. The current inline duplication of the AllocationEditor dialog inside Allocations.js is exactly what caused this bug.",
+    "Note: Manage Timesheets shows 3 timesheet rows whose resource_id resolves to 'Unknown' — orphan timesheet rows point to resources that were hard-deleted at some point (pre-existing data quality issue, out of scope)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (51/51 regression + all 5 exclusion spot-checks pass)", "frontend": "80% (8/10 pickers correctly filter; Add Allocation dialog + ProjectWizard allocation step leak)"},
+  "test_credentials": "admin@test.com / admin123 (super_admin), riley@test.com / riley123, client@test.com / client123",
+  "seed_data_creation": "Created and then fully cleaned up: 'ZZ Inactive Test' resource (id 6a5db6fc37729becdeb6380c) + 1 allocation on Website Redesign. mongo db.allocations.deleteMany + DELETE /api/resources/{id} → verified zero leftovers. No other DB mutations.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Only 2 frontend edits needed (both are single-line .filter additions in pages/Allocations.js L1004 and components/ProjectWizard.js L554). After the fix, re-create a deactivated test resource and re-verify only these two dropdowns. Regression suite test_iteration19..22 (51 tests) all green — reuse before/after. Note: leaked seed 'TEST_AILead_Delete' is currently project_lead of Website Redesign (should be Riley); iter22 notes flagged this. Preview URL: https://budget-consistency.preview.emergentagent.com, backend http://localhost:8001.",
+  "rca of the issue": "Two dialogs render their OWN inline SelectContent for resource selection instead of delegating to the shared AllocationEditor component. When the recent 'filter inactive out of pickers' pass was done, the grep target `resources?.map` returned many matches, but these two were overlooked — the filter was added to 15 sites, missed at 2. Reproduction (bug 1): login admin@test.com/admin123, POST /api/resources {name:'X'}, POST /api/resources/{id}/deactivate, open /allocations, click 'Add Allocation', open the Resource dropdown → X appears. Fix: add `.filter((resource) => resource.active !== false)` before `.map(...)` at Allocations.js L1004 and ProjectWizard.js L554. Long-term: extract a single <ResourceSelect> component that internally filters and provides data-testid, replace all 17 call sites — would prevent this class of bug entirely."
+}

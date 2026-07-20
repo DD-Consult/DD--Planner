@@ -1132,7 +1132,7 @@ const ProjectDetail = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No lead assigned</SelectItem>
-                    {resources?.map((resource) => (
+                    {resources?.filter((resource) => resource.active !== false).map((resource) => (
                       <SelectItem key={resource.id} value={resource.id}>
                         {resource.name} — {resource.role}
                       </SelectItem>
@@ -2862,7 +2862,7 @@ const ProjectDetail = () => {
                   <SelectValue placeholder="Select a resource" />
                 </SelectTrigger>
                 <SelectContent>
-                  {resources?.map((resource) => {
+                  {resources?.filter((resource) => resource.active !== false).map((resource) => {
                     const capacityInfo = resource.standard_capacity ? ` (${resource.standard_capacity}% capacity)` : '';
                     return (
                       <SelectItem key={resource.id} value={resource.id}>

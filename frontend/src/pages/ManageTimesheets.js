@@ -324,7 +324,7 @@ const ManageTimesheets = () => {
                       <SelectValue placeholder="Select resource" />
                     </SelectTrigger>
                     <SelectContent>
-                      {resources?.map((resource) => (
+                      {resources?.filter((resource) => resource.active !== false).map((resource) => (
                         <SelectItem key={resource.id} value={resource.id}>
                           {resource.name}
                         </SelectItem>
@@ -521,7 +521,7 @@ const ManageTimesheets = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Resources</SelectItem>
-                  {resources?.map((resource) => (
+                  {resources?.filter((resource) => resource.active !== false).map((resource) => (
                     <SelectItem key={resource.id} value={resource.id}>
                       {resource.name}
                     </SelectItem>
