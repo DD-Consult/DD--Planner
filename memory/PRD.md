@@ -211,3 +211,22 @@ DD Planner is a full-stack resource planning and project management application 
 
 ### Testing
 - 12/12 pass: backend/tests/test_iteration21_lead_permissions.py; iteration 19+20 suites re-run green (20's escalation test updated: riley is now legitimately lead of Website Redesign, so it targets Mobile App)
+
+## Session: Resource/User Delete & Deactivate Lifecycle (June 2026)
+
+### User Decisions
+- Hard delete blocked when resource has history (allocations/timesheets/lead refs) → 409, deactivate instead
+- Deactivation auto-ends allocations: future ones deleted, running ones end today
+- Deactivating a resource auto-disables linked user login(s); reactivate re-enables
+
+### Implemented
+- Resources: POST /{id}/deactivate, /{id}/reactivate; guarded DELETE (409 with history counts); `active` flag on Resource schema
+- Users: PUT /api/admin/users/{id}/status?disabled=, DELETE /api/admin/users/{id}; guards (no self-target; only super_admin touches admin accounts)
+- `disabled` flag now ENFORCED at login (403) and get_current_user (kills existing JWT sessions) — integration_expert playbook consulted
+- Inactive resources excluded from: capacity report, timesheet/allocation reminders, new allocation creation (400)
+- AI actions: deactivate_resource/reactivate_resource added; delete_resource guarded same as REST (incl. project_lead check after test-agent bug find)
+- Fixed AI create_leave field mismatch earlier; utils: deactivate_resource_core/reactivate_resource_core shared by REST + AI
+- Frontend: Resources page Status column + Deactivate/Reactivate buttons + 409 toast; Users page Disable/Enable + Delete buttons + Disabled badge
+
+### Testing
+- 13/13 pass: backend/tests/test_iteration22_lifecycle.py; 38/38 regression (iters 19-21); frontend UI verified by testing agent

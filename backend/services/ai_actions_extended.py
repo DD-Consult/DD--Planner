@@ -186,9 +186,10 @@ async def _h_delete_resource(action: dict, user: dict) -> dict:
     # Hard delete only when there is NO history — otherwise suggest deactivation
     al = await allocations_collection.count_documents({"resource_id": rid})
     ts = await timesheets_collection.count_documents({"resource_id": rid})
-    if al or ts:
+    lead_count = await projects_collection.count_documents({"project_lead_id": rid})
+    if al or ts or lead_count:
         return _err(
-            f"'{name}' has history ({al} allocation(s), {ts} timesheet(s)). "
+            f"'{name}' has history ({al} allocation(s), {ts} timesheet(s), lead of {lead_count} project(s)). "
             f"Use deactivate_resource instead — it preserves history, ends future allocations and disables their login."
         )
     await resources_collection.delete_one({"_id": ObjectId(rid)})
