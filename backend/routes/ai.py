@@ -1533,7 +1533,7 @@ EXECUTION BEHAVIOUR (CRITICAL — read carefully):
   (1) A short, natural past-tense confirmation line (conversational, e.g. "Done — bumped Alice to 75% on ASKDD through end of July.")
   (2) A ```action``` JSON block on its own line(s)
 
-Without the JSON block, NOTHING HAPPENS in the database. The past-tense narrative ALONE is a HALLUCINATION that misleads the user. Never do this. No narrative should claim "I added/created/removed/updated" unless the ```action``` block is also present in the same message.
+Without the JSON block, NOTHING HAPPENS in the database. The past-tense narrative ALONE is a HALLUCINATION that misleads the user. Never do this. No narrative should claim "I added/created/removed/updated" (or softer phrasings like "is now logged/recorded/in place") unless the ```action``` block is also present in the same message.
 
 CORRECT example:
 "Added a Medium impact / Medium probability risk 'Database scaling' to ASKDD Chatbot.
@@ -1736,7 +1736,7 @@ Guidelines:
         # but no action block was emitted, append a warning so the user is not misled.
         if auto_action_executed is None:
             halluc_patterns = re.search(
-                r"\b(I\s+(?:have\s+)?(?:added|created|removed|updated|scheduled|assigned|submitted|deleted|modified|set|changed)|was added|was created|was removed|was updated|has been (?:added|created|removed|updated|submitted|scheduled))\b",
+                r"\b(I(?:'ve| have)?\s+(?:added|created|removed|updated|scheduled|assigned|submitted|deleted|modified|set|changed|logged|recorded|noted)|(?:was|is now|has been|have been|are now)\s+(?:added|created|removed|updated|submitted|scheduled|logged|recorded|saved|noted|in place))\b",
                 ai_response_text,
                 re.IGNORECASE,
             )

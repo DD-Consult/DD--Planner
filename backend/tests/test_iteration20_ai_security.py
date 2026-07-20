@@ -65,7 +65,8 @@ def projects_map(admin_token):
 # ────────────── SECURITY 1 — resource cannot execute actions ──────────────
 class TestResourcePrivilegeEscalation:
     def test_legacy_add_risk_blocked(self, resource_token, admin_token, projects_map):
-        pid = projects_map["Website Redesign"]
+        # Riley is now LEAD of Website Redesign (iteration 21) — use a project he does NOT lead
+        pid = projects_map["Mobile App"]
         # Snapshot risks BEFORE
         before = requests.get(
             f"{BASE_URL}/api/projects/{pid}/risks", headers=_hdr(admin_token), timeout=15

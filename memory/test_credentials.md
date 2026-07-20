@@ -20,4 +20,4 @@
 - Client: `client@test.com` / `client123`
 
 ## AI Chat Test Accounts (local preview DB)
-- Resource: `riley@test.com` / `riley123` (linked resource "Riley Resource", allocated only to "Website Redesign")
+- Resource: `riley@test.com` / `riley123` (resource "Riley Resource", allocated to AND project lead of "Website Redesign")

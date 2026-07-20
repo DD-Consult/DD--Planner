@@ -587,12 +587,16 @@ async def get_project_phases(project_id: str, current_user: dict = Depends(get_c
 async def reschedule_project(
     project_id: str,
     request: RescheduleProjectRequest,
-    admin: dict = Depends(require_admin)
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Reschedule a project by shifting all dates forward or backward.
     Updates project dates, phases, and all associated allocations.
+    Admins or the project's lead.
     """
+    from utils import user_leads_project
+    if not await user_leads_project(current_user, project_id):
+        raise HTTPException(status_code=403, detail="Admin or project lead access required")
     from datetime import timezone
     
     # Fetch the project
@@ -648,12 +652,14 @@ async def reschedule_project(
     allocations_updated = 0
     for alloc in allocations:
         alloc_updates = {}
-        if alloc.get("start_date"):
-            new_d = alloc["start_date"] + shift_delta
-            alloc_updates["start_date"] = snap_to_weekday(new_d) if hasattr(new_d, 'weekday') else new_d
-        if alloc.get("end_date"):
-            new_d = alloc["end_date"] + shift_delta
-            alloc_updates["end_date"] = snap_to_weekday(new_d) if hasattr(new_d, 'weekday') else new_d
+        for f in ("start_date", "end_date"):
+            if alloc.get(f):
+                new_d = alloc[f] + shift_delta
+                if hasattr(new_d, 'weekday'):
+                    snapped = snap_to_weekday(new_d)
+                    # snap_to_weekday returns a date — BSON needs datetime
+                    new_d = snapped if isinstance(snapped, datetime) else datetime.combine(snapped, datetime.min.time())
+                alloc_updates[f] = new_d
         
         if alloc_updates:
             await allocations_collection.update_one(

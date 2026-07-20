@@ -194,3 +194,20 @@ DD Planner is a full-stack resource planning and project management application 
 - Legacy `remove_allocation` / `delete_wbs_task` auto-execute for admins with no confirm token (registry deletes require one)
 - `manage_phases` replaces whole phases array — partial list from AI could drop phases silently
 - routes/ai.py is 1800+ lines — candidate for splitting
+
+## Session: Project Lead Permissions (June 2026)
+
+### User Decisions
+- Leads get FULL project editing on projects they lead: details/dates/budget/phases + risks + status updates
+- Applies to both REST API/UI and AI chat; AI actions strictly limited to led projects
+
+### Implemented
+- `utils.user_leads_project(user, project_id)` — admin OR linked resource == project_lead_id
+- REST now lead-or-admin: PUT /api/projects/{id}, POST /api/projects/{id}/reschedule, PUT /api/status-updates/{id}; lead fallback added to risks create/update/delete and status update create (previously allocation-only)
+- AI: LEAD_ALLOWED_ACTIONS whitelist in ai_action_registry (update_project, manage_phases, reschedule_project, sync_phase_to_wbs, update_project_dates/status, add/update/delete_risk, polish_all_risks, create_status_update) enforced per-project via _resolve_action_project_id (risk_id→project lookup)
+- Chat PROJECT LEAD MODE prompt section (led project IDs + action docs); auto-execute enabled for leads (can_act)
+- Frontend: edit-status-update button visible to leads (isLead in ProjectDetail.js)
+- BUG FIX (pre-existing): reschedule endpoint 500 — snap_to_weekday returns date, BSON needs datetime (allocation date writes)
+
+### Testing
+- 12/12 pass: backend/tests/test_iteration21_lead_permissions.py; iteration 19+20 suites re-run green (20's escalation test updated: riley is now legitimately lead of Website Redesign, so it targets Mobile App)
