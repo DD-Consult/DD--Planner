@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 21 - Project Lead permissions (REST + AI chat). 11/12 pytest tests PASSED, 1 FAILED. Bug found: POST /api/projects/{id}/reschedule still uses require_admin dependency, returning 403 'Admin access required' when riley (lead of Website Redesign) attempts it — contradicts the review-request claim that leads may reschedule. All other lead permissions (PUT project, risks CRUD, status update create+edit, AI action whitelist, AI chat E2E status update, non-whitelisted action denial, other-project denial, non-lead resource still blocked, client still read-only, admin regression) behave correctly.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/projects/{project_id}/reschedule",
+        "issue": "Endpoint declared with `admin: dict = Depends(require_admin)` in /app/backend/routes/projects.py L586-591, so project lead cannot reschedule their own project. Returns 403 'Admin access required' for riley on Website Redesign. Must be relaxed like update_project / create_status_update did — use current_user + user_leads_project() check for lead fallback.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration21_lead_permissions.py",
+    "/app/test_reports/pytest/iteration21.xml"
+  ],
+  "action_items": [
+    "Update reschedule_project() at /app/backend/routes/projects.py:586 to accept project lead (mirror the pattern used in update_project at ~L349 and create_status_update lead fallback at ~L1335): switch dependency from require_admin to get_current_user, then admin OR user_leads_project(user, project) allowed; else 403.",
+    "After fix, re-run pytest /app/backend/tests/test_iteration21_lead_permissions.py::TestLeadReschedule to confirm 200 on both forward and backward shifts."
+  ],
+  "critical_code_review_comments": [
+    "BUG: reschedule_project uses require_admin — misses lead fallback (contradicts review-request iteration 21 spec).",
+    "Positive: LEAD_ALLOWED_ACTIONS whitelist in services/ai_action_registry.py correctly blocks create_allocation (non-whitelisted) for lead while allowing add_risk on led projects, and denies add_risk on other projects with 'Admin access required'.",
+    "Positive: dispatch_action's _resolve_action_project_id resolves risk_id → project_id correctly for update_risk/delete_risk lead permission.",
+    "Positive: user_leads_project() correctly gates REST endpoints for update_project, risks CRUD, and status-updates.",
+    "Positive: AI chat auto-execute at /api/ai/chat for a lead successfully creates a status update via natural language (auto_executed truthy, DB row persisted).",
+    "Positive: pure-resource (project_lead_id removed) is correctly denied both REST PUT (403) and AI action (success:false), and client remains read-only.",
+    "Note: routes/projects.py is 1941 lines — exceeds 700-line guideline; consider modularizing risks / status-updates / reschedule.",
+    "Note: AI polishes risk description text even when submitted via execute-action's add_risk (test snapshot before/after IDs to work around this)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration21_lead_permissions.py (new)"],
+  "success_rate": {"backend": "91.7% (11/12)", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "admin@test.com/admin123 (super_admin), riley@test.com/riley123 (resource + lead of Website Redesign), client@test.com/client123",
+  "seed_data_creation": "None persisted. All test-created risks, status updates cleaned. project_lead_id and budgeted_hours restored via module-scope teardown fixture. Verified final DB state: WR project_lead_id=6a5d78c7b9384e8caf2ecdba, budgeted_hours=0; no leaked risks/status_updates.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test file /app/backend/tests/test_iteration21_lead_permissions.py is reusable regression. Uses BASE_URL=http://localhost:8001. Fixture ensure_lead_setup (module autouse) guarantees riley is lead of Website Redesign and NOT of Mobile App before/after run. IMPORTANT: TestPureResourceBlocked temporarily removes project_lead_id — always has a try/finally restore. If reschedule_project is updated, TestLeadReschedule should pass without further changes.",
+  "rca of the issue": "TestLeadReschedule failure: reschedule_project handler in /app/backend/routes/projects.py L586-591 uses `Depends(require_admin)` which raises 403 for any non-admin token, including project leads. The recent iteration 21 refactor added lead fallback to update_project, create_status_update, edit_status_update, and risks CRUD but MISSED reschedule_project. Fix: replace dependency with `current_user: dict = Depends(get_current_user)`; after fetching the project, allow if `current_user['role'] in ('admin','super_admin')` OR `user_leads_project(current_user, project)`; otherwise raise 403. This mirrors the pattern already applied to update_project. Reproduction: login riley@test.com; POST /api/projects/6a5d4ac2ad5ecf8fe70d55b2/reschedule {'weeks_to_shift':1,'shift_direction':'forward'} → 403."
+}

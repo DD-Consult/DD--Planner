@@ -350,8 +350,13 @@ async def update_project(
     project_id: str,
     project: ProjectUpdate,
     response: Response,
-    admin: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
 ):
+    # Admins or the project's lead may edit
+    from utils import user_leads_project
+    if not await user_leads_project(current_user, project_id):
+        raise HTTPException(status_code=403, detail="Admin or project lead access required")
+
     update_data = {k: v for k, v in project.dict().items() if v is not None}
     if not update_data:
         raise HTTPException(status_code=400, detail="No update data provided")
@@ -395,7 +400,7 @@ async def update_project(
         from services.baselines import diff_and_log_project_update
         await diff_and_log_project_update(
             project_id=str(result["_id"]),
-            user_email=admin.get("email"),
+            user_email=current_user.get("email"),
             before=before_doc or {},
             after=result,
         )
@@ -900,7 +905,10 @@ async def create_single_risk(
             "project_id": project_id,
         })
         if not allocation:
-            raise HTTPException(status_code=403, detail="You must be allocated to this project to add risks")
+            # Project leads can add risks even without an allocation
+            is_lead = str(project.get("project_lead_id") or "") == str(user_resource["_id"])
+            if not is_lead:
+                raise HTTPException(status_code=403, detail="You must be allocated to this project or be its lead to add risks")
 
     # Build the raw dict that the polisher will work on
     raw = {
@@ -951,7 +959,17 @@ async def update_risk(
             "project_id": risk.get("project_id"),
         })
         if not allocation:
-            raise HTTPException(status_code=403, detail="Access denied")
+            # Project leads can manage risks even without an allocation
+            lead_project = None
+            try:
+                lead_project = await projects_collection.find_one({
+                    "_id": ObjectId(risk.get("project_id")),
+                    "project_lead_id": str(user_resource["_id"]),
+                })
+            except Exception:
+                lead_project = None
+            if not lead_project:
+                raise HTTPException(status_code=403, detail="Access denied")
 
     update_data = {k: v for k, v in update.dict(exclude={"skip_ai_polish"}).items() if v is not None}
 
@@ -1098,7 +1116,17 @@ async def delete_risk(
             "project_id": risk.get("project_id"),
         })
         if not allocation:
-            raise HTTPException(status_code=403, detail="Access denied")
+            # Project leads can manage risks even without an allocation
+            lead_project = None
+            try:
+                lead_project = await projects_collection.find_one({
+                    "_id": ObjectId(risk.get("project_id")),
+                    "project_lead_id": str(user_resource["_id"]),
+                })
+            except Exception:
+                lead_project = None
+            if not lead_project:
+                raise HTTPException(status_code=403, detail="Access denied")
 
     await risks_collection.delete_one({"_id": ObjectId(risk_id)})
     return {"success": True, "message": "Risk deleted"}
@@ -1333,10 +1361,13 @@ async def create_status_update(
                 "project_id": update.project_id
             })
             if not allocation:
-                raise HTTPException(
-                    status_code=403, 
-                    detail="You must be assigned to this project to submit status updates"
-                )
+                # Project leads can submit even without an allocation
+                is_lead = str(project.get("project_lead_id") or "") == str(user_resource["_id"])
+                if not is_lead:
+                    raise HTTPException(
+                        status_code=403, 
+                        detail="You must be assigned to this project or be its lead to submit status updates"
+                    )
         else:
             raise HTTPException(status_code=403, detail="Access denied")
     
@@ -1681,10 +1712,10 @@ async def get_status_options(current_user: dict = Depends(get_current_user)):
 async def edit_status_update(
     update_id: str,
     update_data: StatusUpdateEdit,
-    admin: dict = Depends(require_admin)
+    current_user: dict = Depends(get_current_user)
 ):
     """
-    Edit an existing status update (Admin only).
+    Edit an existing status update (admins or the project's lead).
     Tracks who edited and when.
     """
     from datetime import timezone
@@ -1698,6 +1729,11 @@ async def edit_status_update(
     if not status_update:
         raise HTTPException(status_code=404, detail="Status update not found")
     
+    # Permission: admin or lead of the update's project
+    from utils import user_leads_project
+    if not await user_leads_project(current_user, status_update.get("project_id", "")):
+        raise HTTPException(status_code=403, detail="Admin or project lead access required")
+    
     # Build update dict
     update_dict = {k: v for k, v in update_data.dict().items() if v is not None}
     
@@ -1705,7 +1741,7 @@ async def edit_status_update(
         raise HTTPException(status_code=400, detail="No update data provided")
     
     # Add edit tracking
-    update_dict["edited_by"] = admin.get("email")
+    update_dict["edited_by"] = current_user.get("email")
     update_dict["edited_at"] = datetime.now(timezone.utc).isoformat()
     
     # Convert blockers to list if it's a string
@@ -1901,3 +1937,4 @@ async def update_project_summary(
         "summary": summary,
         "updated_at": update_time
     }
+

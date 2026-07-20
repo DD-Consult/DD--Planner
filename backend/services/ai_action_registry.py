@@ -32,6 +32,29 @@ from database import pending_actions_collection
 
 CONFIRMATION_TTL_MINUTES = 10
 
+# Actions a PROJECT LEAD (non-admin) may execute — but ONLY on projects they lead.
+LEAD_ALLOWED_ACTIONS = {
+    "update_project", "manage_phases", "reschedule_project", "sync_phase_to_wbs",
+    "update_project_dates", "update_project_status",
+    "add_risk", "update_risk", "delete_risk", "polish_all_risks",
+    "create_status_update",
+}
+
+
+async def _resolve_action_project_id(action: dict):
+    """Best-effort resolution of the project an action targets."""
+    if action.get("project_id"):
+        return str(action["project_id"])
+    if action.get("risk_id"):
+        from bson import ObjectId
+        from database import risks_collection
+        try:
+            risk = await risks_collection.find_one({"_id": ObjectId(action["risk_id"])})
+            return str(risk.get("project_id")) if risk else None
+        except Exception:
+            return None
+    return None
+
 
 async def _create_confirmation_token(user_email: str, action: dict, summary: str) -> str:
     """Store a pending destructive action and return a short token the user
@@ -169,7 +192,15 @@ async def dispatch_action(action: dict, current_user: dict) -> dict:
     is_super = role == "super_admin"
     is_admin = role in ("admin", "super_admin")
     if not is_admin:
-        return {"success": False, "message": "🔒 Admin access required for AI actions."}
+        # Project leads may run a limited action set on projects they lead
+        allowed_as_lead = False
+        if name in LEAD_ALLOWED_ACTIONS:
+            pid = await _resolve_action_project_id(action)
+            if pid:
+                from utils import user_leads_project
+                allowed_as_lead = await user_leads_project(current_user, pid)
+        if not allowed_as_lead:
+            return {"success": False, "message": "🔒 Admin access required for this action. (Project leads can manage projects they lead.)"}
 
     spec = ACTIONS.get(name)
     if not spec:

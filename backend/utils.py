@@ -99,6 +99,22 @@ async def find_user_resource(current_user: dict):
     return None
 
 
+async def user_leads_project(current_user: dict, project_id: str) -> bool:
+    """True if the user is admin/super_admin OR their linked resource is the project's lead."""
+    role = (current_user.get("role") or "").lower()
+    if role in ("admin", "super_admin"):
+        return True
+    resource = await find_user_resource(current_user)
+    if not resource:
+        return False
+    from database import projects_collection
+    try:
+        project = await projects_collection.find_one({"_id": ObjectId(project_id)})
+    except Exception:
+        return False
+    return bool(project and str(project.get("project_lead_id") or "") == str(resource["_id"]))
+
+
 def calculate_weekly_hours(percentage: int, allocation_start: date, allocation_end: date, week_start: date, week_end: date) -> float:
     """Calculate planned hours for a specific week based on allocation percentage.
     Uses 5-day business week (Mon-Fri) for all calculations."""

@@ -1101,6 +1101,7 @@ async def ai_chat(req: ChatMessage, current_user: dict = Depends(get_current_use
     is_admin = role in ("admin", "super_admin")
     my_rid = None
     allowed_pids = None  # None = unrestricted (admin)
+    led_pids = set()     # projects this (non-admin) user LEADS — limited actions allowed
 
     if not is_admin:
         from utils import find_user_resource
@@ -1123,6 +1124,10 @@ async def ai_chat(req: ChatMessage, current_user: dict = Depends(get_current_use
             timesheets = [t for t in timesheets if t.get("resource_id") == my_rid]
             team_rids = {a.get("resource_id") for a in allocations} | ({my_rid} if my_rid else set())
             resources = [r for r in resources if str(r["_id"]) in team_rids]
+        if my_rid:
+            led_pids = {str(p["_id"]) for p in projects if str(p.get("project_lead_id") or "") == my_rid}
+
+    can_act = is_admin or bool(led_pids)
 
     # Build maps EARLY so lazy-load blocks below can use them
     resource_map = {str(r["_id"]): r.get("name", "Unknown") for r in resources}
@@ -1561,7 +1566,32 @@ The current user ({user_email}, role: {current_user.get('role')}) does NOT have 
 - The data you can see is already scoped to the projects this user is allowed to view. Never speculate about other projects, budgets, team members, or company-wide figures — if it's not in your data, it's not theirs to see.
 """
 
-    system_prompt = system_prompt_header + (actions_section if is_admin else readonly_section) + f"""
+    led_project_names = [p.get("name") for p in projects if str(p["_id"]) in led_pids]
+    lead_section = f"""PROJECT LEAD MODE (CRITICAL):
+The current user ({user_email}, role: {current_user.get('role')}) is not an admin, but they are the PROJECT LEAD for: {', '.join(led_project_names)}.
+For the project(s) they lead ONLY, you can execute a limited action set. Same contract as always: in the SAME response give a short, natural past-tense confirmation line AND a ```action``` JSON block — the system executes it automatically and appends the result. Only ONE action block per response. NEVER say "I can't" for these actions on their led projects.
+
+Allowed actions (for led projects only):
+- update_project — patch fields: {{"action": "update_project", "project_id": "<id>", "name": "...", "budgeted_hours": 600, "status": "Active", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "description": "..."}} (include only fields to change)
+- manage_phases — REPLACE the full phases array (always send ALL phases, including unchanged ones): {{"action": "manage_phases", "project_id": "<id>", "phases": [{{"name": "Discovery", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "budgeted_hours": 80}}]}}
+- reschedule_project — shift all dates: {{"action": "reschedule_project", "project_id": "<id>", "shift_days": 14}}
+- update_project_dates: {{"action": "update_project_dates", "project_id": "<id>", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"}}
+- update_project_status: {{"action": "update_project_status", "project_id": "<id>", "status": "Active"}}
+- add_risk: {{"action": "add_risk", "project_id": "<id>", "description": "...", "impact": "Medium", "probability": "High", "mitigation": "..."}}
+- update_risk: {{"action": "update_risk", "risk_id": "<id>", "status": "Mitigated", "mitigation": "..."}}
+- delete_risk (destructive — the system will ask them to confirm): {{"action": "delete_risk", "risk_id": "<id>"}}
+- polish_all_risks: {{"action": "polish_all_risks", "project_id": "<id>"}}
+- create_status_update — weekly check-in: {{"action": "create_status_update", "project_id": "<id>", "health": "Green", "schedule_status": "On Track", "accomplishments": "...", "blockers": "...", "next_steps": "..."}}
+- sync_phase_to_wbs: {{"action": "sync_phase_to_wbs", "project_id": "<id>", "phase_id": "<phase_uuid>"}}
+
+PROJECT IDs you may act on: {'; '.join(f'"{p.get("name")}" = {str(p["_id"])}' for p in projects if str(p["_id"]) in led_pids)}
+
+For ANYTHING else (allocations, resources, timesheets of others, users, other projects), do NOT emit an action — explain conversationally that it needs an admin.
+"""
+
+    system_prompt = system_prompt_header + (
+        actions_section if is_admin else (lead_section if led_pids else readonly_section)
+    ) + f"""
 Guidelines:
 - Answer the actual question first, conversationally; add supporting detail after.
 - When discussing budgets, mention hours and percentages naturally in your sentences.
@@ -1638,7 +1668,7 @@ Guidelines:
         # doesn't have to click a confirm button.
         auto_action_executed = None
         undo_spec = None
-        if not is_admin:
+        if not can_act:
             # Defense in depth: strip any action block a non-admin response may contain
             _stripped = re.sub(r"```(?:action|json)\s*\{[\s\S]*?\}\s*```", "", ai_response_text)
             if _stripped != ai_response_text:
@@ -1646,14 +1676,14 @@ Guidelines:
         try:
             action_match = None
             raw_json = None
-            if is_admin:
+            if can_act:
                 # Match both ```action and ```json code blocks (LLMs sometimes use either)
                 action_match = re.search(r"```(?:action|json)\s*(\{[\s\S]*?\})\s*```", ai_response_text)
             
             if action_match:
                 raw_json = action_match.group(1)
                 print(f"[AI Chat] Found fenced action block")
-            elif is_admin:
+            elif can_act:
                 # Gemini often returns bare JSON without fences - try to extract it
                 # Look for a JSON object containing "action" key
                 bare_match = re.search(r'(\{[^{}]*"action"\s*:\s*"[^"]+[^{}]*\})', ai_response_text, re.DOTALL)

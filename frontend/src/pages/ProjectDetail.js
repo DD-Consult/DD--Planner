@@ -254,6 +254,7 @@ const ProjectDetail = () => {
   });
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+  const isLead = !!(currentUser?.resource_id && project?.project_lead_id && currentUser.resource_id === project.project_lead_id);
 
   // Risk mutations
   const createRiskMutation = useMutation({
@@ -1598,7 +1599,7 @@ const ProjectDetail = () => {
                         <span className="text-xs text-[#667085]">
                           {safeFormatDate(update.week_start_date, 'MMM d, yyyy')}
                         </span>
-                        {isAdmin && (
+                        {(isAdmin || isLead) && (
                           <Button
                             size="sm"
                             variant="ghost"
@@ -1607,7 +1608,7 @@ const ProjectDetail = () => {
                               setEditingStatusUpdate(update);
                               setShowEditStatusDialog(true);
                             }}
-                            title="Edit status update (Admin only)"
+                            title="Edit status update"
                           >
                             <Edit2 size={12} />
                           </Button>
