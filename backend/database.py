@@ -57,6 +57,8 @@ report_links_collection = db.report_links  # Magic links for client portal
 wbs_comments_collection = db.wbs_comments
 ai_instructions_collection = db.ai_instructions
 ai_feedback_collection = db.ai_feedback
+ai_memory_collection = db.ai_memory            # Agent memory (decisions, preferences, context)
+ai_health_reports_collection = db.ai_health_reports  # Proactive health monitor reports
 
 # Email Configuration
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')

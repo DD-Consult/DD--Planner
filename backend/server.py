@@ -32,6 +32,7 @@ from routes.client_portal import router as client_portal_router
 from routes.action_items import router as action_items_router
 from routes.ai_instructions import router as ai_instructions_router
 from routes.insights import router as insights_router
+from routes.ai_memory import router as ai_memory_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ app.include_router(client_portal_router)
 app.include_router(action_items_router)
 app.include_router(ai_instructions_router)
 app.include_router(insights_router)
+app.include_router(ai_memory_router)
 
 
 @app.on_event("startup")
@@ -211,6 +213,29 @@ async def startup_event():
             asyncio.create_task(_prewarm())
         except Exception as e:
             print(f"[STARTUP] Playwright pre-warm dispatch skipped: {e}")
+
+        # BACKGROUND HEALTH MONITOR — runs every 24 hours to proactively surface portfolio issues
+        try:
+            import asyncio
+
+            async def _periodic_health_monitor():
+                """Daily portfolio health check."""
+                import asyncio as _aio
+                await _aio.sleep(3600)  # Wait 1h after startup before first run
+                while True:
+                    try:
+                        from services.health_monitor import run_health_monitor
+                        report = await run_health_monitor(triggered_by="scheduler", save_report=True)
+                        findings_count = report.get("summary", {}).get("total_findings", 0)
+                        print(f"[HEALTH MONITOR] Daily check complete — {findings_count} findings")
+                    except Exception as _hme:
+                        print(f"[HEALTH MONITOR] Error: {_hme}")
+                    await _aio.sleep(24 * 60 * 60)  # Sleep 24 hours
+
+            asyncio.create_task(_periodic_health_monitor())
+            print("[STARTUP] Background health monitor scheduled (runs every 24h)")
+        except Exception as e:
+            print(f"[STARTUP] Health monitor scheduling skipped: {e}")
     except Exception as e:
         print(f"[STARTUP ERROR] Failed to complete startup tasks: {str(e)}")
         print("[STARTUP] Application will continue to run, but database may not be fully initialized")

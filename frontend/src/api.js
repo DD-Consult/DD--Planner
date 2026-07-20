@@ -513,6 +513,20 @@ export const deleteAIInstruction = (id) => api.delete(`/ai/instructions/${id}`);
 export const submitAIFeedback = (data) => api.post('/ai/feedback', data);
 export const getAIFeedbackStats = () => api.get('/ai/feedback/stats');
 
+// Agent Memory
+export const getAIMemories = (params) => api.get('/ai/memory', { params });
+export const getProjectMemories = (projectId) => api.get(`/ai/memory/project/${projectId}`);
+export const createAIMemory = (data) => api.post('/ai/memory', data);
+export const updateAIMemory = (id, data) => api.put(`/ai/memory/${id}`, data);
+export const deleteAIMemory = (id) => api.delete(`/ai/memory/${id}`);
+
+// Multi-Step Action Plan execution
+export const executeActionPlan = (payload) => api.post('/ai/chat/execute-plan', payload);
+
+// Health Monitor
+export const runHealthMonitor = () => api.post('/ai/health-monitor/run');
+export const getHealthReport = () => api.get('/ai/health-monitor/report');
+
 // AI Insights
 export const getProjectHealthScore = (projectId) => api.get(`/insights/project/${projectId}/health-score`);
 export const getPortfolioHealthScores = () => api.get('/insights/portfolio/health-scores');

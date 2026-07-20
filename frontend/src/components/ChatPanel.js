@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { sendChatMessage, getChatSessions, getChatSession, deleteChatSession, executeChatAction, undoLastAction } from '../api';
+import { sendChatMessage, getChatSessions, getChatSession, deleteChatSession, executeChatAction, undoLastAction, executeActionPlan } from '../api';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
@@ -29,6 +29,9 @@ import {
   Percent,
   ArrowRight,
   RotateCcw,
+  ListChecks,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -327,7 +330,107 @@ const ActionCard = ({ action, onConfirm, onDismiss, isExecuting, executed }) => 
   );
 };
 
-const MessageBubble = ({ msg, onActionConfirm, onActionDismiss, executingAction, executedActions }) => {
+// PlanCard — shows a multi-step action plan for user review before execution
+const STEP_ACTION_LABELS = {
+  create_project: 'Create project',
+  create_allocation: 'Allocate resource',
+  manage_phases: 'Set up phases',
+  update_project: 'Update project',
+  add_risk: 'Add risk',
+  create_status_update: 'Add status update',
+  generate_wbs: 'Generate WBS',
+  create_wbs_task: 'Add WBS task',
+  create_baseline: 'Save baseline',
+  autofill_timesheets_week: 'Autofill timesheets',
+};
+
+const PlanCard = ({ plan, onExecute, isExecuting, results }) => {
+  const [expanded, setExpanded] = useState(true);
+  const steps = plan?.steps || [];
+  const allDone = results && results.length === steps.length;
+  const successCount = results ? results.filter((r) => r.success).length : 0;
+
+  return (
+    <div className="mt-2 rounded-xl border border-[#7F56D9]/30 bg-[#7F56D9]/5 overflow-hidden" data-testid="plan-card">
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-3.5 py-2.5 cursor-pointer"
+        onClick={() => setExpanded((e) => !e)}
+      >
+        <div className="flex items-center gap-2">
+          <ListChecks size={14} className="text-[#7F56D9]" />
+          <span className="text-xs font-semibold text-[#7F56D9] uppercase tracking-wider">
+            {plan.title || 'Action Plan'} — {steps.length} steps
+          </span>
+        </div>
+        {expanded ? <ChevronUp size={14} className="text-[#7F56D9]" /> : <ChevronDown size={14} className="text-[#7F56D9]" />}
+      </div>
+
+      {expanded && (
+        <div className="px-3.5 pb-3">
+          {plan.description && (
+            <p className="text-xs text-[#475467] mb-2.5">{plan.description}</p>
+          )}
+          {/* Steps list */}
+          <ol className="space-y-1.5 mb-3">
+            {steps.map((step, i) => {
+              const r = results && results[i];
+              return (
+                <li key={i} className="flex items-start gap-2">
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-[10px] font-bold
+                    ${r ? (r.success ? 'bg-[#16B364] text-white' : 'bg-red-500 text-white') : 'bg-[#7F56D9]/20 text-[#7F56D9]'}`}>
+                    {r ? (r.success ? <Check size={10} /> : <X size={10} />) : i + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-[#344054]">
+                      {STEP_ACTION_LABELS[step.action] || step.action}
+                    </p>
+                    {step.description && (
+                      <p className="text-xs text-[#667085] truncate">{step.description}</p>
+                    )}
+                    {r && !r.success && (
+                      <p className="text-xs text-red-500 mt-0.5">{r.message}</p>
+                    )}
+                    {r && r.success && (
+                      <p className="text-xs text-[#16B364] mt-0.5">{r.message}</p>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+
+          {/* Action buttons */}
+          {!allDone ? (
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={onExecute}
+                disabled={isExecuting}
+                className="bg-[#7F56D9] hover:bg-[#6941C6] text-xs h-8"
+                data-testid="plan-execute-btn"
+              >
+                {isExecuting ? (
+                  <><Loader2 size={12} className="animate-spin mr-1" /> Running...</>
+                ) : (
+                  <><Check size={12} className="mr-1" /> Execute All {steps.length} Steps</>
+                )}
+              </Button>
+            </div>
+          ) : (
+            <div className={`text-xs font-medium ${successCount === steps.length ? 'text-[#16B364]' : 'text-amber-600'}`}>
+              {successCount === steps.length
+                ? `All ${steps.length} steps completed successfully`
+                : `${successCount}/${steps.length} steps succeeded`}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MessageBubble = ({ msg, onActionConfirm, onActionDismiss, executingAction, executedActions, onPlanExecute, executingPlan, planResults }) => {
   if (msg.role === 'user') {
     return (
       <div className="flex gap-2 justify-end">
@@ -360,6 +463,8 @@ const MessageBubble = ({ msg, onActionConfirm, onActionDismiss, executingAction,
   const { narrative, action } = parseResponse(msg.content);
   const msgKey = msg.timestamp || '';
   const isExecuted = executedActions?.has(msgKey);
+  const plan = msg.plan || null;
+  const planResult = planResults?.get(msgKey) || null;
 
   return (
     <div className="flex gap-2 justify-start">
@@ -370,7 +475,15 @@ const MessageBubble = ({ msg, onActionConfirm, onActionDismiss, executingAction,
         <div className="rounded-2xl rounded-bl-md px-3.5 py-2.5 bg-[#F7F7F8] text-[#0B1220] border border-[#E6E8EC]">
           <FormatResponse text={narrative} />
         </div>
-        {action && (
+        {plan && (
+          <PlanCard
+            plan={plan}
+            onExecute={() => onPlanExecute(plan, msgKey)}
+            isExecuting={executingPlan === msgKey}
+            results={planResult}
+          />
+        )}
+        {action && !plan && (
           <ActionCard
             action={action}
             onConfirm={() => onActionConfirm(action, msgKey)}
@@ -394,6 +507,8 @@ const ChatPanel = () => {
   const [executedActions, setExecutedActions] = useState(new Set());
   const [canUndo, setCanUndo] = useState(false);
   const [undoLabel, setUndoLabel] = useState(null);
+  const [executingPlan, setExecutingPlan] = useState(null);       // msgKey of plan being executed
+  const [planResults, setPlanResults] = useState(new Map());      // msgKey → results array
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const queryClient = useQueryClient();
@@ -430,16 +545,19 @@ const ChatPanel = () => {
     },
     onSuccess: (data) => {
       setSessionId(data.session_id);
+      const ts = new Date().toISOString();
       setMessages((prev) => {
         const filtered = prev.filter((m) => !m.loading);
-        return [
-          ...filtered,
-          {
-            role: 'assistant',
-            content: data.response,
-            timestamp: new Date().toISOString(),
-          },
-        ];
+        const newMsg = {
+          role: 'assistant',
+          content: data.response,
+          timestamp: ts,
+        };
+        // Attach plan data to the message if the AI returned a plan
+        if (data.has_plan && data.plan) {
+          newMsg.plan = data.plan;
+        }
+        return [...filtered, newMsg];
       });
       // Track undo availability from auto-executed action
       setCanUndo(!!data.can_undo);
@@ -511,6 +629,31 @@ const ChatPanel = () => {
     },
   });
 
+  // Execute multi-step action plan mutation
+  const executePlanMutation = useMutation({
+    mutationFn: ({ steps }) => executeActionPlan({ steps }),
+    onSuccess: (data, variables) => {
+      const { msgKey } = variables;
+      const results = data.data?.results || [];
+      setPlanResults((prev) => new Map([...prev, [msgKey, results]]));
+      setExecutingPlan(null);
+      const { success_count, total_steps } = data.data || {};
+      if (success_count === total_steps) {
+        toast.success(`Plan complete — all ${total_steps} steps succeeded`);
+      } else {
+        toast.warning(`Plan partially complete — ${success_count}/${total_steps} steps succeeded`);
+      }
+      queryClient.invalidateQueries(['allocations']);
+      queryClient.invalidateQueries(['projects']);
+      queryClient.invalidateQueries(['resources']);
+      queryClient.invalidateQueries(['projectRisks']);
+    },
+    onError: (err) => {
+      setExecutingPlan(null);
+      toast.error(err.response?.data?.detail || 'Plan execution failed');
+    },
+  });
+
   // Load session mutation
   const loadSessionMutation = useMutation({
     mutationFn: getChatSession,
@@ -568,6 +711,12 @@ const ChatPanel = () => {
 
   const handleActionDismiss = (msgKey) => {
     setExecutedActions((prev) => new Set([...prev, msgKey]));
+  };
+
+  const handlePlanExecute = (plan, msgKey) => {
+    if (executingPlan) return;
+    setExecutingPlan(msgKey);
+    executePlanMutation.mutate({ steps: plan.steps || [], msgKey });
   };
 
   const startNewSession = () => {
@@ -729,6 +878,9 @@ const ChatPanel = () => {
                   onActionDismiss={handleActionDismiss}
                   executingAction={executingAction}
                   executedActions={executedActions}
+                  onPlanExecute={handlePlanExecute}
+                  executingPlan={executingPlan}
+                  planResults={planResults}
                 />
               ))
             )}

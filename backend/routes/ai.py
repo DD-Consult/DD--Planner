@@ -12,6 +12,7 @@ from database import (
     timesheets_collection, risks_collection, status_updates_collection,
     settings_collection, chat_sessions_collection, leaves_collection,
     holidays_collection, wbs_tasks_collection, EMERGENT_LLM_KEY, SYDNEY_TZ,
+    ai_memory_collection,
 )
 from models.schemas import (
     AICommandRequest, AICommandResponse, ChatMessage,
@@ -28,6 +29,7 @@ from services.ai_actions import (
 )
 from services.ai_action_registry import dispatch_action, ACTIONS as REGISTERED_ACTIONS, build_actions_prompt
 from services.ai_instructions import get_instructions_for_prompt
+from services.specialist_agents import detect_specialist, get_specialist_header, list_specialist_triggers
 
 router = APIRouter()
 
@@ -1469,6 +1471,7 @@ STATS: {sum(1 for p in projects if p.get('status')=='Active')} active, {sum(1 fo
 
     # Build the extended actions documentation block from the registry
     extended_actions_prompt = build_actions_prompt()
+    specialist_triggers_doc = list_specialist_triggers()
 
     system_prompt_header = f"""You are DD Planner AI — the team's project-operations copilot inside DD Planner. You have live access to every project, resource, allocation, timesheet, risk, and status update, and you can take real actions on the user's behalf.
 
@@ -1514,6 +1517,20 @@ WBS (Work Breakdown Structure) ACTIONS (FIX #4):
 - assign_wbs_task: {{"action":"assign_wbs_task","task_id":"...","resource_id":"...","description":"Assign task to team member"}}
 
 When user asks to "plan the project", "break down tasks", "create a WBS", or "decompose the project", use generate_wbs.
+
+MULTI-STEP ACTION PLAN — for complex requests that require multiple actions:
+When the user asks to do something that requires several steps (e.g. "set up a new project with phases and allocations", "onboard this client"), emit an `action_plan` block instead of a single action. The system will present the plan to the user for review before executing anything.
+
+```action
+{{"action": "action_plan", "title": "Setup New Project", "description": "What this plan will do overall", "steps": [{{"action": "create_project", "name": "Project X", "client_name": "Acme", "status": "Pipeline", "start_date": "2026-03-01", "end_date": "2026-06-30", "budgeted_hours": 400, "description": "Create the project"}}, {{"action": "manage_phases", "project_id": "<id from step 1>", "phases": [{{"name": "Discovery", "start_date": "2026-03-01", "end_date": "2026-03-31"}}], "description": "Add phases"}}]}}
+```
+
+Rules for action_plan:
+- Use when the user wants 2+ sequential actions that logically belong together
+- Each step is a standard action object (same format as single actions)
+- Max 8 steps per plan
+- The user reviews the plan before anything executes — so be thorough in descriptions
+- DO NOT use action_plan for a single action — use a regular action block instead
 
 ═══════════════════════════════════════════════════════════════════════
 EXTENDED ADMIN ACTIONS — full admin parity (auto-registered)
@@ -1604,15 +1621,57 @@ Guidelines:
 - For timesheet submission questions ("who submitted this week?", "who missed last week's timesheet?", "has X filled their timesheet?"): use the CURRENT WEEK TIMESHEET SUBMISSIONS and LAST WEEK TIMESHEET SUBMISSIONS sections below. They already list every resource with SUBMITTED / PARTIALLY SUBMITTED / DRAFT / MISSING status — do NOT say you lack this data.
 - For project health questions, blockers, or "what's going wrong on project X": use the LATEST PROJECT STATUS UPDATES and ACTIVE RISKS & ISSUES sections. Reference specific blocker text verbatim when relevant.
 - When the user asks you to "submit a status update" or "update status for project X", use the create_status_update action. Any text they provide as blockers will be automatically promoted to Issues in the risk register.
+- To save an important decision or preference to memory so it's remembered in future sessions: use `save_memory` action.
+- To run a proactive health check across all projects: use `run_health_check` action.
+{specialist_triggers_doc}
 
 {data_context}
 
 {history_text}
 """
 
+    # ── Inject agent memories ──
+    try:
+        # Load global memories + project-specific memories for the current context
+        project_ids_in_context = [str(p["_id"]) for p in projects]
+        mem_query = {
+            "active": {"$ne": False},
+            "$or": [{"scope": "global"}] + [{"project_id": pid} for pid in project_ids_in_context] if project_ids_in_context else [{"scope": "global"}]
+        }
+        memories = await ai_memory_collection.find(mem_query).sort("created_at", -1).to_list(length=50)
+        if memories:
+            mem_lines = ["\nAGENT MEMORY (key decisions & context — use these to inform your responses):"]
+            global_mems = [m for m in memories if m.get("scope") == "global"]
+            proj_mems = [m for m in memories if m.get("scope") == "project"]
+            if global_mems:
+                mem_lines.append("Global:")
+                for m in global_mems[:10]:
+                    cat = m.get("category", "note").title()
+                    mem_lines.append(f"  [{cat}] {m.get('title')}: {m.get('content')}")
+            if proj_mems:
+                # Group by project
+                by_proj: dict = {}
+                for m in proj_mems:
+                    pid = m.get("project_id", "?")
+                    by_proj.setdefault(pid, []).append(m)
+                for pid, mems in list(by_proj.items())[:5]:
+                    p_name = project_map.get(pid, pid[:8])
+                    mem_lines.append(f"Project '{p_name}':")
+                    for m in mems[:5]:
+                        cat = m.get("category", "note").title()
+                        mem_lines.append(f"  [{cat}] {m.get('title')}: {m.get('content')}")
+            system_prompt += "\n" + "\n".join(mem_lines) + "\n"
+    except Exception as _me:
+        pass  # Never fail the chat because memory injection failed
+
     # Inject custom AI instructions
     custom_ai_instructions = await get_instructions_for_prompt(category="chat")
     system_prompt += custom_ai_instructions
+
+    # ── Specialist routing — prepend focused prompt if @mention detected ──
+    specialist_key = detect_specialist(req.message)
+    if specialist_key:
+        system_prompt = get_specialist_header(specialist_key) + system_prompt
 
     user_message = req.message
 
@@ -1670,6 +1729,8 @@ Guidelines:
         # doesn't have to click a confirm button.
         auto_action_executed = None
         undo_spec = None
+        detected_plan = None  # action_plan blocks are held for user confirmation
+
         if not can_act:
             # Defense in depth: strip any action block a non-admin response may contain
             _stripped = re.sub(r"```(?:action|json)\s*\{[\s\S]*?\}\s*```", "", ai_response_text)
@@ -1699,35 +1760,46 @@ Guidelines:
                 action_obj = json.loads(raw_json)
                 a_type = action_obj.get("action")
                 print(f"[AI Chat] Action type: {a_type}")
-                # Combine legacy + registry actions
-                all_auto = set(AUTO_EXECUTE_ACTIONS) | set(REGISTERED_ACTIONS.keys())
-                if a_type in all_auto:
-                    # Snapshot pre-state for undo (what will be changed) — only meaningful for legacy actions
-                    pre_state = await capture_pre_state(action_obj)
-                    print(f"[AI Chat] Executing action: {a_type}")
-                    # Use new dispatcher (handles registry + falls back to legacy)
-                    result = await dispatch_action(action_obj, current_user)
-                    print(f"[AI Chat] Action result: {result}")
-                    # Build the undo spec from pre_state + post-result
-                    undo_spec = build_undo_spec(a_type, action_obj, pre_state, result)
-                    auto_action_executed = {"action": a_type, "result": result}
-                    # Strip the action block; append a completion line.
-                    ok = result.get("success", False)
-                    needs_confirm = result.get("needs_confirmation", False)
-                    msg = result.get("message", "")
-                    if needs_confirm:
-                        completion_line = f"\n\n🔐 {msg}"
-                    elif ok:
-                        completion_line = f"\n\n✅ Done — {msg}"
-                    else:
-                        completion_line = f"\n\n⚠️ That didn't go through: {msg}"
+
+                # ── Multi-step plan: hold for user confirmation, don't auto-execute ──
+                if a_type == "action_plan":
+                    detected_plan = action_obj
+                    step_count = len(action_obj.get("steps", []))
                     ai_response_text = (
                         ai_response_text[: action_match.start()].rstrip()
-                        + completion_line
+                        + f"\n\n📋 **{step_count}-step action plan ready** — review the steps below and click **Execute Plan** to proceed."
                         + ai_response_text[action_match.end():]
                     )
                 else:
-                    print(f"[AI Chat] Action type '{a_type}' not in AUTO_EXECUTE_ACTIONS: {AUTO_EXECUTE_ACTIONS}")
+                    # Combine legacy + registry actions
+                    all_auto = set(AUTO_EXECUTE_ACTIONS) | set(REGISTERED_ACTIONS.keys())
+                    if a_type in all_auto:
+                        # Snapshot pre-state for undo (what will be changed) — only meaningful for legacy actions
+                        pre_state = await capture_pre_state(action_obj)
+                        print(f"[AI Chat] Executing action: {a_type}")
+                        # Use new dispatcher (handles registry + falls back to legacy)
+                        result = await dispatch_action(action_obj, current_user)
+                        print(f"[AI Chat] Action result: {result}")
+                        # Build the undo spec from pre_state + post-result
+                        undo_spec = build_undo_spec(a_type, action_obj, pre_state, result)
+                        auto_action_executed = {"action": a_type, "result": result}
+                        # Strip the action block; append a completion line.
+                        ok = result.get("success", False)
+                        needs_confirm = result.get("needs_confirmation", False)
+                        msg = result.get("message", "")
+                        if needs_confirm:
+                            completion_line = f"\n\n🔐 {msg}"
+                        elif ok:
+                            completion_line = f"\n\n✅ Done — {msg}"
+                        else:
+                            completion_line = f"\n\n⚠️ That didn't go through: {msg}"
+                        ai_response_text = (
+                            ai_response_text[: action_match.start()].rstrip()
+                            + completion_line
+                            + ai_response_text[action_match.end():]
+                        )
+                    else:
+                        print(f"[AI Chat] Action type '{a_type}' not in AUTO_EXECUTE_ACTIONS: {AUTO_EXECUTE_ACTIONS}")
         except json.JSONDecodeError as je:
             print(f"[AI Chat] JSON parse error: {je}")
         except Exception as _ae:
@@ -1736,7 +1808,7 @@ Guidelines:
         # ---------- HALLUCINATION GUARD ----------
         # If the AI wrote a past-tense claim ("I added / created / removed / updated ...")
         # but no action block was emitted, append a warning so the user is not misled.
-        if auto_action_executed is None:
+        if auto_action_executed is None and detected_plan is None:
             halluc_patterns = re.search(
                 r"\b(I(?:'ve| have)?\s+(?:added|created|removed|updated|scheduled|assigned|submitted|deleted|modified|set|changed|logged|recorded|noted)|(?:was|is now|has been|have been|are now)\s+(?:added|created|removed|updated|submitted|scheduled|logged|recorded|saved|noted|in place))\b",
                 ai_response_text,
@@ -1748,10 +1820,13 @@ Guidelines:
                     + "\n\n⚠️ **Note:** Nothing was actually saved. Please rephrase your request with specific details (project name, resource name, dates, etc.) so I can execute the action."
                 )
 
-        # Save messages to session
+        # Save messages to session (attach plan data to assistant message if present)
         new_messages = session.get("messages", [])
         new_messages.append({"role": "user", "content": user_message, "timestamp": datetime.now(timezone.utc).isoformat()})
-        new_messages.append({"role": "assistant", "content": ai_response_text, "timestamp": datetime.now(timezone.utc).isoformat()})
+        assistant_msg: dict = {"role": "assistant", "content": ai_response_text, "timestamp": datetime.now(timezone.utc).isoformat()}
+        if detected_plan:
+            assistant_msg["plan"] = detected_plan  # Store plan in session history
+        new_messages.append(assistant_msg)
 
         # Keep last 50 messages
         if len(new_messages) > 50:
@@ -1774,6 +1849,9 @@ Guidelines:
             "auto_executed": auto_action_executed,
             "can_undo": bool(undo_spec),
             "undo_label": (undo_spec or {}).get("label"),
+            "has_plan": detected_plan is not None,
+            "plan": detected_plan,
+            "specialist_mode": specialist_key if specialist_key else None,
         }
 
     except Exception as e:
@@ -1784,6 +1862,85 @@ Guidelines:
             "message_count": len(session.get("messages", [])),
         }
 
+
+
+@router.post("/api/ai/chat/execute-plan")
+async def execute_action_plan(
+    payload: dict = Body(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Execute a multi-step action plan sequentially.
+    Each step goes through the full dispatch_action flow (permission checks, confirmation tokens, etc.)
+    Returns per-step results.
+    """
+    role = (current_user.get("role") or "").lower()
+    is_admin = role in ("admin", "super_admin")
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required to execute action plans")
+
+    steps = payload.get("steps", [])
+    if not steps:
+        raise HTTPException(status_code=400, detail="No steps provided")
+    if len(steps) > 20:
+        raise HTTPException(status_code=400, detail="Maximum 20 steps per plan")
+
+    results = []
+    stop_on_error = payload.get("stop_on_error", True)
+
+    for i, step in enumerate(steps):
+        try:
+            result = await dispatch_action(step, current_user)
+            step_result = {
+                "step": i + 1,
+                "action": step.get("action"),
+                "description": step.get("description", step.get("action")),
+                "success": result.get("success", False),
+                "message": result.get("message", ""),
+                "needs_confirmation": result.get("needs_confirmation", False),
+            }
+            results.append(step_result)
+            if not result.get("success") and stop_on_error:
+                break
+        except Exception as e:
+            results.append({
+                "step": i + 1,
+                "action": step.get("action"),
+                "success": False,
+                "message": str(e)[:200],
+            })
+            if stop_on_error:
+                break
+
+    success_count = sum(1 for r in results if r.get("success"))
+    return {
+        "results": results,
+        "success_count": success_count,
+        "total_steps": len(steps),
+        "executed_steps": len(results),
+        "all_success": success_count == len(results) and len(results) == len(steps),
+    }
+
+
+@router.post("/api/ai/health-monitor/run")
+async def run_health_monitor_endpoint(
+    current_user: dict = Depends(require_admin),
+):
+    """Run a proactive portfolio health analysis (admin only)."""
+    from services.health_monitor import run_health_monitor
+    report = await run_health_monitor(triggered_by=current_user.get("email", "admin"), save_report=True)
+    return report
+
+
+@router.get("/api/ai/health-monitor/report")
+async def get_latest_health_report(
+    current_user: dict = Depends(require_admin),
+):
+    """Get the most recently saved health report."""
+    from services.health_monitor import get_latest_report
+    report = await get_latest_report()
+    if not report:
+        return {"message": "No health report yet. Run a health check first.", "findings": []}
+    return report
 
 
 @router.post("/api/ai/chat/execute-action")

@@ -95,6 +95,7 @@ import AIInstructionsPanel from '../components/AIInstructionsPanel';
 import AIFeedbackButtons from '../components/AIFeedbackButtons';
 import ProjectHealthScore from '../components/ProjectHealthScore';
 import ProjectPredictions from '../components/ProjectPredictions';
+import AIMemoryPanel from '../components/AIMemoryPanel';
 
 // Safe date formatting helper
 const safeFormatDate = (dateStr, formatStr = 'MMM d, yyyy') => {
@@ -2647,6 +2648,11 @@ const ProjectDetail = () => {
             projectId={id} 
             projectName={project?.name}
           />
+
+          {/* Agent Memory Panel */}
+          <div className="mt-6">
+            <AIMemoryPanel projectId={id} />
+          </div>
 
           {/* Phase Delete Confirmation Dialog */}
           <AlertDialog open={phaseToDelete !== null} onOpenChange={(open) => !open && cancelDeletePhase()}>

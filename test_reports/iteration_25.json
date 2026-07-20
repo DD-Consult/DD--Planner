@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 25 — 4 New Agentic Features fully tested and passing. 39/39 tests green. Covers: Agent Memory CRUD, project-scoped memories, Health Monitor (admin-only, 403 for non-admin), Execute Plan (multi-step, stop_on_error, 403 for non-admin), AI Actions dispatch (save_memory, run_health_check), Specialist Agent Detection (unit tests), Action Registry count check, and regression (projects, resources, allocations, AI chat).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration25_agentic_features.py",
+    "/app/test_reports/pytest/iteration25.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ai_memory.py: No admin-only gate on GET/POST/PUT/DELETE — any authenticated user can create, update, and delete any memory entry (including ones created by admins). This is by design per the review request ('admins and project leads can save') but note that resources like riley can also write/delete global memories without restriction. E1 should confirm if this is intentional.",
+    "ai_memory_collection: The list endpoint (GET /api/ai/memory) does not scope results by role — non-admin users see all active global memories. The specialist header is only injected when @trigger is present; otherwise the chat proceeds without specialist context.",
+    "execute-plan: The admin-check uses role in ('admin', 'super_admin') — consistent with rest of codebase. Good.",
+    "health_monitor.py: _check_over_allocations compares datetime objects from allocation start/end fields. If those fields are stored as strings (which some historic allocations may be), _dt_utc() returns None and they are silently excluded from over-allocation checks. This is handled gracefully but could cause false-negatives.",
+    "No ObjectId serialization issues found — ai_memory routes use serialize_doc() correctly. ai_health_reports route does doc.pop('_id', None).",
+    "Action Registry has 35 registered actions (confirmed by test — includes save_memory and run_health_check at indices 34/35)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration25_agentic_features.py"
+  ],
+  "success_rate": {
+    "backend": "100% (39/39)",
+    "frontend": "N/A (backend-only test)"
+  },
+  "test_credentials": {
+    "super_admin": "admin@test.com / admin123 (super_admin role in local preview DB)",
+    "resource": "riley@test.com / riley123"
+  },
+  "seed_data_creation": "Test memories created and cleaned up within test run (soft-deleted via DELETE endpoint or hard-deleted via cleanup steps). No persistent test data left.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "39/39 tests pass for iteration 25 agentic features. Key test file: /app/backend/tests/test_iteration25_agentic_features.py. Tests cover: (1) TestHealthRegression — /api/health, (2) TestSpecialistDetection — 6 unit tests via sys.path import of services/specialist_agents.py, (3) TestAIMemoryCRUD — full CRUD lifecycle including 400/404 edge cases and resource user access, (4) TestProjectMemories — project-scoped + global memory retrieval, (5) TestHealthMonitor — run and report endpoints with admin/non-admin auth, (6) TestExecutePlan — empty/too-many/non-admin validation + single/multi step + stop_on_error behavior, (7) TestAIActionsDispatch — save_memory and run_health_check via /api/ai/chat/execute-action, (8) TestActionRegistry — registry size check (35 actions), (9) TestRegression — projects, resources, allocations, AI chat. All pass cleanly in 7.42s."
+}

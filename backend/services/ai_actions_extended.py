@@ -663,6 +663,48 @@ async def _h_run_data_cleanup_scan(action: dict, user: dict) -> dict:
     )
 
 
+async def _h_save_memory(action: dict, user: dict) -> dict:
+    """Save a key decision, preference, or note to agent memory for future context injection."""
+    from database import ai_memory_collection
+    title = (action.get("title") or "").strip()
+    content = (action.get("content") or "").strip()
+    if not title or not content:
+        return _err("title and content are required")
+    scope = action.get("scope", "project")
+    if scope == "project" and not action.get("project_id"):
+        scope = "global"
+    doc = {
+        "scope": scope,
+        "project_id": action.get("project_id") if scope == "project" else None,
+        "title": title,
+        "content": content,
+        "category": action.get("category", "note"),
+        "created_by": user.get("email"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "active": True,
+    }
+    r = await ai_memory_collection.insert_one(doc)
+    return _ok(f"Memory saved: '{title}'", id=str(r.inserted_id))
+
+
+async def _h_run_health_check(action: dict, user: dict) -> dict:
+    """Trigger a full portfolio health analysis and return a summary."""
+    try:
+        from services.health_monitor import run_health_monitor
+        report = await run_health_monitor(triggered_by=user.get("email", "ai"), save_report=True)
+        findings = report.get("findings", [])
+        summary = report.get("summary", {})
+        overall = report.get("overall_health", "Unknown")
+        msg = (
+            f"Health check complete — {overall}. "
+            f"{summary.get('critical', 0)} critical, {summary.get('high', 0)} high, "
+            f"{summary.get('medium', 0)} medium findings across {report.get('projects_analyzed', 0)} projects."
+        )
+        return _ok(msg, findings=findings[:10], summary=summary, overall_health=overall)
+    except Exception as e:
+        return _err(f"Health check failed: {e}")
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Destructive legacy action wrappers (needed to gate with confirmation token)
 # ─────────────────────────────────────────────────────────────────────────
@@ -989,5 +1031,20 @@ register("run_data_cleanup_scan",
          permission="super_admin",
          category="system",
          description="Scan the database for orphaned allocations/timesheets/risks. Reports counts only — no mutation.",
+         example={},
+         audit_entity_type="system")
+
+register("save_memory",
+         handler=_h_save_memory,
+         required_fields=["title", "content"],
+         category="system",
+         description="Save a key decision, preference, or context note to agent memory so it's available in future sessions. scope='project' links it to a project; scope='global' makes it app-wide.",
+         example={"title": "Phase budget split", "content": "Team agreed to 60/40 Discovery/Build split for all future projects.", "scope": "global", "category": "decision"},
+         audit_entity_type="system")
+
+register("run_health_check",
+         handler=_h_run_health_check,
+         category="system",
+         description="Trigger a proactive portfolio health analysis: budget overruns, over-allocations, stale status updates, overdue milestones, unmitigated risks. Returns a structured findings report.",
          example={},
          audit_entity_type="system")
