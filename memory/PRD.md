@@ -263,6 +263,39 @@ DD Planner is a full-stack resource planning and project management application 
 
 - 39/39 tests green (iter 25), 74/74 total regression
 
+## Session: Integration Layer — HubSpot + MCP Server (Jul 2026)
+
+### Features Built
+
+**1. HubSpot Bi-directional CRM Integration**
+- **Inbound** (HubSpot → DD Planner): `POST /api/integrations/hubspot/webhook` receives deal stage change events. When stage = configured trigger (default: closedwon) → auto-creates project with field mapping: dealname→name, amount→budget_value, closedate→end_date, company→client_name, contact→main_contact
+- **Outbound** (DD Planner → HubSpot): When a status update is submitted, pushes a formatted engagement note to the linked HubSpot deal (fire-and-forget, non-fatal if HubSpot is unavailable)
+- `services/hubspot.py` — API client: get_deal, get_deal_company_name, get_deal_primary_contact, map_deal_to_project, push_status_update_to_hubspot, test_hubspot_connection, append_sync_log
+
+**2. Integrations Settings UI (super_admin only)**
+- New section at bottom of Settings page — `components/IntegrationsSettings.js`
+- HubSpot card: enable toggle, Private App Token (masked, show/hide), Portal ID, trigger stage, default project status, sync updates toggle, "Test Connection" button with live result, webhook URL (copyable)
+- Agent API card: enable toggle, MCP endpoint URL (copyable), generate/rotate API key with amber "save now" warning
+- More Integrations: Salesforce, Pipedrive, Monday.com, Slack (coming soon)
+- Sync Log: collapsible last-30-events audit log
+
+**3. MCP Server (AI Agent API)**
+- `GET /api/mcp` — server manifest/discovery (no auth — allows Gemini/Copilot to discover)
+- `POST /api/mcp` — JSON-RPC 2.0 endpoint (X-Agent-Key auth required)
+- Supports: `initialize`, `tools/list`, `tools/call`
+- Tools: `list_projects`, `get_project_status`, `get_team_capacity`, `get_recent_updates`
+- Any MCP-compatible AI (Gemini Studio, Copilot Studio, VS Code Copilot) can register `POST /api/mcp` + API key
+
+**4. Integration Settings Storage**
+- `integration_settings` MongoDB collection (org_id='default') — multi-tenant ready
+- `integration_sync_logs` MongoDB collection — audit log for all inbound/outbound events
+- API: GET/PUT `/api/integrations/settings`, `/api/integrations/agent-api/regenerate`, `/api/integrations/sync-logs`
+
+**Bug Fix:** `RESEND_API_KEY` import missing in admin.py → caused 500 on `/api/reminders/status` → fixed
+
+- Testing: 36/36 pass (iter 29)
+- Files: `services/hubspot.py`, `routes/integrations.py`, `routes/mcp_server.py`, `components/IntegrationsSettings.js`, `pages/Settings.js`, `database.py`, `server.py`, `routes/projects.py`, `api.js`
+
 ## Session: Personalised Resource Dashboard (Jul 2026)
 
 ### Feature: ResourceDashboard for resource/contractor users

@@ -18,6 +18,7 @@ from database import (
     holidays_collection, notifications_collection, chat_sessions_collection,
     EXPORT_API_KEY, SYDNEY_TZ,
 )
+from database import RESEND_API_KEY
 from models.schemas import UserRole, ProjectStatus, NotificationResponse
 from auth.dependencies import get_current_user, require_admin, require_admin_or_above, get_password_hash
 from utils import serialize_doc, ensure_phase_ids
