@@ -1601,6 +1601,29 @@ Generate a professional executive summary (2-3 sentences only)."""
     )
     
     status_doc["_id"] = result.inserted_id
+
+    # ── Outbound: push status update to HubSpot (fire-and-forget) ──
+    try:
+        import asyncio
+        from services.hubspot import get_hubspot_config, push_status_update_to_hubspot, append_sync_log
+        hs_config = await get_hubspot_config()
+        if hs_config and hs_config.get("enabled") and hs_config.get("sync_status_updates") and hs_config.get("private_app_token"):
+            project_for_hs = await projects_collection.find_one({"_id": ObjectId(update.project_id)})
+            if project_for_hs and project_for_hs.get("hubspot_deal_id"):
+                hs_result = await push_status_update_to_hubspot(
+                    project_for_hs,
+                    status_doc,
+                    hs_config["private_app_token"],
+                )
+                await append_sync_log(
+                    "outbound", "status_update_push",
+                    "success" if hs_result.get("ok") else "error",
+                    hs_result.get("message", ""),
+                    project_for_hs.get("hubspot_deal_id", ""),
+                )
+    except Exception as _hs_err:
+        print(f"[HubSpot outbound] Non-fatal error: {_hs_err}")
+
     return serialize_doc(status_doc)
 
 

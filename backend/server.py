@@ -33,6 +33,8 @@ from routes.action_items import router as action_items_router
 from routes.ai_instructions import router as ai_instructions_router
 from routes.insights import router as insights_router
 from routes.ai_memory import router as ai_memory_router
+from routes.integrations import router as integrations_router
+from routes.mcp_server import router as mcp_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -65,6 +67,8 @@ app.include_router(action_items_router)
 app.include_router(ai_instructions_router)
 app.include_router(insights_router)
 app.include_router(ai_memory_router)
+app.include_router(integrations_router)
+app.include_router(mcp_router)
 
 
 @app.on_event("startup")

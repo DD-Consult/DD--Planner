@@ -538,4 +538,11 @@ export const getProjectPredictions = (projectId) => api.get(`/insights/project/$
 export const getWeeklyDigest = () => api.get('/insights/weekly-digest');
 export const getPortfolioTrends = () => api.get('/insights/portfolio/trends');
 
+// Integrations — HubSpot + Agent API
+export const getIntegrationSettings = () => api.get('/integrations/settings');
+export const updateIntegrationSettings = (data) => api.put('/integrations/settings', data);
+export const testHubSpotConnection = (token) => api.post('/integrations/hubspot/test', { token });
+export const regenerateAgentApiKey = () => api.post('/integrations/agent-api/regenerate');
+export const getIntegrationSyncLogs = (limit = 50) => api.get('/integrations/sync-logs', { params: { limit } });
+
 export default api;

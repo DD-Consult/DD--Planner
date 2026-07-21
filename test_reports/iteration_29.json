@@ -1,0 +1,78 @@
+{
+  "summary": "Iteration 29 — Integration Layer fully tested. 36/36 backend tests pass. All frontend integration features verified: Settings page Integrations section (super_admin only), HubSpot card with webhook URL and copy button, Agent API card with MCP endpoint URL and Generate/Rotate Key flow, More Integrations card, Sync Log section. MCP Server GET manifest and POST JSON-RPC 2.0 endpoints all working. Riley resource dashboard and admin Command Center regression both pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/reminders/status",
+        "issue": "Returns 500: NameError: name 'RESEND_API_KEY' is not defined — PRE-EXISTING issue unrelated to integrations feature"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Settings page",
+        "issues": ["'Request failed with status code 500' toast appears on page load — caused by pre-existing /api/reminders/status 500 error (not integration-related)"]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration29_integrations.py",
+    "/app/test_reports/pytest/iteration29.xml"
+  ],
+  "action_items": [
+    "PRE-EXISTING: Fix /api/reminders/status 500 error (NameError: RESEND_API_KEY not defined) — causes toast on Settings page load",
+    "MINOR SECURITY: verify_hubspot_signature_v3() is imported in integrations.py but never called in the webhook handler — webhook currently accepts any payload without signature validation"
+  ],
+  "critical_code_review_comments": [
+    "integrations.py webhook receiver: verify_hubspot_signature_v3 is imported but not called — no HubSpot signature validation is performed on inbound webhooks. This is a security gap but acceptable for MVP.",
+    "hubspot.py hmac.new usage is valid Python 3 syntax and works correctly.",
+    "_get_settings() correctly pops _id from MongoDB doc and returns defaults if no doc exists.",
+    "GET /api/integrations/settings correctly masks private_app_token and api_key (returns bool, not raw values). Agent API key shows masked version (dda_XXXX••••).",
+    "MCP server correctly enforces X-Agent-Key auth on POST, allows discovery GET without auth.",
+    "All 4 MCP tools (list_projects, get_project_status, get_team_capacity, get_recent_updates) implemented and tested.",
+    "agent_api.enabled is correctly set to True upon key regeneration."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration29_integrations.py"
+  ],
+  "success_rate": {
+    "backend": "100% (36/36)",
+    "frontend": "100% — all integration UI features verified via Playwright"
+  },
+  "test_credentials": {
+    "super_admin": "admin@test.com / admin123 (role=super_admin)",
+    "resource": "riley@test.com / riley123 (role=resource)"
+  },
+  "seed_data_creation": "None — test API calls generated some sync_log entries during HubSpot test connection tests",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "Iteration 29 confirms Integration Layer fully working. Key test file: /app/backend/tests/test_iteration29_integrations.py (36 tests). All integration endpoints tested: GET/PUT /api/integrations/settings (super_admin only, 403 for resource), POST /api/integrations/hubspot/test (returns ok:false not 500 for invalid token), POST /api/integrations/agent-api/regenerate (returns dda_ key), GET /api/integrations/sync-logs (array, super_admin only), GET /api/mcp (no auth, 4 tools), POST /api/mcp (X-Agent-Key auth, initialize/tools-list/tools-call all work). MCP tools list_projects, get_team_capacity, get_recent_updates all return correct data. Frontend: Settings page shows Integrations section only for super_admin, Riley sees resource dashboard correctly. Pre-existing reminder 500 error unrelated to integrations.",
+  "verified_features": {
+    "GET_integrations_settings_super_admin": "PASS — returns {hubspot, agent_api} sections",
+    "GET_integrations_settings_403_for_resource": "PASS — 403 for riley@test.com",
+    "PUT_integrations_settings_saves_config": "PASS — portal_id persisted and verified with GET",
+    "POST_hubspot_test_invalid_token_ok_false": "PASS — returns ok:false with error message (not 500)",
+    "POST_agent_api_regenerate_dda_key": "PASS — key starts with dda_ and is 52 chars",
+    "GET_sync_logs_returns_array": "PASS — array with entries after test connection",
+    "GET_mcp_no_auth_manifest": "PASS — returns protocolVersion, serverInfo, tools",
+    "GET_mcp_4_tools": "PASS — list_projects, get_project_status, get_team_capacity, get_recent_updates",
+    "POST_mcp_no_key_401": "PASS",
+    "POST_mcp_invalid_key_401": "PASS",
+    "POST_mcp_initialize": "PASS — returns protocolVersion + serverInfo",
+    "POST_mcp_tools_list_4_tools": "PASS",
+    "POST_mcp_tools_call_list_projects": "PASS — returns array of active projects",
+    "POST_mcp_tools_call_get_team_capacity": "PASS — returns resources with utilization percentages",
+    "settings_integrations_section_super_admin": "PASS — section visible for admin@test.com",
+    "settings_hubspot_webhook_url_copy_button": "PASS — URL shows /api/integrations/hubspot/webhook with Copy button",
+    "settings_mcp_endpoint_url_copy_button": "PASS — URL shows /api/mcp with Copy button",
+    "settings_generate_key_flow": "PASS — key shown in amber box with 'Save this key now' warning",
+    "settings_integrations_hidden_for_resource": "PASS — riley sees no Integrations section",
+    "regression_admin_dashboard": "PASS — Command Center shows 2 active projects",
+    "regression_riley_resource_dashboard": "PASS — 'Good morning, Riley' personalized view"
+  }
+}

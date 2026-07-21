@@ -12,9 +12,10 @@ import {
 } from '../components/ui/select';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
-import { Settings as SettingsIcon, Key, Sparkles, CheckCircle2, XCircle, User, Camera, Loader2, Trash2, AlertTriangle, Database, ShieldCheck, Bell, Mail, Clock } from 'lucide-react';
+import { Settings as SettingsIcon, Key, Sparkles, CheckCircle2, XCircle, User, Camera, Loader2, Trash2, AlertTriangle, Database, ShieldCheck, Bell, Mail, Clock, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getMe, updateAvatar, scanOrphanedData, executeDataCleanup, getAiSettings, updateAiSettings, clearAiSettings, checkTimesheetReminders, checkAllocationReminders, getReminderStatus } from '../api';
+import IntegrationsSettings from '../components/IntegrationsSettings';
 
 const Settings = () => {
   const queryClient = useQueryClient();
@@ -387,6 +388,21 @@ const Settings = () => {
           </div>
 
           <ReminderSection />
+        </div>
+      )}
+
+      {/* Integrations — super_admin only */}
+      {isSuperAdmin && (
+        <div data-testid="integrations-section">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg bg-[#F2F7FF] flex items-center justify-center"><Link2 size={20} className="text-[#1570EF]" /></div>
+            <div>
+              <h2 className="text-lg font-semibold" style={{ fontFamily: 'Space Grotesk' }}>Integrations</h2>
+              <p className="text-sm text-[#667085]">Connect DD Planner to CRMs and AI agents</p>
+            </div>
+            <span className="ml-auto flex items-center gap-1 text-xs text-[#667085] bg-[#F9FAFB] border border-[#E6E8EC] rounded px-2 py-1"><ShieldCheck size={12} /> Super Admin only</span>
+          </div>
+          <IntegrationsSettings />
         </div>
       )}
     </div>

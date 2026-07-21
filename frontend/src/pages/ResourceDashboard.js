@@ -120,7 +120,7 @@ export default function ResourceDashboard({ userData }) {
   // ── derived ────────────────────────────────────────────────────────────────
 
   const resource  = myAllocsData?.resource || {};
-  const allAllocs = myAllocsData?.allocations || [];
+  const allAllocs = useMemo(() => myAllocsData?.allocations || [], [myAllocsData]);
 
   const thisWeekAllocs = useMemo(() => getAllocationsThisWeek(allAllocs), [allAllocs]);
   const totalUtilPct   = useMemo(() => Math.min(100, thisWeekAllocs.reduce((s, a) => s + (a.percentage || 0), 0)), [thisWeekAllocs]);
