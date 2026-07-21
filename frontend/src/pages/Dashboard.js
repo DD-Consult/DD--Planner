@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate, Link } from 'react-router-dom';
 import { format, addDays, parseISO, isWithinInterval, startOfWeek, endOfWeek, areIntervalsOverlapping } from 'date-fns';
 import { getCapacityReport, getResources, getProjects, getAllocations, getMe, getActionItems, getPortfolioHealthScores } from '../api';
+import ResourceDashboard from './ResourceDashboard';
 import InteractiveTimelineGrid from '../components/InteractiveTimelineGrid';
 import AllocationEditor from '../components/AllocationEditor';
 import TimesheetWeeklyCheckin from '../components/TimesheetWeeklyCheckin';
@@ -117,6 +118,7 @@ const Dashboard = ({ token }) => {
   });
 
   const isAdmin = userData?.role === 'admin' || userData?.role === 'super_admin';
+  const isResource = userData?.role === 'resource' || userData?.role === 'contractor';
 
   const filteredProjects = useMemo(() => {
     if (!projects) return [];
@@ -247,6 +249,11 @@ const Dashboard = ({ token }) => {
 
   const getHealthColor = (health) => ({ Green: 'bg-[#16B364] text-white', Amber: 'bg-[#F4B740] text-white', Red: 'bg-[#EF4444] text-white' }[health] || 'bg-[#667085] text-white');
   const handleProjectClick = (projectId) => navigate(`/projects/${projectId}`);
+
+  // Resource/staff users get their own personalised dashboard
+  if (userData && isResource) {
+    return <ResourceDashboard userData={userData} />;
+  }
 
   // Helper function to check if project is in its last week (5 business days or less remaining)
   const isInLastWeek = (endDate) => {
