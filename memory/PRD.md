@@ -263,6 +263,21 @@ DD Planner is a full-stack resource planning and project management application 
 
 - 39/39 tests green (iter 25), 74/74 total regression
 
+## Session: Personalised Resource Dashboard (Jul 2026)
+
+### Feature: ResourceDashboard for resource/contractor users
+- **Trigger**: `Dashboard.js` detects `role === 'resource' || 'contractor'` and renders `<ResourceDashboard>` instead of the admin Command Center (conditional return after all hooks, no Rules of Hooks violation)
+- **Personalised greeting**: "Good morning/afternoon/evening, [First Name]" with role + date subtitle
+- **Action Items Banner**: same as admin — shows high/medium/low items with expand/dismiss; auto-refreshes every 5 min
+- **Timesheet Nudge**: standalone banner if action items dismissed and timesheet is missing
+- **4 KPI Cards**: My Utilization This Week (%), My Hours This Week (h), Active Projects (count), Timesheet Status (Not Submitted / Draft / Up to Date badge)
+- **My Allocations**: current + upcoming allocations with project name, client, role, %, h/wk, dates, status badge; "View all" → /my-allocations
+- **Recent Timesheets**: last 4 weeks with status badges + hours logged; empty state CTA → /my-timesheets
+- **My Leaves**: upcoming leaves with status badges; empty state CTA → /time-off
+- Data sources: `GET /api/my-allocations?period=month`, `GET /api/timesheets/history?weeks=4`, `GET /api/leaves`, `GET /api/dashboard/action-items`
+- Files: `ResourceDashboard.js` (new), `Dashboard.js` (early return added)
+- Testing: 23/23 tests pass (iter 28)
+
 ## Session: Resource Flow E2E Test + Allocation Hours Bug Fix (Jul 2026)
 
 ### Bug Fixed: Allocation Hours Inconsistency
