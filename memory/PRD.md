@@ -319,3 +319,19 @@ DD Planner is a full-stack resource planning and project management application 
 - **Fix**: `formatAllocation` now uses 40h base always. `MyAllocations.js` "Allocation" column shows `X% · Y.0h/wk` using backend pre-calculated `alloc.weekly_hours`.
 - 29/29 E2E tests green (iter 27), 163/163 total regression
 
+
+
+## Session: Comprehensive Documentation (Feb 2026)
+
+### Created Documentation
+1. **README.md** (542 lines) — Complete project overview with architecture diagram, tech stack, setup instructions, environment variables, RBAC matrix, core modules, AI capabilities, integrations overview, full API reference, and project structure
+2. **GUIDE.md** (486 lines) — Step-by-step user guide covering all 17 feature areas with role-specific workflows for Super Admin, Admin, Resource, Contractor, and Client
+3. **INTEGRATIONS.md** (392 lines) — Detailed setup instructions for HubSpot CRM (Private App creation, webhook config, field mapping), MCP Server (API key generation, example JSON-RPC requests, Gemini/Copilot connection), and Resend email. Includes troubleshooting tables and security notes.
+
+### Pending Tasks (Backlog)
+- P1: Refactor `<ResourceSelect>` reusable component
+- P1: Timesheet reminder / dashboard nudge for missing timesheets
+- P2: "Show inactive" toggle on Resources page
+- P2: Offboarding summary dialog when deactivating a resource
+- P2: "Lead" badge on project header + lead dashboard widget
+- P2: Read-only badge in AI Chat panel for non-admins
