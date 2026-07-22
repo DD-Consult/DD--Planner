@@ -14,7 +14,7 @@ from models.schemas import (
     RiskResponse, UserRole, AllocationValidateRequest,
 )
 from auth.dependencies import get_current_user, require_admin
-from utils import serialize_doc, is_timesheet_update_allowed, get_next_allowed_timesheet_day
+from utils import serialize_doc, is_timesheet_update_allowed, get_next_allowed_timesheet_day, HOURS_PER_WEEK
 
 router = APIRouter()
 
@@ -865,9 +865,9 @@ async def get_my_allocations(
         })
     
     # Compute summary metrics
-    # Capacity used: sum of percentages of allocations active TODAY (or period_start)
-    reference_date = today  # Use today as reference for capacity calculation
-    capacity_used_percentage = 0
+    # Capacity used: sum of percentages of allocations active TODAY
+    reference_date = today
+    raw_allocation_pct = 0
     
     for alloc in allocations:
         alloc_start = alloc.get("start_date")
@@ -878,11 +878,16 @@ async def get_my_allocations(
         if isinstance(alloc_end, datetime):
             alloc_end = alloc_end.date()
         
-        # Check if allocation is active on reference date
         if alloc_start <= reference_date <= alloc_end:
-            capacity_used_percentage += alloc.get("percentage", 0)
+            raw_allocation_pct += alloc.get("percentage", 0)
     
-    is_over_capacity = capacity_used_percentage > standard_capacity
+    # Capacity used relative to standard_capacity (e.g. 145% alloc on 30% resource = 483%)
+    effective_capacity = standard_capacity if standard_capacity and standard_capacity > 0 else 100
+    capacity_used_percentage = round((raw_allocation_pct / effective_capacity) * 100)
+    is_over_capacity = raw_allocation_pct > effective_capacity
+    
+    # Available hours per week based on standard capacity
+    available_hours_per_week = round((effective_capacity / 100.0) * HOURS_PER_WEEK, 1)
     
     # Total weekly hours: sum of weekly hours for allocations active today
     total_weekly_hours = 0.0
@@ -912,8 +917,10 @@ async def get_my_allocations(
         "summary": {
             "total_allocations": len(allocations),
             "capacity_used_percentage": capacity_used_percentage,
+            "raw_allocation_pct": raw_allocation_pct,
             "is_over_capacity": is_over_capacity,
             "total_weekly_hours": round(total_weekly_hours, 2),
+            "available_hours_per_week": available_hours_per_week,
             "total_period_hours": round(total_period_hours, 2),
             "standard_capacity": standard_capacity
         },

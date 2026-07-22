@@ -121,10 +121,13 @@ export default function ResourceDashboard({ userData }) {
 
   const resource  = myAllocsData?.resource || {};
   const allAllocs = useMemo(() => myAllocsData?.allocations || [], [myAllocsData]);
+  const stdCap = resource.standard_capacity || 100;
 
   const thisWeekAllocs = useMemo(() => getAllocationsThisWeek(allAllocs), [allAllocs]);
-  const totalUtilPct   = useMemo(() => Math.min(100, thisWeekAllocs.reduce((s, a) => s + (a.percentage || 0), 0)), [thisWeekAllocs]);
+  const rawUtilPct     = useMemo(() => thisWeekAllocs.reduce((s, a) => s + (a.percentage || 0), 0), [thisWeekAllocs]);
+  const totalUtilPct   = useMemo(() => Math.round((rawUtilPct / (stdCap || 100)) * 100), [rawUtilPct, stdCap]);
   const totalHrsWeek   = useMemo(() => thisWeekAllocs.reduce((s, a) => s + (a.weekly_hours || 0), 0), [thisWeekAllocs]);
+  const availableHrs   = (stdCap / 100) * 40;
 
   const activeAllocs  = useMemo(() => allAllocs.filter(a => {
     try { return !isPast(parseISO(a.end_date)); } catch { return false; }
@@ -259,7 +262,7 @@ export default function ResourceDashboard({ userData }) {
           iconColor="#7839EE"
           label="My Hours This Week"
           value={`${totalHrsWeek.toFixed(0)}h`}
-          sub="based on 40h/week"
+          sub={`${availableHrs.toFixed(0)}h/wk available`}
           testId="kpi-my-hours"
         />
         <KpiCard

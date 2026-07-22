@@ -157,22 +157,28 @@ const MyAllocations = () => {
               <div className="text-3xl font-bold text-[#0B1220]">{summary.total_allocations || 0}</div>
             </div>
 
-            {/* Capacity Used */}
+            {/* Capacity Used — relative to standard capacity */}
             <div className={`border rounded-lg p-5 ${getCapacityColor(summary.capacity_used_percentage || 0)}`} data-testid="summary-capacity">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm">Capacity Used</span>
                 <TrendingUp className="h-5 w-5" />
               </div>
               <div className="text-3xl font-bold">{summary.capacity_used_percentage || 0}%</div>
+              {summary.standard_capacity && summary.standard_capacity < 100 && (
+                <div className="text-xs mt-1 opacity-80">of {summary.standard_capacity}% capacity</div>
+              )}
             </div>
 
-            {/* Hours per Week */}
+            {/* Hours per Week — show allocated vs available */}
             <div className="bg-white border border-[#E6E8EC] rounded-lg p-5" data-testid="summary-hours-per-week">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm text-[#667085]">Hours / Week</span>
                 <Clock className="h-5 w-5 text-[#98A2B3]" />
               </div>
               <div className="text-3xl font-bold text-[#0B1220]">{(summary.total_weekly_hours || 0).toFixed(1)}h</div>
+              {summary.available_hours_per_week != null && summary.available_hours_per_week < 40 && (
+                <div className="text-xs text-[#667085] mt-1">{summary.available_hours_per_week}h available</div>
+              )}
             </div>
 
             {/* Period Range */}
@@ -195,10 +201,13 @@ const MyAllocations = () => {
             >
               <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
               <div>
-                <h4 className="font-semibold text-red-900 mb-1">⚠️ You are over-capacity this period</h4>
+                <h4 className="font-semibold text-red-900 mb-1">You are over-capacity this period</h4>
                 <p className="text-sm text-red-700">
-                  Current: <span className="font-semibold">{summary.capacity_used_percentage}%</span> of standard capacity{' '}
-                  ({summary.standard_capacity || 100}%)
+                  Allocated: <span className="font-semibold">{(summary.total_weekly_hours || 0).toFixed(1)}h/wk</span>
+                  {summary.available_hours_per_week != null && (
+                    <> — Available: <span className="font-semibold">{summary.available_hours_per_week}h/wk</span>
+                    {' '}({summary.standard_capacity || 100}% capacity)</>
+                  )}
                 </p>
               </div>
             </div>
@@ -210,7 +219,7 @@ const MyAllocations = () => {
               <div className="bg-white border border-[#E6E8EC] rounded-lg p-12 text-center">
                 <Briefcase className="h-16 w-16 text-[#98A2B3] mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-[#0B1220] mb-2">No allocations in this period</h3>
-                <p className="text-[#667085]">You don't have any project allocations during this time frame.</p>
+                <p className="text-[#667085]">You don&apos;t have any project allocations during this time frame.</p>
               </div>
             ) : (
               allocations.map((alloc, idx) => {

@@ -1,0 +1,44 @@
+{
+  "summary": "Full backend + frontend regression testing of the My Allocations capacity calculation bug fix for part-time resources (standard_capacity < 100). Verified new response fields (capacity_used_percentage relative to standard_capacity, raw_allocation_pct, available_hours_per_week), verified 100% Riley path unchanged, verified 30% part-time path returns 483% for 145% raw allocation, and verified UI (KPI cards, subtitles, over-capacity banner, ResourceDashboard KPIs) all render correctly. 11/11 pytest tests pass. All 8 requested test cases PASS.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration31_my_allocations_capacity.py",
+    "/app/test_reports/pytest/iteration31.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend routes/allocations.py L890: available_hours_per_week is stored via round(..., 1) — this is fine but Frontend MyAllocations shows it as an integer '12h available'. Consistent, no action.",
+    "Frontend MyAllocations.js L179 uses 'available_hours_per_week < 40' as the trigger for showing the 'Xh available' subtitle. This is a hardcoded threshold — works today because HOURS_PER_WEEK=40, but if HOURS_PER_WEEK ever changes it would silently break. Consider driving off standard_capacity < 100 (same test used for the capacity subtitle at L167) for symmetry.",
+    "Frontend ResourceDashboard.js L130 computes availableHrs = (stdCap/100)*40 with hardcoded 40. If the app ever supports a non-40h work week, this becomes wrong. Consider centralizing HOURS_PER_WEEK in a shared frontend constant (or exposing it in the /api/my-allocations response — server already returns available_hours_per_week which the dashboard could use directly).",
+    "The over-capacity banner text in MyAllocations.js L209 falls back to '(100% capacity)' when standard_capacity is missing/undefined. That's a reasonable fallback but a resource with standard_capacity=0 would display '(0% capacity)' which is technically correct but potentially confusing for users. Not a blocker."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration31_my_allocations_capacity.py"],
+  "success_rate": {"backend": "100% (11/11 tests)", "frontend": "100% (8/8 requested test cases)"},
+  "test_credentials": "admin@test.com/admin123 (super_admin), riley@test.com/riley123 (resource, std_cap=100). Auth endpoint requires OAuth2 form-encoded body (username=email, password=password), NOT JSON.",
+  "seed_data_creation": "Created and CLEANED UP: TEST_iter31_ui30 resource (std_cap=30), TEST_iter31_ui30@test.com user (via POST /api/auth/register), 2 allocations totaling 145% (100% on Website Redesign + 45% on Mobile App). All test data was deleted at end of run. Note: the pytest fixture creates 3 additional TEST_ resources (30/50/0) at session scope and deletes them in teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Auth: POST /api/auth/login expects form-encoded body {username, password}, returns {access_token}. User creation: POST /api/auth/register works but does NOT persist resource_id — instead, find_user_resource() matches user->resource by email. So to test as a specific resource, create resource with email X, then register user with same email X, then login. Endpoint GET /api/my-allocations returns summary with fields: capacity_used_percentage (relative to std_cap, e.g. 145/30*100=483), raw_allocation_pct (absolute sum), available_hours_per_week ((std_cap/100)*40), is_over_capacity, standard_capacity, total_weekly_hours, total_period_hours, total_allocations.",
+  "verification_matrix": {
+    "backend_100pct_riley": {
+      "capacity_used_equals_raw": true,
+      "available_hours_per_week": 40,
+      "standard_capacity": 100
+    },
+    "backend_30pct_test_user": {
+      "raw_allocation_pct": 145,
+      "capacity_used_percentage": 483,
+      "available_hours_per_week": 12,
+      "is_over_capacity": true,
+      "total_weekly_hours": 58.0,
+      "standard_capacity": 30
+    },
+    "backend_zero_capacity_guard": "No divide-by-zero; endpoint returns 200 and capacity_used_percentage remains numeric",
+    "frontend_MyAllocations_100pct_no_subtitles": "PASS — no 'of X% capacity' and no 'Xh available' subtitle rendered for Riley",
+    "frontend_MyAllocations_30pct_subtitles": "PASS — 'of 30% capacity' and '12h available' subtitles rendered",
+    "frontend_over_capacity_banner_text": "PASS — 'Allocated: 58.0h/wk — Available: 12h/wk (30% capacity)'",
+    "frontend_ResourceDashboard_utilization_relative": "PASS — 'My Utilization This Week' shows 483% for the 30% resource",
+    "frontend_ResourceDashboard_hours_subtext_dynamic": "PASS — '12h/wk available' for 30% resource; '40h/wk available' for Riley (100%)"
+  }
+}
