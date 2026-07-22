@@ -328,6 +328,13 @@ DD Planner is a full-stack resource planning and project management application 
 2. **GUIDE.md** (486 lines) — Step-by-step user guide covering all 17 feature areas with role-specific workflows for Super Admin, Admin, Resource, Contractor, and Client
 3. **INTEGRATIONS.md** (392 lines) — Detailed setup instructions for HubSpot CRM (Private App creation, webhook config, field mapping), MCP Server (API key generation, example JSON-RPC requests, Gemini/Copilot connection), and Resend email. Includes troubleshooting tables and security notes.
 
+### In-App Help & Guide Page
+- New `/help` route accessible to ALL roles (sidebar nav item "Help & Guide")
+- Role-aware content: Super Admin sees all 12 sections (incl. Integrations), Resource sees 9 sections (no admin-only content), Client sees 2 sections (Getting Started + Tips)
+- Features: search/filter, quick-nav cards, collapsible accordion FAQ, rich text rendering with bullet points and numbered lists
+- Files: `pages/Help.js` (new), `App.js` (route added), `Layout.js` (nav item added)
+- Testing: 9/9 frontend tests pass (iter 30)
+
 ### Pending Tasks (Backlog)
 - P1: Refactor `<ResourceSelect>` reusable component
 - P1: Timesheet reminder / dashboard nudge for missing timesheets

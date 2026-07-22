@@ -487,13 +487,13 @@ export default function Help() {
         >
           Help & Guide
         </h1>
-        <p className="text-sm text-[#667085]">
+        <div className="text-sm text-[#667085]">
           Everything you need to know about DD Planner.
           Showing content relevant to your role:{' '}
           <Badge variant="outline" className="ml-1 text-xs" data-testid="help-role-badge">
             {ROLE_LABELS[userRole] || userRole}
           </Badge>
-        </p>
+        </div>
       </div>
 
       {/* Search */}
