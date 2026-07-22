@@ -336,6 +336,19 @@ DD Planner is a full-stack resource planning and project management application 
 - Testing: 9/9 frontend tests pass (iter 30)
 
 ### Pending Tasks (Backlog)
+
+## Bug Fix: Capacity Calculation for Part-Time Resources (Feb 2026)
+
+### Root Cause
+`capacity_used_percentage` was the raw sum of allocation percentages (e.g. 145%) compared against `standard_capacity` (e.g. 30%). The over-capacity message said "145% of standard capacity (30%)" which was mathematically incorrect and misleading — the resource was actually at 483% of their capacity.
+
+### Fix
+- Backend (`routes/allocations.py`): `capacity_used_percentage` now calculated relative to `standard_capacity`: `(raw_sum / std_cap) * 100`. New fields added: `raw_allocation_pct`, `available_hours_per_week`.
+- Frontend (`MyAllocations.js`): Shows "of X% capacity" subtitle for part-time resources. Over-capacity banner shows "Allocated: Xh/wk — Available: Yh/wk (Z% capacity)".
+- Frontend (`ResourceDashboard.js`): Utilization KPI now relative to standard capacity. Hours sub-text shows dynamic available hours instead of hardcoded "40h/week".
+- For 100% capacity resources, behavior is unchanged.
+- Testing: 11/11 backend + 8/8 frontend tests pass (iter 31). Verified 30%, 50%, 0%, and 100% capacity scenarios.
+
 - P1: Refactor `<ResourceSelect>` reusable component
 - P1: Timesheet reminder / dashboard nudge for missing timesheets
 - P2: "Show inactive" toggle on Resources page
