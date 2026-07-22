@@ -1,0 +1,62 @@
+{
+  "summary": "Frontend-only testing of new /help Help & Guide page. Verified role-aware content, sidebar nav visibility, quick-nav cards, search/filter, accordion expand, empty state, and route accessibility for super_admin (admin@test.com), resource (riley@test.com), and client (client@test.com). All 9 requested test cases pass. One minor DOM nesting warning found (Badge div inside p).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Help page header (Help.js line 490-496)",
+        "issue": "React console warning: '<p> cannot contain a nested <div>' / 'validateDOMNesting'. The <Badge> component (rendered as a <div>) is placed inside a <p className='text-sm text-[#667085]'>. This produces a hydration warning on every page load and every role login (super_admin, resource, client all show it). Fix: wrap the paragraph text in a <span> or change the outer <p> to a <div>.",
+        "selector": "[data-testid='help-role-badge']",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix DOM nesting warning in /app/frontend/src/pages/Help.js (~line 490): the Badge (div) is nested inside a <p>. Change the wrapping <p> to a <div> or wrap surrounding text in <span> so the Badge is not a descendant of a paragraph."
+  ],
+  "critical_code_review_comments": [
+    "Help.js is 616 lines — still within acceptable size, but SECTIONS content array (~330 lines) could be extracted to /app/frontend/src/data/helpContent.js for cleanliness and easier localization.",
+    "RichText uses dangerouslySetInnerHTML with manual replacements. Since content is hard-coded internally this is acceptable, but if content ever becomes user-generated it would be a XSS risk.",
+    "Nav item includes role 'client', so clients get 'Help & Guide' in the sidebar even though the Layout normally suppresses most items for clients. This is intentional per the spec and works correctly."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100%"},
+  "test_credentials": "admin@test.com/admin123 (super_admin in DB), riley@test.com/riley123 (resource), client@test.com/client123 (client)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Help page is fully functional. Route /help works. Role-aware filtering, search, accordions, quick-nav cards, and empty state all work. The only issue is a React DOM nesting warning caused by Badge (div) inside <p> in Help.js header (line ~490). Not a blocker.",
+  "detailed_verification_results": {
+    "admin_super_admin": {
+      "sidebar_help_nav": true,
+      "role_badge_text": "Super Admin",
+      "sections_rendered_count": 12,
+      "sections_ids": ["getting-started","dashboard","projects","wbs","resources","allocations","timesheets","reports","ai","integrations","time-off","tips"],
+      "quick_nav_cards_count": 12,
+      "integrations_section_visible": true,
+      "review_team_timesheets_visible": true,
+      "search_hubspot_result_sections": ["projects","integrations"],
+      "search_timesheet_result_sections": ["getting-started","dashboard","resources","timesheets","ai","time-off","tips"],
+      "empty_state_on_no_result": true,
+      "accordion_toggle_state_change": "closed -> open",
+      "quick_nav_anchor_url": "/help#projects"
+    },
+    "resource_riley": {
+      "sidebar_help_nav": true,
+      "role_badge_text": "Team Member",
+      "sections_ids": ["getting-started","dashboard","projects","wbs","allocations","timesheets","ai","time-off","tips"],
+      "integrations_section_hidden": true,
+      "review_team_timesheets_hidden": true,
+      "own_allocations_item_visible": true
+    },
+    "client": {
+      "sidebar_help_nav": true,
+      "help_page_reachable": true,
+      "role_badge_text": "Client",
+      "sections_ids": ["getting-started","tips"]
+    }
+  }
+}

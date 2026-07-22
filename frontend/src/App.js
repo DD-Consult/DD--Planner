@@ -28,6 +28,7 @@ import MyTimesheets from './pages/MyTimesheets';
 import Reports from './pages/Reports';
 import TimesheetReports from './pages/TimesheetReports';
 import PrintReport from './pages/PrintReport';
+import Help from './pages/Help';
 import Layout from './components/Layout';
 import { getMe, setAuthToken } from './api';
 
@@ -272,6 +273,14 @@ function App() {
                       element={
                         <ProtectedRoute allowedRoles={['admin', 'super_admin', 'resource']}>
                           <Leaves token={token} />
+                        </ProtectedRoute>
+                      } 
+                    />
+                    <Route 
+                      path="/help" 
+                      element={
+                        <ProtectedRoute allowedRoles={['admin', 'super_admin', 'resource', 'contractor', 'client']}>
+                          <Help />
                         </ProtectedRoute>
                       } 
                     />

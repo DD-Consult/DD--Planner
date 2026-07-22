@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { setAuthToken, getMe, getResources, getProjects, getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead } from '../api';
-import { LayoutDashboard, Users, Briefcase, Calendar, LogOut, Settings as SettingsIcon, CalendarOff, CalendarDays, FlaskConical, Clock, Sparkles, BarChart3, Bell, Check, X, User, Building2, Menu, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, Users, Briefcase, Calendar, LogOut, Settings as SettingsIcon, CalendarOff, CalendarDays, FlaskConical, Clock, Sparkles, BarChart3, Bell, Check, X, User, Building2, Menu, ClipboardList, HelpCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
@@ -462,6 +462,7 @@ const Layout = ({ children, token, onLogout }) => {
     { path: '/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'super_admin'], tooltip: 'Budget & actuals reporting' },
     { path: '/timesheets/reports', label: 'Timesheet Reports', icon: BarChart3, roles: ['admin', 'super_admin'], tooltip: 'Aggregated timesheet analysis with date ranges' },
     { path: '/settings', label: 'Settings', icon: SettingsIcon, roles: ['super_admin'], tooltip: 'Configure AI integrations' },
+    { path: '/help', label: 'Help & Guide', icon: HelpCircle, roles: ['admin', 'super_admin', 'resource', 'contractor', 'client'], tooltip: 'How to use DD Planner' },
   ];
 
   const filteredNavItems = navItems.filter(item => 
