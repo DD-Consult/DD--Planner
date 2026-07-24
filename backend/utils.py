@@ -312,8 +312,10 @@ def coerce_date(d):
         return None
 
 
-def allocation_weekly_hours(allocation: dict) -> float:
-    """Canonical weekly hours for an allocation (100% = 40h/week).
+def allocation_weekly_hours(allocation: dict, standard_capacity: float = 100) -> float:
+    """Canonical weekly hours for an allocation.
+    percentage is relative to the resource's standard_capacity (not full-time).
+    E.g. 100% allocation on a 50% capacity resource = 20h/wk, not 40h/wk.
     'hours' allocation type = TOTAL hours spread evenly over the allocation range."""
     if allocation.get("allocation_type") == "hours" and allocation.get("hours") is not None:
         s = coerce_date(allocation.get("start_date"))
@@ -322,10 +324,11 @@ def allocation_weekly_hours(allocation: dict) -> float:
         if total_biz <= 0:
             return 0.0
         return float(allocation["hours"]) / (total_biz / 5.0)
-    return ((allocation.get("percentage") or 0) / 100.0) * HOURS_PER_WEEK
+    cap = standard_capacity if standard_capacity and standard_capacity > 0 else 100
+    return ((allocation.get("percentage") or 0) / 100.0) * (cap / 100.0) * HOURS_PER_WEEK
 
 
-def compute_allocation_hours(allocation: dict, clip_start=None, clip_end=None) -> float:
+def compute_allocation_hours(allocation: dict, clip_start=None, clip_end=None, standard_capacity: float = 100) -> float:
     """Canonical TOTAL hours for an allocation, optionally clipped to a window.
     Formula: weekly_hours × (business_days_in_window / 5)."""
     s = coerce_date(allocation.get("start_date"))
@@ -337,7 +340,7 @@ def compute_allocation_hours(allocation: dict, clip_start=None, clip_end=None) -
     if cs > ce:
         return 0.0
     biz = count_business_days(cs, ce)
-    return allocation_weekly_hours(allocation) * (biz / 5.0)
+    return allocation_weekly_hours(allocation, standard_capacity) * (biz / 5.0)
 
 
 def compute_phase_allocated_hours(allocation: dict, phase: dict) -> float:

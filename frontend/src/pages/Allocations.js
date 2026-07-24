@@ -68,6 +68,8 @@ const Allocations = () => {
     start_date: '',
     end_date: '',
     percentage: 50,
+    allocation_type: 'percentage',
+    hours: '',
   });
 
   const queryClient = useQueryClient();
@@ -412,19 +414,22 @@ const Allocations = () => {
   });
 
   const resetForm = () => {
-    setFormData({ resource_id: '', project_id: '', start_date: '', end_date: '', percentage: 50 });
+    setFormData({ resource_id: '', project_id: '', start_date: '', end_date: '', percentage: 50, allocation_type: 'percentage', hours: '' });
     setEditingAllocation(null);
   };
 
   const handleOpenDialog = (allocation = null) => {
     if (allocation) {
       setEditingAllocation(allocation);
+      const isHours = allocation.allocation_type === 'hours';
       setFormData({
         resource_id: allocation.resource_id,
         project_id: allocation.project_id,
         start_date: allocation.start_date?.split('T')[0] || '',
         end_date: allocation.end_date?.split('T')[0] || '',
         percentage: allocation.percentage,
+        allocation_type: isHours ? 'hours' : 'percentage',
+        hours: isHours ? (allocation.hours || '') : '',
       });
     } else {
       resetForm();
@@ -590,7 +595,7 @@ const Allocations = () => {
             Allocations
           </h1>
           <p className="text-sm text-[#667085] mt-1">
-            Resource capacity planning • Percentage = % of resource's weekly capacity
+            Resource capacity planning
           </p>
         </div>
         {isAdmin && (
@@ -1055,20 +1060,66 @@ const Allocations = () => {
             </div>
 
             <div>
-              <Label htmlFor="percentage">Capacity Percentage</Label>
-              <p className="text-xs text-[#667085] mb-2">
-                % of this resource's weekly capacity dedicated to this project
-              </p>
-              <Input
-                id="percentage"
-                type="number"
-                min="0"
-                max="200"
-                value={formData.percentage}
-                onChange={(e) => setFormData({ ...formData, percentage: parseInt(e.target.value) || 0 })}
-                required
-                data-testid="allocation-percentage-input"
-              />
+              <Label>Allocation Mode</Label>
+              <div className="flex gap-2 mt-1 mb-3">
+                <Button
+                  type="button"
+                  variant={formData.allocation_type === 'percentage' ? 'default' : 'outline'}
+                  size="sm"
+                  className={formData.allocation_type === 'percentage' ? 'bg-[#1570EF] text-white' : ''}
+                  onClick={() => setFormData({ ...formData, allocation_type: 'percentage' })}
+                  data-testid="alloc-mode-pct"
+                >
+                  Percentage
+                </Button>
+                <Button
+                  type="button"
+                  variant={formData.allocation_type === 'hours' ? 'default' : 'outline'}
+                  size="sm"
+                  className={formData.allocation_type === 'hours' ? 'bg-[#1570EF] text-white' : ''}
+                  onClick={() => setFormData({ ...formData, allocation_type: 'hours' })}
+                  data-testid="alloc-mode-hrs"
+                >
+                  Total Hours
+                </Button>
+              </div>
+
+              {formData.allocation_type === 'percentage' ? (
+                <>
+                  <Label htmlFor="percentage">Capacity Percentage</Label>
+                  <p className="text-xs text-[#667085] mb-2">
+                    % of this resource&apos;s weekly capacity dedicated to this project
+                  </p>
+                  <Input
+                    id="percentage"
+                    type="number"
+                    min="0"
+                    max="200"
+                    value={formData.percentage}
+                    onChange={(e) => setFormData({ ...formData, percentage: parseInt(e.target.value) || 0 })}
+                    required
+                    data-testid="allocation-percentage-input"
+                  />
+                </>
+              ) : (
+                <>
+                  <Label htmlFor="hours">Total Hours for Period</Label>
+                  <p className="text-xs text-[#667085] mb-2">
+                    Total hours this person should work on this project over the period
+                  </p>
+                  <Input
+                    id="hours"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={formData.hours}
+                    onChange={(e) => setFormData({ ...formData, hours: e.target.value })}
+                    placeholder="e.g., 40"
+                    required
+                    data-testid="allocation-hours-input"
+                  />
+                </>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 mt-6">

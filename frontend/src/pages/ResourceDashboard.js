@@ -122,12 +122,13 @@ export default function ResourceDashboard({ userData }) {
   const resource  = myAllocsData?.resource || {};
   const allAllocs = useMemo(() => myAllocsData?.allocations || [], [myAllocsData]);
   const stdCap = resource.standard_capacity || 100;
+  const summaryData = myAllocsData?.summary || {};
 
   const thisWeekAllocs = useMemo(() => getAllocationsThisWeek(allAllocs), [allAllocs]);
   const rawUtilPct     = useMemo(() => thisWeekAllocs.reduce((s, a) => s + (a.percentage || 0), 0), [thisWeekAllocs]);
   const totalUtilPct   = useMemo(() => Math.round((rawUtilPct / (stdCap || 100)) * 100), [rawUtilPct, stdCap]);
   const totalHrsWeek   = useMemo(() => thisWeekAllocs.reduce((s, a) => s + (a.weekly_hours || 0), 0), [thisWeekAllocs]);
-  const availableHrs   = (stdCap / 100) * 40;
+  const availableHrs   = summaryData.available_hours_per_week || (stdCap / 100) * 40;
 
   const activeAllocs  = useMemo(() => allAllocs.filter(a => {
     try { return !isPast(parseISO(a.end_date)); } catch { return false; }

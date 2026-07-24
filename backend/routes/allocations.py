@@ -146,14 +146,14 @@ async def create_allocation(allocation: AllocationCreate, admin: dict = Depends(
             start = start.date()
         if isinstance(end, datetime):
             end = end.date()
-        days = (end - start).days + 1
-        # Use business days for hours calculation
         from utils import count_business_days
         biz_days = count_business_days(start, end)
-        # 8 hours per business day standard
-        total_available_hours = biz_days * 8
+        # Available hours = resource capacity hours over the period
+        std_cap = resource.get("standard_capacity", 100) or 100
+        available_hours_per_day = (std_cap / 100.0) * 8.0
+        total_available_hours = biz_days * available_hours_per_day
         if total_available_hours > 0:
-            allocation_doc["percentage"] = min(100, round((allocation_doc["hours"] / total_available_hours) * 100))
+            allocation_doc["percentage"] = min(200, round((allocation_doc["hours"] / total_available_hours) * 100))
     
     # Ensure percentage has a default value
     if allocation_doc.get("percentage") is None:
@@ -831,12 +831,12 @@ async def get_my_allocations(
         biz_days_in_period = count_business_days(effective_start, effective_end)
         weeks_in_period = biz_days_in_period / 5.0
         
-        # Determine weekly hours based on allocation type (canonical: 40h/week)
+        # Determine weekly hours based on allocation type (canonical: respects standard_capacity)
         from utils import allocation_weekly_hours
         allocation_type = alloc.get("allocation_type", "percentage")
         percentage = alloc.get("percentage", 0)
         hours = alloc.get("hours")
-        weekly_hours = allocation_weekly_hours(alloc)
+        weekly_hours = allocation_weekly_hours(alloc, standard_capacity)
         
         # Total hours in this period
         period_hours = weekly_hours * weeks_in_period
@@ -902,7 +902,7 @@ async def get_my_allocations(
         
         if alloc_start <= reference_date <= alloc_end:
             from utils import allocation_weekly_hours
-            total_weekly_hours += allocation_weekly_hours(alloc)
+            total_weekly_hours += allocation_weekly_hours(alloc, standard_capacity)
     
     return {
         "period": period,

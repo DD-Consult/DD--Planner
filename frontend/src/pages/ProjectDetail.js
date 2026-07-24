@@ -176,6 +176,8 @@ const ProjectDetail = () => {
     end_date: '',
     percentage: 50,
     role: '',
+    allocation_type: 'percentage', // 'percentage' | 'hours'
+    hours: '',
   });
   const [allocToDelete, setAllocToDelete] = useState(null);
   
@@ -395,6 +397,8 @@ const ProjectDetail = () => {
       end_date: '',
       percentage: 50,
       role: '',
+      allocation_type: 'percentage',
+      hours: '',
     });
   };
 
@@ -406,18 +410,23 @@ const ProjectDetail = () => {
       end_date: project?.end_date ? format(new Date(project.end_date), 'yyyy-MM-dd') : '',
       percentage: 50,
       role: '',
+      allocation_type: 'percentage',
+      hours: '',
     });
     setShowAllocDialog(true);
   };
 
   const openEditAllocDialog = (alloc) => {
     setEditingAlloc(alloc);
+    const isHours = alloc.allocation_type === 'hours';
     setAllocForm({
       resource_id: alloc.resource_id,
       start_date: format(new Date(alloc.start_date), 'yyyy-MM-dd'),
       end_date: format(new Date(alloc.end_date), 'yyyy-MM-dd'),
       percentage: alloc.percentage,
       role: alloc.role || '',
+      allocation_type: isHours ? 'hours' : 'percentage',
+      hours: isHours ? (alloc.hours || '') : '',
     });
     setShowAllocDialog(true);
   };
@@ -431,9 +440,20 @@ const ProjectDetail = () => {
       toast.error('Please select start and end dates');
       return;
     }
-    if (allocForm.percentage <= 0 || allocForm.percentage > 200) {
-      toast.error('Allocation percentage must be between 1 and 200');
-      return;
+
+    const isHours = allocForm.allocation_type === 'hours';
+
+    if (isHours) {
+      const h = parseFloat(allocForm.hours);
+      if (!h || h <= 0) {
+        toast.error('Please enter the total hours');
+        return;
+      }
+    } else {
+      if (allocForm.percentage <= 0 || allocForm.percentage > 200) {
+        toast.error('Allocation percentage must be between 1 and 200');
+        return;
+      }
     }
 
     const dataToSend = {
@@ -441,7 +461,9 @@ const ProjectDetail = () => {
       resource_id: allocForm.resource_id,
       start_date: allocForm.start_date,
       end_date: allocForm.end_date,
-      percentage: parseFloat(allocForm.percentage),
+      allocation_type: allocForm.allocation_type,
+      percentage: isHours ? 0 : parseFloat(allocForm.percentage),
+      hours: isHours ? parseFloat(allocForm.hours) : null,
       role: allocForm.role || null,
     };
 
@@ -870,11 +892,12 @@ const ProjectDetail = () => {
   };
 
   // Compute hours for allocation form (for budget validation)
-  const computeAllocationHours = (startDate, endDate, percentage) => {
+  const computeAllocationHours = (startDate, endDate, percentage, stdCap = 100) => {
     if (!startDate || !endDate || !percentage) return 0;
     try {
+      const cap = stdCap && stdCap > 0 ? stdCap : 100;
       const businessDays = differenceInBusinessDays(new Date(endDate), new Date(startDate)) + 1;
-      return Math.round((percentage / 100) * businessDays * 8);
+      return Math.round((percentage / 100) * (cap / 100) * businessDays * 8);
     } catch {
       return 0;
     }
@@ -2900,32 +2923,87 @@ const ProjectDetail = () => {
               </div>
             </div>
 
-            {/* Percentage */}
+            {/* Allocation Mode Toggle */}
             <div>
-              <Label className="text-sm font-medium mb-2 block">Allocation Percentage (0-200) *</Label>
-              <div className="space-y-2">
-                <Input
-                  type="number"
-                  min="0"
-                  max="200"
-                  step="5"
-                  value={allocForm.percentage}
-                  onChange={(e) => setAllocForm({ ...allocForm, percentage: parseFloat(e.target.value) || 0 })}
-                  data-testid="alloc-percentage"
-                />
-                <input
-                  type="range"
-                  min="0"
-                  max="200"
-                  step="5"
-                  value={allocForm.percentage}
-                  onChange={(e) => setAllocForm({ ...allocForm, percentage: parseFloat(e.target.value) })}
-                  className="w-full"
-                  data-testid="alloc-percentage-slider"
-                />
-                <div className="text-xs text-[#667085] text-right">{allocForm.percentage}%</div>
+              <Label className="text-sm font-medium mb-2 block">Allocation Mode</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={allocForm.allocation_type === 'percentage' ? 'default' : 'outline'}
+                  size="sm"
+                  className={allocForm.allocation_type === 'percentage' ? 'bg-[#1570EF] text-white' : ''}
+                  onClick={() => setAllocForm({ ...allocForm, allocation_type: 'percentage' })}
+                  data-testid="alloc-mode-percentage"
+                >
+                  Percentage
+                </Button>
+                <Button
+                  type="button"
+                  variant={allocForm.allocation_type === 'hours' ? 'default' : 'outline'}
+                  size="sm"
+                  className={allocForm.allocation_type === 'hours' ? 'bg-[#1570EF] text-white' : ''}
+                  onClick={() => setAllocForm({ ...allocForm, allocation_type: 'hours' })}
+                  data-testid="alloc-mode-hours"
+                >
+                  Total Hours
+                </Button>
               </div>
             </div>
+
+            {/* Percentage or Hours input */}
+            {allocForm.allocation_type === 'percentage' ? (
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Allocation Percentage (0-200) *</Label>
+                {(() => {
+                  const selectedRes = resources?.find(r => r.id === allocForm.resource_id);
+                  const cap = selectedRes?.standard_capacity || 100;
+                  const hrsWk = (allocForm.percentage / 100) * (cap / 100) * 40;
+                  return (
+                    <div className="space-y-2">
+                      <Input
+                        type="number"
+                        min="0"
+                        max="200"
+                        step="5"
+                        value={allocForm.percentage}
+                        onChange={(e) => setAllocForm({ ...allocForm, percentage: parseFloat(e.target.value) || 0 })}
+                        data-testid="alloc-percentage"
+                      />
+                      <input
+                        type="range"
+                        min="0"
+                        max="200"
+                        step="5"
+                        value={allocForm.percentage}
+                        onChange={(e) => setAllocForm({ ...allocForm, percentage: parseFloat(e.target.value) })}
+                        className="w-full"
+                        data-testid="alloc-percentage-slider"
+                      />
+                      <div className="text-xs text-[#667085] text-right">
+                        {allocForm.percentage}% = {hrsWk.toFixed(1)}h/wk
+                        {cap < 100 && <span className="ml-1">(resource at {cap}% capacity)</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Total Hours for Period *</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={allocForm.hours}
+                  onChange={(e) => setAllocForm({ ...allocForm, hours: e.target.value })}
+                  placeholder="e.g., 40"
+                  data-testid="alloc-hours-input"
+                />
+                <p className="text-xs text-[#667085] mt-1">
+                  Total hours this person should work on this project over the allocation period.
+                </p>
+              </div>
+            )}
 
             {/* Role (Optional) */}
             <div>
@@ -2943,13 +3021,19 @@ const ProjectDetail = () => {
               <div className="border-t border-[#E6E8EC] pt-4 mt-4">
                 <h4 className="text-sm font-semibold text-[#0B1220] mb-3">Budget Impact</h4>
                 {(() => {
+                  const selectedRes = resources?.find(r => r.id === allocForm.resource_id);
+                  const resCap = selectedRes?.standard_capacity || 100;
                   const budgetedHours = budgetHealth.budgeted_hours || 0;
                   const currentAllocated = budgetHealth.allocated_hours || 0;
-                  const newHours = computeAllocationHours(allocForm.start_date, allocForm.end_date, allocForm.percentage);
+                  const isHoursMode = allocForm.allocation_type === 'hours';
+                  const newHours = isHoursMode
+                    ? (parseFloat(allocForm.hours) || 0)
+                    : computeAllocationHours(allocForm.start_date, allocForm.end_date, allocForm.percentage, resCap);
                   const oldHours = editingAlloc ? computeAllocationHours(
                     format(new Date(editingAlloc.start_date), 'yyyy-MM-dd'),
                     format(new Date(editingAlloc.end_date), 'yyyy-MM-dd'),
-                    editingAlloc.percentage
+                    editingAlloc.percentage,
+                    resCap
                   ) : 0;
                   const totalAfter = currentAllocated - oldHours + newHours;
                   const remaining = budgetedHours - totalAfter;
@@ -3025,12 +3109,18 @@ const ProjectDetail = () => {
                   if (!budgetHealth) return false;
                   const budgetedHours = budgetHealth.budgeted_hours || 0;
                   if (budgetedHours <= 0) return false;
+                  const selectedRes = resources?.find(r => r.id === allocForm.resource_id);
+                  const resCap = selectedRes?.standard_capacity || 100;
                   const currentAllocated = budgetHealth.allocated_hours || 0;
-                  const newHours = computeAllocationHours(allocForm.start_date, allocForm.end_date, allocForm.percentage);
+                  const isHoursMode = allocForm.allocation_type === 'hours';
+                  const newHours = isHoursMode
+                    ? (parseFloat(allocForm.hours) || 0)
+                    : computeAllocationHours(allocForm.start_date, allocForm.end_date, allocForm.percentage, resCap);
                   const oldHours = editingAlloc ? computeAllocationHours(
                     format(new Date(editingAlloc.start_date), 'yyyy-MM-dd'),
                     format(new Date(editingAlloc.end_date), 'yyyy-MM-dd'),
-                    editingAlloc.percentage
+                    editingAlloc.percentage,
+                    resCap
                   ) : 0;
                   const totalAfter = currentAllocated - oldHours + newHours;
                   return totalAfter > budgetedHours;

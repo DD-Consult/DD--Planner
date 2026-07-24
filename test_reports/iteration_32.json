@@ -1,0 +1,38 @@
+{
+  "summary": "Full backend + frontend regression testing for two bug fixes: (1) allocation_weekly_hours now respects resource standard_capacity, and (2) new 'Total Hours' allocation mode. All 8 requested test cases PASS. 7/7 pytest tests pass. Verified: 100% cap unchanged (100%=40h/wk, 50%=20h/wk); 50% cap (100%=20h/wk, 50%=10h/wk); 30% cap (100%=12h/wk). Hours-mode POST computes correct percentage using resource std_capacity + biz days. Both Allocations and ProjectDetail dialogs have working Percentage/Total Hours toggle. ProjectDetail percentage mode shows capacity-aware h/wk calculation (e.g. '50% = 10.0h/wk' + 'resource at 50% capacity' indicator when a 50% resource is selected). MyAllocations shows correct weekly_hours reflecting std_capacity (Riley 100% cap, 50% alloc => 20.0h/wk).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration32_allocation_capacity_hours.py",
+    "/app/test_reports/pytest/iteration32.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend routes/allocations.py L156: hours-mode percentage computation uses round() with min(200, ...). Good bound, but for very short allocations (single day), rounding can lose precision — e.g. 4h on a 100% resource over 1 biz day rounds to 50% (exact). Acceptable.",
+    "Frontend Allocations.js dialog uses testids 'alloc-mode-pct' / 'alloc-mode-hrs' + 'allocation-percentage-input' / 'allocation-hours-input'; ProjectDetail.js uses 'alloc-mode-percentage' / 'alloc-mode-hours' + 'alloc-percentage' / 'alloc-hours-input'. Naming is inconsistent between the two pages — consider unifying to reduce future test-authoring friction.",
+    "Frontend Allocations.js dialog percentage mode does NOT show the resource capacity-aware h/wk calculation that ProjectDetail.js shows (e.g. '50% = 10.0h/wk (resource at 50% capacity)'). For a consistent UX, consider adding the same helper text to the Allocations page dialog.",
+    "Frontend ProjectDetail.js L2960: hardcoded '40' (HOURS_PER_WEEK) inside the h/wk display formula. If HOURS_PER_WEEK ever changes, this will silently drift. Consider centralizing in a shared constant / helper.",
+    "Backend utils.allocation_weekly_hours guards standard_capacity <= 0 by falling back to 100. For a resource literally set to 0% (fully unavailable), this may over-report available hours. Not a blocker but worth documenting."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration32_allocation_capacity_hours.py"
+  ],
+  "success_rate": {"backend": "100% (7/7 pytest)", "frontend": "100% (8/8 UI test cases)"},
+  "test_credentials": "admin@test.com/admin123 (super_admin), riley@test.com/riley123 (100% cap resource). Auth endpoint is form-encoded POST /api/auth/login (username=email, password=password).",
+  "seed_data_creation": "Created TEST_iter32_HalfCap resource (std_cap=50) + 3 allocations to verify hours-mode computation. All allocations and the resource were CLEANED UP at end of testing (verified via GET /api/resources).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Two data-testid naming conventions exist between the two allocation dialogs: Allocations page uses 'alloc-mode-pct'/'alloc-mode-hrs' + 'allocation-percentage-input'/'allocation-hours-input'; ProjectDetail Team tab uses 'alloc-mode-percentage'/'alloc-mode-hours' + 'alloc-percentage'/'alloc-hours-input'. The Add Allocation button in Team tab has testid 'allocate-resource-btn' (not add-allocation-btn). MyAllocations weekly_hours = (percentage/100) * (std_cap/100) * 40. Verified: TEST_iter32_HalfCap (50% cap) at 50% => 10.0h/wk; Riley (100% cap) at 50% => 20.0h/wk.",
+  "verification_matrix": {
+    "backend_100pct_unchanged": "PASS — 100% alloc => 40h/wk, 50% alloc => 20h/wk",
+    "backend_50pct_capacity": "PASS — 100% alloc => 20h/wk, 50% alloc => 10h/wk (bug fix confirmed)",
+    "backend_30pct_capacity": "PASS — 100% alloc => 12h/wk",
+    "backend_hours_type_100cap": "PASS — 40h/5biz days => 100%",
+    "backend_hours_type_50cap_full": "PASS — 20h/5biz days on 50%res => 100%",
+    "backend_hours_type_50cap_half": "PASS — 10h/5biz days on 50%res => 50%",
+    "frontend_allocations_page_toggle": "PASS — alloc-mode-pct + alloc-mode-hrs render; switching swaps allocation-percentage-input <-> allocation-hours-input",
+    "frontend_projectdetail_toggle": "PASS — alloc-mode-percentage + alloc-mode-hours render; switching swaps alloc-percentage <-> alloc-hours-input",
+    "frontend_projectdetail_capacity_hrs_display": "PASS — with 50% cap resource selected + 50% alloc, dialog shows '50% = 10.0h/wk (resource at 50% capacity)'",
+    "frontend_myallocations_weekly_hours": "PASS — Riley (100% cap, 50% alloc) shows '50% · 20.0h/wk'; Team tab table shows 90% (36.0h/wk), 70% (28.0h/wk), 50% (20.0h/wk) all consistent with (pct%)*(cap%)*40"
+  }
+}
