@@ -887,8 +887,10 @@ const ProjectDetail = () => {
 
   // Calculate effort for individual allocation
   const calculateAllocationEffort = (allocation) => {
+    const res = resources?.find(r => r.id === allocation.resource_id);
+    const cap = res?.standard_capacity && res.standard_capacity > 0 ? res.standard_capacity : 100;
     const days = Math.abs(differenceInBusinessDays(new Date(allocation.end_date), new Date(allocation.start_date))) + 1;
-    return Math.round((allocation.percentage / 100) * days * 8);
+    return Math.round((allocation.percentage / 100) * (cap / 100) * days * 8);
   };
 
   // Compute hours for allocation form (for budget validation)

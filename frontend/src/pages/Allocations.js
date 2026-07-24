@@ -285,7 +285,9 @@ const Allocations = () => {
           if (!allocStart || !allocEnd) return false;
           return !(isAfter(allocStart, week.end) || isBefore(allocEnd, week.start));
         });
-        const totalPct = activeAllocs.reduce((sum, a) => sum + (a.percentage || 0), 0);
+        const rawPct = activeAllocs.reduce((sum, a) => sum + (a.percentage || 0), 0);
+        const cap = resource.standard_capacity && resource.standard_capacity > 0 ? resource.standard_capacity : 100;
+        const totalPct = Math.round((rawPct / cap) * 100);
         return { allocations: activeAllocs, totalPct };
       });
       return { ...resource, weeklyAllocations };
@@ -341,6 +343,13 @@ const Allocations = () => {
 
   const getTotalPercentage = (allocs) =>
     allocs.reduce((sum, a) => sum + (a.percentage || 0), 0);
+
+  // Capacity relative to resource's standard_capacity
+  const getCapacityPct = (resource) => {
+    const rawPct = getTotalPercentage(resource.allocations);
+    const cap = resource.standard_capacity && resource.standard_capacity > 0 ? resource.standard_capacity : 100;
+    return Math.round((rawPct / cap) * 100);
+  };
 
   const getUtilColor = (total) => {
     if (total > 100) return 'text-[#EF4444]';
@@ -518,8 +527,8 @@ const Allocations = () => {
 
   // Render resource group (shared between weekly and resource views)
   const renderResourceGroup = (resource) => {
-    const total = getTotalPercentage(resource.allocations);
-    const utilBadge = getUtilBadge(total);
+    const capacityPct = getCapacityPct(resource);
+    const utilBadge = getUtilBadge(capacityPct);
     const isExpanded = expandedResources[resource.id] ?? false;
 
     return (
@@ -557,11 +566,11 @@ const Allocations = () => {
               <div className="flex items-center gap-4">
                 <div className="text-right mr-2">
                   <div className="flex items-center gap-2">
-                    <span className={`text-lg font-bold ${getUtilColor(total)}`}>{total}%</span>
+                    <span className={`text-lg font-bold ${getUtilColor(capacityPct)}`}>{capacityPct}%</span>
                     <span className="text-xs text-[#667085]">of capacity</span>
                   </div>
                   <Progress
-                    value={Math.min(total, 100)}
+                    value={Math.min(capacityPct, 100)}
                     className="w-24 h-1.5 mt-1"
                   />
                 </div>
@@ -787,14 +796,14 @@ const Allocations = () => {
                   <div className="flex items-center gap-4">
                     <div className="text-center">
                       <div className="text-2xl font-bold text-[#16B364]">
-                        {groupedByResource.filter(r => getTotalPercentage(r.allocations) < 80).length}
+                        {groupedByResource.filter(r => getCapacityPct(r) < 80).length}
                       </div>
                       <div className="text-xs text-[#667085]">Available</div>
                     </div>
                     <div className="text-center">
                       <div className="text-2xl font-bold text-[#F4B740]">
                         {groupedByResource.filter(r => {
-                          const t = getTotalPercentage(r.allocations);
+                          const t = getCapacityPct(r);
                           return t >= 80 && t <= 100;
                         }).length}
                       </div>
@@ -802,7 +811,7 @@ const Allocations = () => {
                     </div>
                     <div className="text-center">
                       <div className="text-2xl font-bold text-[#EF4444]">
-                        {groupedByResource.filter(r => getTotalPercentage(r.allocations) > 100).length}
+                        {groupedByResource.filter(r => getCapacityPct(r) > 100).length}
                       </div>
                       <div className="text-xs text-[#667085]">Over</div>
                     </div>

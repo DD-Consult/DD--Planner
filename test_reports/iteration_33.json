@@ -1,0 +1,44 @@
+{
+  "summary": "Backend + frontend regression of iter33 capacity-aware allocation display fix. Backend: 7/7 pytest tests still PASS — allocation_weekly_hours/compute_allocation_hours/my-allocations correctly respect standard_capacity. Frontend: formatAllocation h/wk display in allocation rows is FIXED (50%-cap resource at 10% now shows '10% (2.0h/wk)' — no more '4.0h/wk' bug). HOWEVER, a critical regression was found: the resource-group HEADER 'X% of capacity' still shows the RAW allocation percentage (10%) instead of the capacity-relative one (should be 20% = 10/50*100). Root cause: groupedByResource in Allocations.js (lines 190-201) builds the resource object from allocation data only and never propagates standard_capacity, so getCapacityPct falls back to cap=100 and returns rawPct unchanged. This same object is used by (a) resource header display, (b) summary stats (Available/AtCapacity/Over counts), and (c) getUtilBadge classification — so ALL THREE capacity-relative displays on the Weekly + By-Resource views are still wrong for part-time resources. Timeline view is CORRECT (uses resources list directly, which has standard_capacity).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Allocations.js — renderResourceGroup header + Weekly summary stats",
+        "issue": "Resource-header 'X% of capacity' and Available/AtCapacity/Over counters still use raw allocation sum because groupedByResource never carries standard_capacity. For a 50%-cap resource with 10% raw alloc, header shows '10% of capacity' (should be 20%). For a 50%-cap resource with 50% raw alloc, header would show '50% of capacity' (should be 100%). Summary stat classification is likewise wrong for part-time resources.",
+        "selector": "[data-testid='resource-group-{id}'] and .text-2xl summary counts",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration32_allocation_capacity_hours.py",
+    "/app/test_reports/pytest/iteration33_backend.xml"
+  ],
+  "action_items": [
+    "In /app/frontend/src/pages/Allocations.js lines 190-201, enrich resourceMap[rid] with standard_capacity from the resources list — e.g. `standard_capacity: (resources?.find(r => r.id === rid))?.standard_capacity || 100`. This will fix (a) getCapacityPct in the header, (b) the Available/AtCapacity/Over summary stats, and (c) getUtilBadge classification for part-time resources.",
+    "Optional: add data-testid attributes 'capacity-pct-{id}' to the resource header <span> that renders capacityPct to make future automated verification easier."
+  ],
+  "critical_code_review_comments": [
+    "Allocations.js:190-201 — resourceMap does not include standard_capacity; the new getCapacityPct helper silently falls back to cap=100 for every resource, defeating the fix.",
+    "Allocations.js:344-352 — getTotalPercentage/getCapacityPct pair is correct, but only works when 'resource' has standard_capacity populated; currently only the timeline resources have it.",
+    "Allocations.js:468-470 — renderAllocationRow correctly does `resources?.find(r => r.id === alloc.resource_id)` to obtain standard_capacity for formatAllocation. Consistent pattern; consider using the same lookup in groupedByResource for a single fix.",
+    "capacityHelpers.js — formula (pct/100) * (cap/100) * 40 is applied everywhere; consider extracting HOURS_PER_WEEK=40 as a named export for clarity/testability.",
+    "getTotalPercentage sums percentages across overlapping date ranges without deduping by phase — acceptable for current 'flat' allocation model but flag for future when phase_allocations become richer."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (7/7 pytest)", "frontend": "62% (5/8 UI cases pass — h/wk row + backend hours + timeline+row+backend PASS; resource header capacity%, summary stats, and getUtilBadge classification for part-time resources FAIL)"},
+  "test_credentials": "admin@test.com / admin123 (super_admin). TEST_iter32_HalfCap (std_cap=50) reused from iter-32 seed data.",
+  "seed_data_creation": "Created and DELETED one temporary allocation (10% percentage, Jul 27-31 2026) on TEST_iter32_HalfCap x Website Redesign, only for UI verification. Cleaned up at end of test. The TEST_iter32_HalfCap resource itself remains from iter-32 (was not cleaned up by iter-32 as claimed).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "TEST_iter32_HalfCap resource (id 6a63664d3b426cd70594026d, std_cap=50) is present in DB. Use it + Website Redesign project (id 6a5d4ac2ad5ecf8fe70d55b2, wide date range 2026-01-01 to 2026-12-31) to create part-time allocations and verify capacity-relative displays. Current 'This Week' on server is 2026-07-20 to 2026-07-24; use next-week-btn or create allocations spanning current-day for immediate visibility in Weekly view. Bug reproduction: create any allocation for HalfCap, open Allocations Weekly view → resource header will show raw% instead of raw%/std_cap*100.",
+  "rca of the issue": {
+    "bug": "Resource-group header 'X% of capacity' and Available/AtCapacity/Over summary counters do NOT respect resource.standard_capacity as claimed by the iter-33 fix.",
+    "reproduction": "1) Login admin@test.com/admin123. 2) POST /api/allocations for TEST_iter32_HalfCap (std_cap=50) with percentage=10. 3) Open Allocations → Weekly (navigate to the week containing the allocation). 4) Observe header shows '10% of capacity' (raw pct) instead of '20% of capacity' (= 10/50*100). Same object drives the summary counts and getUtilBadge, so classification is also raw-based.",
+    "root_cause": "Allocations.js `groupedByResource` (lines 187-220) builds resource objects from allocation rows only: `{id, name, role, allocations}`. Missing `standard_capacity`. `getCapacityPct(resource)` (lines 348-352) reads resource.standard_capacity → undefined → cap=100 fallback → returns rawPct unchanged. renderAllocationRow works because it independently looks up standard_capacity from the `resources` list (line 468-469).",
+    "mitigation": "In Allocations.js groupedByResource useMemo, enrich each resourceMap entry with `standard_capacity: (resources?.find(r => r.id === rid))?.standard_capacity ?? 100`. Add `resources` to the useMemo deps. Same fix would remediate summary stats and getUtilBadge classification for part-time resources."
+  }
+}
