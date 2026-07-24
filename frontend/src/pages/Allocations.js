@@ -192,10 +192,13 @@ const Allocations = () => {
     filteredAllocations.forEach(alloc => {
       const rid = alloc.resource_id;
       if (!resourceMap[rid]) {
+        // Look up standard_capacity from the resources list
+        const resData = resources?.find(r => r.id === rid);
         resourceMap[rid] = {
           id: rid,
           name: alloc.resource_name || 'Unknown Resource',
           role: alloc.resource_role || '',
+          standard_capacity: resData?.standard_capacity || 100,
           allocations: [],
         };
       }
@@ -217,7 +220,7 @@ const Allocations = () => {
 
     grouped.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     return grouped;
-  }, [filteredAllocations, searchQuery]);
+  }, [filteredAllocations, searchQuery, resources]);
 
   // Group allocations by project
   const groupedByProject = useMemo(() => {

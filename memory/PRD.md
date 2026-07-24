@@ -369,6 +369,16 @@ DD Planner is a full-stack resource planning and project management application 
 - Testing: 7/7 backend + 8/8 frontend tests pass (iter 32)
 
 
+
+### Follow-up Fix: Allocations Page Capacity Display (Feb 2026)
+- `capacityHelpers.js` — `formatAllocation(pct, stdCap)` now computes h/wk as `(pct/100) × (stdCap/100) × 40`
+- Allocations page resource group header "X% of capacity" now uses `getCapacityPct()` which divides raw alloc sum by standard_capacity
+- `groupedByResource` useMemo enriched with `standard_capacity` from resources list
+- Summary stats (Available/At Capacity/Over) use capacity-relative values
+- Timeline heatmap cells use capacity-relative percentages
+- ProjectDetail `calculateAllocationEffort` respects standard_capacity for Est. Hours column
+- Testing: 5/8 UI tests pass in iter 33 → root cause found (missing standard_capacity in groupedByResource) → fixed
+
 - P1: Refactor `<ResourceSelect>` reusable component
 - P1: Timesheet reminder / dashboard nudge for missing timesheets
 - P2: "Show inactive" toggle on Resources page
