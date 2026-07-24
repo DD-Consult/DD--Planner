@@ -349,6 +349,26 @@ DD Planner is a full-stack resource planning and project management application 
 - For 100% capacity resources, behavior is unchanged.
 - Testing: 11/11 backend + 8/8 frontend tests pass (iter 31). Verified 30%, 50%, 0%, and 100% capacity scenarios.
 
+## Bug Fix: Allocation Hours Now Respect Standard Capacity (Feb 2026)
+
+### Root Cause
+`allocation_weekly_hours()` always used `(percentage/100) * 40h` regardless of the resource's `standard_capacity`. A 50% capacity (part-time) resource allocated at 100% showed 40h/wk instead of 20h/wk.
+
+### Fix
+- `allocation_weekly_hours(alloc, standard_capacity)` now computes: `(percentage/100) × (std_cap/100) × 40h`
+- Updated all callers: my-allocations, compute_allocation_hours, compute_phase_allocated_hours
+- For 100% capacity resources: unchanged (100% alloc = 40h/wk)
+- For 50% capacity: 100% alloc = 20h/wk, 50% alloc = 10h/wk
+- For 30% capacity: 100% alloc = 12h/wk
+
+### Feature: Total Hours Allocation Mode
+- Allocation dialogs (Allocations page + ProjectDetail Team tab) now have a **Percentage / Total Hours** toggle
+- In "Total Hours" mode, user enters the total hours for the period (e.g. 40h over 2 weeks)
+- Backend computes the equivalent percentage relative to the resource's capacity and business days
+- ProjectDetail dialog shows live h/wk calculation with capacity context (e.g. "50% = 10.0h/wk (resource at 50% capacity)")
+- Testing: 7/7 backend + 8/8 frontend tests pass (iter 32)
+
+
 - P1: Refactor `<ResourceSelect>` reusable component
 - P1: Timesheet reminder / dashboard nudge for missing timesheets
 - P2: "Show inactive" toggle on Resources page
