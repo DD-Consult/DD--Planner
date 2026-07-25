@@ -412,3 +412,146 @@ DD Planner is a full-stack resource planning and project management application 
 - P2: Offboarding summary dialog when deactivating a resource
 - P2: "Lead" badge on project header + lead dashboard widget
 - P2: Read-only badge in AI Chat panel for non-admins
+
+## Session: AI Expansion — Phase 1 (Knowledge Base) (Feb 2026)
+
+### Feature: AI Knowledge Base
+- New `services/knowledge_base.py` — parses GUIDE.md, README.md, INTEGRATIONS.md into 146 sections in `ai_knowledge_base` MongoDB collection
+- Keyword-based TF-IDF-lite retrieval (fast, deterministic, no embedding cost)
+- Startup auto-indexes on first boot; super-admin can reindex at `POST /api/ai/knowledge-base/reindex`
+- Chat endpoint auto-injects top-4 KB sections when the user asks a how-to/troubleshoot question (heuristic: "how do I…", "why can't I…", "what does…", etc.)
+- AI cites source sections (e.g. "see GUIDE → Timesheets")
+- New endpoints: `GET /status`, `GET /search?q=`, `POST /reindex`
+- New quick-prompt "How do I…?" in ChatPanel for both admin and resource
+- Testing: 8/8 pass (iter 37)
+
+### Roadmap: AI Expansion Phases
+- Phase 1: Knowledge Base — DONE
+- Phase 2: Super Admin Intelligence (anomaly detection, forecasting, retrospectives) — DONE
+- Phase 3: Admin/Lead Productivity (status drafter, kickoff wizard, similar projects) — DONE
+- Phase 4: Resource AI (NL timesheet assistant, Monday briefing) — DONE
+- Phase 5: Platform (⌘K, semantic search, voice input) — DONE
+
+## Session: AI Expansion — Phase 5 (Platform) (Feb 2026)
+
+### Feature: Global Semantic Search
+- New `services/global_search.py` — searches across Projects, Resources, WBS Tasks, Risks, Status Updates, WBS Comments
+- Role-scoped: admins see all; leads/resources see only their allocated + led projects; clients see only their allowed_project_ids
+- Non-admins do not see resource matches (privacy)
+- Token-based scoring with per-type limits
+- Endpoint: `GET /api/search/global?q=&limit_per_type=`
+
+### Feature: ⌘K Command Palette
+- New `components/CommandPalette.js` mounted globally in Layout
+- Cmd/Ctrl+K opens; escape closes; ↑↓ + Enter navigation
+- Bottom-left floating trigger button visible on desktop
+- Combines fuzzy nav matches (Dashboard, Projects, AI Intelligence, etc.) with live semantic search results
+- Result types: navigation, project, task, resource, risk, status_update — each with icon, title, subtitle, type badge
+
+### Feature: Voice Input
+- Uses browser-native Web Speech API (Chrome, Edge, Safari)
+- No backend audio processing needed — instant, free, works client-side
+- Mic button in the ⌘K palette — click → speak → transcribed into search box
+- Fallback message if browser doesn't support Speech Recognition
+- Note: Gemini server-side audio not implemented (emergent integrations doesn't cover audio-in yet). Web Speech API delivers the same UX with zero infra cost.
+
+### Testing
+- 6/6 backend tests pass (iter 41)
+- Total AI-expansion tests: 38 across iters 37-41
+
+## AI Expansion Summary (Feb 2026)
+
+Over Phases 1-5, added 14 new AI-powered capabilities:
+
+**Super Admin & Portfolio Intelligence:**
+- Knowledge Base indexing (docs → AI can answer "how do I")
+- Anomaly Detection (timesheet drops/surges, burn spikes, blackouts, health downgrades, capacity crunch)
+- Portfolio Forecasting (slip-risk 0-100 per project, projected end dates)
+- Project Retrospective Generator (grade + went well/badly/lessons/recs)
+
+**Admin/Lead Productivity:**
+- AI Status Update Drafter (pre-fills from recent activity)
+- AI Kickoff Wizard (phases + WBS + team + budget from goal)
+- Similar Projects Finder (with WBS template suggestions)
+
+**Resource AI:**
+- NL Timesheet Assistant ("log 4h on Acme yesterday" → parsed)
+- Personal Monday Briefing (weekly digest)
+
+**Platform:**
+- ⌘K Command Palette (universal search + nav)
+- Global Semantic Search (role-scoped)
+- Voice Input (browser Web Speech API)
+
+**New Backend Services:** 10 (knowledge_base, anomaly_detection, forecasting, retrospective, status_drafter, kickoff_wizard, similar_projects, timesheet_assistant, personal_briefing, global_search)
+**New Routes:** 5 (knowledge_base, ai_intelligence, ai_productivity, ai_resource, search)
+**New Frontend:** 3 pages/components (AIIntelligence, KickoffWizardDialog, CommandPalette)
+**New Endpoints:** ~20
+**Tests:** 38 passing across iters 37-41
+
+## Session: AI Expansion — Phase 4 (Resource AI) (Feb 2026)
+
+### Feature: Natural Language Timesheet Assistant
+- New `services/timesheet_assistant.py` — parses phrases like "log 4h on Acme API yesterday" into structured timesheet data (project_id, phase_id, hours, week_start, notes)
+- AI-driven with deterministic regex fallback for common shapes ("Nh", "half day", "yesterday", "last Monday", "N days ago")
+- Auto-matches project name/client to allocated + active projects
+- Endpoint: `POST /api/ai/timesheet/parse` — any authenticated resource
+- Frontend: "Quick log with AI" widget on `MyTimesheets` page — parse → confirm bar → save (uses existing `createTimesheet`)
+
+### Feature: Personal Monday Briefing
+- New `services/personal_briefing.py` — assembles capacity-aware weekly digest
+- Includes: this-week allocations with h/wk, upcoming deadlines (14d), upcoming leaves (30d), last-week timesheet status, over-capacity warnings
+- Endpoint: `GET /api/ai/briefing/personal`
+- Frontend: New AI Briefing card at top of ResourceDashboard with purple gradient + summary sentence + chips for deadlines/leaves/upcoming projects
+
+### Testing
+- 7/7 backend tests pass (iter 40)
+- Total AI-expansion tests: 32 across iters 37-40
+
+## Session: AI Expansion — Phase 3 (Productivity) (Feb 2026)
+
+### Feature: AI Status Update Drafter
+- New `services/status_drafter.py` — builds recent-activity snapshot (last 14 days) and asks LLM to draft a status update
+- Signals: timesheet hours (planned vs actual), completed WBS tasks, milestones hit/missed, new/closed risks, previous update health, top WBS comments
+- Endpoint: `POST /api/ai/draft-status-update/{project_id}` — admin OR project lead
+- Frontend: "Draft with AI" button in Add Status Update dialog on ProjectDetail — pre-fills form for user editing
+
+### Feature: AI Kickoff Wizard
+- New `services/kickoff_wizard.py` — takes name/goal/client/budget/complexity → returns AI-suggested phases, WBS, team roles, budget breakdown, risks-to-watch, kickoff checklist
+- Uses top 20 historical projects as reference
+- Endpoint: `POST /api/ai/kickoff-suggest` (admin+)
+- Frontend: new `KickoffWizardDialog` component with 2-step flow (input → review → create project)
+- New "AI Kickoff" button on Projects page (purple, next to existing wizard)
+
+### Feature: Similar Projects Finder
+- New `services/similar_projects.py` — scores past projects by keyword overlap, same client, budget/duration similarity, and shared team roles
+- Also suggests WBS template from the top match
+- Endpoint: `GET /api/ai/similar-projects/{project_id}?limit=N`
+
+### Testing
+- 7/7 backend tests pass (iter 39)
+- 25 total AI-expansion tests passing across iters 37-39
+
+## Session: AI Expansion — Phase 2 (Intelligence) (Feb 2026)
+
+### Feature: Anomaly Detection
+- New `services/anomaly_detection.py` — 5 detectors: timesheet drop/surge, burn-rate spike, activity blackout, health-trend downgrade, capacity crunch
+- Baselines computed from last 8 weeks; findings include severity, message, baseline vs current, suggested action
+- Endpoints: `POST /api/ai/anomaly/scan`, `GET /api/ai/anomaly/latest` (admin+)
+
+### Feature: Portfolio Forecasting
+- New `services/forecasting.py` — 5-signal slip-risk model (velocity, WBS completion, time buffer, health trend, milestones)
+- Per-project slip score 0-100, label (Critical/High/Medium/Low), projected end date, top-3 factors
+- Endpoints: `GET /api/ai/forecast/portfolio` (admin+), `GET /api/ai/forecast/project/{id}` (also lead/allocated)
+
+### Feature: AI Retrospective Generator
+- New `services/retrospective.py` — builds rich project snapshot (budget, WBS, milestones, risks, health arc, contributors) and asks LLM to write structured retro
+- Output: grade (A-F), summary, went well, didn't go well, root causes, lessons, recommendations, KPI highlights
+- Persisted to `project_retrospectives` collection with full history
+- Endpoints: `POST /api/ai/retrospective/{project_id}`, `GET /list/{project_id}`, `GET /{retro_id}`, `DELETE /{retro_id}`
+
+### Frontend
+- New `/ai-intelligence` route (admin+ only) with 3 panels: Anomaly Detection, Portfolio Forecast, Retrospectives
+- Nav item added to Layout with Sparkles icon
+- Retrospective detail dialog with grade badge, KPI chips, and 5 collapsible sections
+- Testing: 10/10 backend tests pass (iter 38)

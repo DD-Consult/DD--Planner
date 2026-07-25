@@ -35,6 +35,11 @@ from routes.insights import router as insights_router
 from routes.ai_memory import router as ai_memory_router
 from routes.integrations import router as integrations_router
 from routes.mcp_server import router as mcp_router
+from routes.knowledge_base import router as knowledge_base_router
+from routes.ai_intelligence import router as ai_intelligence_router
+from routes.ai_productivity import router as ai_productivity_router
+from routes.ai_resource import router as ai_resource_router
+from routes.search import router as search_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -69,6 +74,11 @@ app.include_router(insights_router)
 app.include_router(ai_memory_router)
 app.include_router(integrations_router)
 app.include_router(mcp_router)
+app.include_router(knowledge_base_router)
+app.include_router(ai_intelligence_router)
+app.include_router(ai_productivity_router)
+app.include_router(ai_resource_router)
+app.include_router(search_router)
 
 
 @app.on_event("startup")
@@ -240,6 +250,19 @@ async def startup_event():
             print("[STARTUP] Background health monitor scheduled (runs every 24h)")
         except Exception as e:
             print(f"[STARTUP] Health monitor scheduling skipped: {e}")
+
+        # AI KNOWLEDGE BASE — index GUIDE/README/INTEGRATIONS so the AI copilot
+        # can answer "how do I…" and troubleshoot with citations. Best-effort.
+        try:
+            from services.knowledge_base import reindex as _kb_reindex, status as _kb_status
+            existing = await _kb_status()
+            if not existing.get("total_sections"):
+                result = await _kb_reindex()
+                print(f"[STARTUP] AI knowledge base indexed: {result.get('indexed_sections')} sections")
+            else:
+                print(f"[STARTUP] AI knowledge base already has {existing.get('total_sections')} sections")
+        except Exception as e:
+            print(f"[STARTUP] Knowledge base indexing skipped: {e}")
     except Exception as e:
         print(f"[STARTUP ERROR] Failed to complete startup tasks: {str(e)}")
         print("[STARTUP] Application will continue to run, but database may not be fully initialized")

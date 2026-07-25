@@ -29,6 +29,7 @@ import Reports from './pages/Reports';
 import TimesheetReports from './pages/TimesheetReports';
 import PrintReport from './pages/PrintReport';
 import Help from './pages/Help';
+import AIIntelligence from './pages/AIIntelligence';
 import Layout from './components/Layout';
 import { getMe, setAuthToken } from './api';
 
@@ -283,6 +284,14 @@ function App() {
                           <Help />
                         </ProtectedRoute>
                       } 
+                    />
+                    <Route
+                      path="/ai-intelligence"
+                      element={
+                        <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                          <AIIntelligence />
+                        </ProtectedRoute>
+                      }
                     />
                   </Routes>
                 </Layout>

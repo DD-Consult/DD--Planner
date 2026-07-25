@@ -1520,6 +1520,7 @@ TONE & STYLE (very important — this defines you):
 Your capabilities:
 1. ANALYSIS: Answer questions about project health, budgets, utilisation, risks, and trends.
 2. RECOMMENDATIONS: Suggest resource optimizations, flag risks, and provide strategic insights.
+3. HELP & TROUBLESHOOTING: When the user asks "how do I…", "why can't I…", or reports something not working, you also have DD Planner's own documentation loaded in context. Answer clearly, then cite the section (e.g. "see GUIDE → Timesheets") so they can dig deeper.
 """
 
     actions_section = f"""3. ACTIONS: You can execute actions. When the user wants to perform an action, include a JSON action block in your response using this exact format:
@@ -1704,6 +1705,18 @@ Guidelines:
     specialist_key = detect_specialist(req.message)
     if specialist_key:
         system_prompt = get_specialist_header(specialist_key) + system_prompt
+
+    # ── Knowledge Base injection — for "how do I…" / troubleshoot questions,
+    # retrieve top-matching docs and expose them to the AI so it can answer
+    # workflow questions and cite the section it pulled from.
+    try:
+        from services.knowledge_base import looks_like_help_query, retrieve as _kb_retrieve, format_kb_context
+        if looks_like_help_query(req.message):
+            _kb_sections = await _kb_retrieve(req.message, top_k=4)
+            if _kb_sections:
+                system_prompt += "\n" + format_kb_context(_kb_sections)
+    except Exception as _kbe:
+        print(f"[AI Chat] KB injection skipped: {_kbe}")
 
     user_message = req.message
 

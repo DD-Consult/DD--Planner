@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getProject, getProjectRisks, getProjectAllocations, getResources, generateProjectSummary, updateProjectSummary, getProjectStatusUpdates, getProjectTimeReport, getProjectBudgetAnalysis, createRisk, updateRisk, deleteRisk, updateProject, polishAllRisks, editStatusUpdate, syncProjectDatesFromWBS, getMe, getStatusOptions, createStatusUpdate, createAllocation, updateAllocation, deleteAllocation, getBudgetHealth } from '../api';
+import { getProject, getProjectRisks, getProjectAllocations, getResources, generateProjectSummary, updateProjectSummary, getProjectStatusUpdates, getProjectTimeReport, getProjectBudgetAnalysis, createRisk, updateRisk, deleteRisk, updateProject, polishAllRisks, editStatusUpdate, syncProjectDatesFromWBS, getMe, getStatusOptions, createStatusUpdate, createAllocation, updateAllocation, deleteAllocation, getBudgetHealth, aiDraftStatusUpdate, aiSimilarProjects } from '../api';
 import { format, differenceInDays, differenceInBusinessDays } from 'date-fns';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -145,6 +145,7 @@ const ProjectDetail = () => {
   
   // CHANGE 1: Add status update dialog state
   const [showAddStatusDialog, setShowAddStatusDialog] = useState(false);
+  const [aiDraftLoading, setAiDraftLoading] = useState(false);
   const [statusForm, setStatusForm] = useState({
     health: 'Green',
     schedule_status: 'On Track',
@@ -2724,10 +2725,46 @@ const ProjectDetail = () => {
       <Dialog open={showAddStatusDialog} onOpenChange={setShowAddStatusDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="add-status-update-dialog">
           <DialogHeader>
-            <DialogTitle>Add Status Update</DialogTitle>
-            <DialogDescription>
-              Record a new status update for {project?.name}. This will update the project health and progress metrics.
-            </DialogDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <DialogTitle>Add Status Update</DialogTitle>
+                <DialogDescription>
+                  Record a new status update for {project?.name}. This will update the project health and progress metrics.
+                </DialogDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-purple-300 text-purple-700 hover:bg-purple-50"
+                disabled={aiDraftLoading}
+                onClick={async () => {
+                  try {
+                    setAiDraftLoading(true);
+                    const res = await aiDraftStatusUpdate(id);
+                    const draft = res.data?.draft || {};
+                    setStatusForm({
+                      health: draft.health || 'Green',
+                      schedule_status: draft.schedule_status || 'On Track',
+                      actual_progress: draft.actual_progress ?? 0,
+                      accomplishments: draft.accomplishments || '',
+                      blockers: draft.blockers || '',
+                      next_steps: draft.next_steps || '',
+                      notes: draft.confidence_notes || '',
+                    });
+                    toast.success('AI draft applied — review & edit before submitting');
+                  } catch (e) {
+                    toast.error(`AI draft failed: ${e?.response?.data?.detail || e?.message}`);
+                  } finally {
+                    setAiDraftLoading(false);
+                  }
+                }}
+                data-testid="ai-draft-status-btn"
+              >
+                <Sparkles size={14} className={`mr-1.5 ${aiDraftLoading ? 'animate-pulse' : ''}`} />
+                {aiDraftLoading ? 'Drafting…' : 'Draft with AI'}
+              </Button>
+            </div>
           </DialogHeader>
 
           <div className="space-y-4 py-4">

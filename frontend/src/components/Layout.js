@@ -7,6 +7,7 @@ import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
 import ChatPanel from './ChatPanel';
+import CommandPalette from './CommandPalette';
 import {
   Tooltip,
   TooltipContent,
@@ -461,6 +462,7 @@ const Layout = ({ children, token, onLogout }) => {
     { path: '/holidays', label: 'Holidays', icon: CalendarDays, roles: ['admin', 'super_admin', 'resource'], tooltip: 'Manage company holidays' },
     { path: '/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'super_admin'], tooltip: 'Budget & actuals reporting' },
     { path: '/timesheets/reports', label: 'Timesheet Reports', icon: BarChart3, roles: ['admin', 'super_admin'], tooltip: 'Aggregated timesheet analysis with date ranges' },
+    { path: '/ai-intelligence', label: 'AI Intelligence', icon: Sparkles, roles: ['admin', 'super_admin'], tooltip: 'Anomaly detection, forecasting, retrospectives' },
     { path: '/settings', label: 'Settings', icon: SettingsIcon, roles: ['super_admin'], tooltip: 'Configure AI integrations' },
     { path: '/help', label: 'Help & Guide', icon: HelpCircle, roles: ['admin', 'super_admin', 'resource', 'contractor', 'client'], tooltip: 'How to use DD Planner' },
   ];
@@ -734,6 +736,7 @@ const Layout = ({ children, token, onLogout }) => {
 
         {/* AI Chat Panel - accessible from every page */}
         <ChatPanel />
+        <CommandPalette />
       </div>
     </TooltipProvider>
   );

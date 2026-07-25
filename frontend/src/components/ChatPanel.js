@@ -737,12 +737,12 @@ const ChatPanel = () => {
     { label: 'Team utilization', prompt: 'Give me a summary of team utilization this week' },
     { label: 'Projects at risk', prompt: 'Which projects are at risk or over budget?' },
     { label: 'Available resources', prompt: 'Who is available for new work this week?' },
-    { label: 'Timesheet status', prompt: 'Show me the timesheet submission status for this week' },
+    { label: 'How do I…?', prompt: 'How do I ' },
   ] : [
     { label: 'My allocations', prompt: 'What are my current project allocations?' },
-    { label: 'My projects', prompt: 'Give me a summary of my active projects' },
     { label: 'My hours', prompt: 'How many hours am I allocated this week?' },
     { label: 'My upcoming leave', prompt: 'When is my next scheduled time off?' },
+    { label: 'How do I…?', prompt: 'How do I ' },
   ];
 
   if (!isOpen) {

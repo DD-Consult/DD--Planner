@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getMyTimesheetHistory, autoFillTimesheets, submitWeekTimesheets, getAllActiveProjectsSummary, createTimesheet, getMe, getMyAllocations } from '../api';
+import { getMyTimesheetHistory, autoFillTimesheets, submitWeekTimesheets, getAllActiveProjectsSummary, createTimesheet, getMe, getMyAllocations, aiParseTimesheetPhrase } from '../api';
 import { format, startOfWeek, addDays } from 'date-fns';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
-import { Clock, AlertCircle, ChevronDown, ChevronRight, Zap, Send, CheckCircle, Plus, AlertTriangle } from 'lucide-react';
+import { Clock, AlertCircle, ChevronDown, ChevronRight, Zap, Send, CheckCircle, Plus, AlertTriangle, Sparkles, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const getCurrentWeekStart = () => {
@@ -197,6 +197,10 @@ const MyTimesheets = () => {
     actual_hours: 0,
     notes: '',
   });
+  // AI NL input state
+  const [aiPhrase, setAiPhrase] = useState('');
+  const [aiParsed, setAiParsed] = useState(null);
+  const [aiError, setAiError] = useState(null);
 
   const { data: userData } = useQuery({
     queryKey: ['me'],
@@ -253,6 +257,52 @@ const MyTimesheets = () => {
       setAddForm({ project_id: '', phase_id: '', planned_hours: 0, actual_hours: 0, notes: '' });
     },
     onError: (err) => toast.error(err.response?.data?.detail || 'Failed to create entry'),
+  });
+
+  const aiParseMutation = useMutation({
+    mutationFn: (phrase) => aiParseTimesheetPhrase(phrase),
+    onSuccess: (res) => {
+      const d = res.data;
+      if (!d.matched) {
+        setAiParsed(null);
+        setAiError(d.clarification_needed || 'Could not understand your phrase');
+      } else {
+        setAiParsed(d);
+        setAiError(null);
+      }
+    },
+    onError: (err) => {
+      setAiParsed(null);
+      setAiError(err?.response?.data?.detail || 'AI parse failed');
+    },
+  });
+
+  const aiConfirmMutation = useMutation({
+    mutationFn: async () => {
+      if (!aiParsed) return;
+      // Compute week_end_date (Fri)
+      const wkStart = new Date(aiParsed.week_start_date + 'T00:00:00');
+      const wkEnd = new Date(wkStart);
+      wkEnd.setDate(wkEnd.getDate() + 4);
+      return createTimesheet({
+        resource_id: aiParsed.resource_id,
+        project_id: aiParsed.project_id,
+        phase_id: aiParsed.phase_id,
+        week_start_date: aiParsed.week_start_date,
+        week_end_date: wkEnd.toISOString().slice(0, 10),
+        planned_hours: aiParsed.actual_hours,
+        actual_hours: aiParsed.actual_hours,
+        notes: aiParsed.notes || aiParsed.original_phrase,
+      });
+    },
+    onSuccess: () => {
+      toast.success('Entry created from AI');
+      queryClient.invalidateQueries(['myTimesheetHistory']);
+      refetch();
+      setAiPhrase('');
+      setAiParsed(null);
+    },
+    onError: (err) => toast.error(err?.response?.data?.detail || 'Create failed'),
   });
 
   const resource = data?.resource;
@@ -332,6 +382,66 @@ const MyTimesheets = () => {
             To correct or edit past entries, please contact your admin. You can autofill, add entries, and submit the <strong>current week</strong> below.
           </p>
         </div>
+      </div>
+
+      {/* AI Quick-log */}
+      <div className="rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-blue-50 p-4" data-testid="ai-quick-log">
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles size={16} className="text-purple-600" />
+          <h3 className="text-sm font-semibold text-[#0B1220]">Quick log with AI</h3>
+          <span className="text-xs text-[#667085]">— describe what you did, we'll fill in the rest</span>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            value={aiPhrase}
+            onChange={(e) => { setAiPhrase(e.target.value); setAiError(null); setAiParsed(null); }}
+            placeholder="e.g. Log 4h on Acme API design yesterday"
+            className="bg-white"
+            onKeyDown={(e) => { if (e.key === 'Enter' && aiPhrase.trim() && !aiParseMutation.isPending) aiParseMutation.mutate(aiPhrase.trim()); }}
+            data-testid="ai-log-input"
+          />
+          <Button
+            onClick={() => aiParseMutation.mutate(aiPhrase.trim())}
+            disabled={!aiPhrase.trim() || aiParseMutation.isPending}
+            className="bg-purple-600 text-white hover:bg-purple-700"
+            data-testid="ai-log-parse-btn"
+          >
+            {aiParseMutation.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Sparkles size={14} className="mr-1" />}
+            Parse
+          </Button>
+        </div>
+        {aiError && (
+          <div className="mt-3 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-800">
+            {aiError}
+          </div>
+        )}
+        {aiParsed && (
+          <div className="mt-3 p-3 bg-white rounded-lg border border-[#E6E8EC]">
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-[#0B1220] mb-2">
+              <div><b>Project:</b> {aiParsed.project_name}{aiParsed.client_name && ` (${aiParsed.client_name})`}</div>
+              {aiParsed.phase_name && <div><b>Phase:</b> {aiParsed.phase_name}</div>}
+              <div><b>Hours:</b> {aiParsed.actual_hours}</div>
+              <div><b>Date:</b> {aiParsed.date}</div>
+              {!aiParsed.is_allocated && (
+                <div className="text-amber-700 text-xs italic">Not currently allocated to this project — will still be logged</div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={() => aiConfirmMutation.mutate()}
+                disabled={aiConfirmMutation.isPending}
+                data-testid="ai-log-confirm-btn"
+              >
+                {aiConfirmMutation.isPending ? <Loader2 size={12} className="mr-1 animate-spin" /> : <CheckCircle size={12} className="mr-1" />}
+                Confirm & save
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => { setAiParsed(null); setAiPhrase(''); }}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Content */}

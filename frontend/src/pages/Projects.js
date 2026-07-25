@@ -40,12 +40,14 @@ import {
   TooltipTrigger,
 } from '../components/ui/tooltip';
 import ProjectWizard from '../components/ProjectWizard';
+import KickoffWizardDialog from '../components/KickoffWizardDialog';
 import AllocationEditor from '../components/AllocationEditor';
 import { enrichProjects, ProjectStatusGroups } from '../components/ProjectStatusTable';
 
 const Projects = ({ token }) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [isKickoffOpen, setIsKickoffOpen] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
   const [phases, setPhases] = useState([]);
   const [editAllocations, setEditAllocations] = useState([]);
@@ -339,6 +341,14 @@ const Projects = ({ token }) => {
         </div>
         {isAdmin && (
           <div className="flex gap-2">
+            <Button
+              onClick={() => setIsKickoffOpen(true)}
+              data-testid="ai-kickoff-btn"
+              className="bg-purple-600 text-white hover:bg-purple-700 shadow-md"
+            >
+              <Sparkles size={16} className="mr-2" />
+              AI Kickoff
+            </Button>
             <Button 
               onClick={() => setIsWizardOpen(true)} 
               data-testid="new-project-wizard"
@@ -692,6 +702,7 @@ const Projects = ({ token }) => {
 
       {/* Project Wizard */}
       <ProjectWizard open={isWizardOpen} onOpenChange={setIsWizardOpen} />
+      <KickoffWizardDialog open={isKickoffOpen} onOpenChange={setIsKickoffOpen} />
     </div>
   );
 };

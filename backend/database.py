@@ -61,6 +61,7 @@ ai_memory_collection = db.ai_memory            # Agent memory (decisions, prefer
 ai_health_reports_collection = db.ai_health_reports  # Proactive health monitor reports
 integration_settings_collection = db.integration_settings  # CRM / agent API integration config
 integration_sync_logs_collection = db.integration_sync_logs  # Audit log for inbound/outbound syncs
+ai_knowledge_base_collection = db.ai_knowledge_base  # Indexed docs (GUIDE/README/INTEGRATIONS) for AI help
 
 # Email Configuration
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')

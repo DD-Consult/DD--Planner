@@ -5,7 +5,7 @@ import {
   format, parseISO, startOfWeek, endOfWeek, isWithinInterval,
   areIntervalsOverlapping, addDays, isFuture, isPast,
 } from 'date-fns';
-import { getMyAllocations, getMyTimesheetHistory, getLeaves, getActionItems } from '../api';
+import { getMyAllocations, getMyTimesheetHistory, getLeaves, getActionItems, aiPersonalBriefing } from '../api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -13,7 +13,7 @@ import { Progress } from '../components/ui/progress';
 import {
   Clock, Briefcase, Calendar, CheckCircle2, AlertTriangle,
   ChevronRight, TrendingUp, Bell, X, ChevronDown, ChevronUp,
-  FileText, ClipboardList, Flag, Palmtree, ArrowRight,
+  FileText, ClipboardList, Flag, Palmtree, ArrowRight, Sparkles,
 } from 'lucide-react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -117,6 +117,12 @@ export default function ResourceDashboard({ userData }) {
     refetchInterval: 5 * 60 * 1000,
   });
 
+  const { data: briefing } = useQuery({
+    queryKey: ['personalBriefing'],
+    queryFn: async () => { const r = await aiPersonalBriefing(); return r.data; },
+    staleTime: 10 * 60 * 1000,
+  });
+
   // ── derived ────────────────────────────────────────────────────────────────
 
   const resource  = myAllocsData?.resource || {};
@@ -177,6 +183,50 @@ export default function ResourceDashboard({ userData }) {
           <FileText size={14} className="mr-1.5" /> My Timesheets
         </Button>
       </div>
+
+      {/* ── AI Personal Briefing ── */}
+      {briefing && (
+        <Card className="border-l-4 border-l-purple-500 bg-gradient-to-r from-purple-50 via-blue-50 to-white" data-testid="ai-briefing-card">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                <Sparkles size={16} className="text-purple-600" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-xs font-semibold text-purple-800 uppercase tracking-wide">Your week ahead</p>
+                  {briefing.capacity?.over_capacity && (
+                    <Badge className="bg-red-100 text-red-800 text-xs">Over capacity</Badge>
+                  )}
+                </div>
+                <p className="text-sm text-[#0B1220]">{briefing.summary}</p>
+                {(briefing.upcoming_deadlines?.length > 0 || briefing.upcoming_leaves?.length > 0) && (
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-[#475467]">
+                    {briefing.upcoming_deadlines?.length > 0 && (
+                      <span>
+                        <Flag size={11} className="inline mr-1 text-orange-500" />
+                        {briefing.upcoming_deadlines.length} deadline{briefing.upcoming_deadlines.length !== 1 ? 's' : ''} in the next 2 weeks
+                      </span>
+                    )}
+                    {briefing.upcoming_leaves?.length > 0 && (
+                      <span>
+                        <Palmtree size={11} className="inline mr-1 text-emerald-500" />
+                        {briefing.upcoming_leaves.length} upcoming leave{briefing.upcoming_leaves.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {briefing.upcoming_projects?.length > 0 && (
+                      <span>
+                        <Briefcase size={11} className="inline mr-1 text-[#1570EF]" />
+                        {briefing.upcoming_projects.length} new project{briefing.upcoming_projects.length !== 1 ? 's' : ''} starting soon
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Action Items Banner ── */}
       {actionItemsData?.summary?.total > 0 && !actionsDismissed && (

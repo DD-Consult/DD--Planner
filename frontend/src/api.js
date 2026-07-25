@@ -546,4 +546,31 @@ export const testHubSpotConnection = (token) => api.post('/integrations/hubspot/
 export const regenerateAgentApiKey = () => api.post('/integrations/agent-api/regenerate');
 export const getIntegrationSyncLogs = (limit = 50) => api.get('/integrations/sync-logs', { params: { limit } });
 
+// AI Knowledge Base
+export const getKnowledgeBaseStatus = () => api.get('/ai/knowledge-base/status');
+export const reindexKnowledgeBase = () => api.post('/ai/knowledge-base/reindex');
+export const searchKnowledgeBase = (q, topK = 4) => api.get('/ai/knowledge-base/search', { params: { q, top_k: topK } });
+
+// AI Intelligence — Anomaly / Forecast / Retrospective
+export const runAnomalyScan = () => api.post('/ai/anomaly/scan');
+export const getLatestAnomalyReport = () => api.get('/ai/anomaly/latest');
+export const getPortfolioForecast = () => api.get('/ai/forecast/portfolio');
+export const getProjectForecast = (projectId) => api.get(`/ai/forecast/project/${projectId}`);
+export const generateProjectRetrospective = (projectId) => api.post(`/ai/retrospective/${projectId}`);
+export const listProjectRetrospectives = (projectId) => api.get(`/ai/retrospective/list/${projectId}`);
+export const getRetrospective = (retroId) => api.get(`/ai/retrospective/${retroId}`);
+export const deleteRetrospective = (retroId) => api.delete(`/ai/retrospective/${retroId}`);
+
+// AI Productivity — Status Draft / Kickoff / Similar
+export const aiDraftStatusUpdate = (projectId) => api.post(`/ai/draft-status-update/${projectId}`);
+export const aiKickoffSuggest = (payload) => api.post('/ai/kickoff-suggest', payload);
+export const aiSimilarProjects = (projectId, limit = 5) => api.get(`/ai/similar-projects/${projectId}`, { params: { limit } });
+
+// AI Resource — NL Timesheet Parser & Personal Briefing
+export const aiParseTimesheetPhrase = (phrase) => api.post('/ai/timesheet/parse', { phrase });
+export const aiPersonalBriefing = () => api.get('/ai/briefing/personal');
+
+// Global Search
+export const globalSearch = (q, limitPerType = 5) => api.get('/search/global', { params: { q, limit_per_type: limitPerType } });
+
 export default api;
