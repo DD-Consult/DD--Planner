@@ -1,0 +1,83 @@
+{
+  "summary": "Comprehensive resource-user (riley@test.com) UX audit across all 12 flows. Core resource-facing pages LOAD and function: sidebar filtered correctly, ResourceDashboard shows greeting+KPIs+empty-state, My Allocations page renders Riley's Website Redesign 50% allocation (This Month period; correctly empty for current week Jul 20 because alloc ended Jul 20), My Timesheets autofill executes and returns 'Autofilled 0 timesheet entries' as expected, Projects list scoped to Website Redesign only, Help page shows 'Team Member' badge with no Integrations section, Leaves page hides Resource column and preselects Riley, and AI chat FAB opens and returns a natural-language reply. However, THREE critical permission-leak bugs were found on Project Detail, WBS and Holidays pages where admin-only mutation controls are visible to resource users. Also two design-consistency issues (native date pickers).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ProjectDetail header (/projects/:id)",
+        "issue": "'Edit Project' and 'AI Reschedule' buttons are visible to resource users. Riley (role=resource, NOT project lead of Website Redesign) can see both. Delete and Add Allocation are correctly hidden, so the guard exists but is missing on these two controls.",
+        "selector": "button:has-text('Edit Project'), button:has-text('AI Reschedule')",
+        "priority": "HIGH"
+      },
+      {
+        "component": "ProjectDetail > WBS & Plan tab",
+        "issue": "'Add Task', 'Generate with AI', and 'Add Task manually' buttons are visible to resource users. Problem statement explicitly requires: 'Resource should be able to VIEW tasks but NOT edit/create/delete them (buttons should be hidden or disabled).' No role check on WBS mutation controls.",
+        "selector": "button:has-text('Add Task'), button:has-text('Generate with AI'), button:has-text('Add Task manually')",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Holidays page (/holidays)",
+        "issue": "'Add Holiday' button visible for resource, and clicking it opens the 'Add Global Holiday' dialog. Problem statement requires: 'Resource should see holidays list (read-only). Should NOT see Add Holiday button.'",
+        "selector": "button:has-text('Add Holiday')",
+        "priority": "HIGH"
+      },
+      {
+        "component": "MyTimesheets — submit-week-btn",
+        "issue": "The submit-week-btn is not present in DOM when the current week has zero autofilled entries. Confirmed via HTML inspection. This may be intentional (nothing to submit), but there is no visible messaging telling the user why they cannot submit. Consider adding a disabled Submit button with tooltip like 'No entries to submit'.",
+        "selector": "[data-testid='submit-week-btn']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "AI Chat quick-prompts for resource",
+        "issue": "Chat panel shows admin-oriented quick prompts to resources: 'Team utilization', 'Projects at risk', 'Available resources', 'Timesheet status'. These are not scoped to a resource's context (resources cannot see team-wide utilization or projects-at-risk anyway). Should be replaced with resource-appropriate prompts (e.g., 'My allocations this week', 'Autofill my timesheet', 'My upcoming leaves').",
+        "affected_selectors": ["[data-testid='chat-toggle-btn']", "chat quick-prompt buttons"]
+      },
+      {
+        "flow": "AI Chat placeholder 'Ask or request an action...'",
+        "issue": "Placeholder implies action-execution is available, but problem statement says resource chat should be 'read-only mode' with no action execution. Placeholder should read 'Ask a question...' for resources. Actual action-execution capability was NOT verified (only a Q&A prompt was sent) — backend restriction may already be in place, but the UX copy is misleading.",
+        "affected_selectors": ["chat input placeholder"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Holidays > Add Global Holiday dialog",
+        "issues": ["Uses browser-native date input (<input type='date'>) with 'mm/dd/yyyy' placeholder instead of the app's shadcn Calendar/Popover component. Inconsistent with the rest of the design system."]
+      },
+      {
+        "screen": "Leaves > Add Time Off dialog",
+        "issues": ["Uses browser-native date input for Start Date and End Date instead of shadcn Calendar. Inconsistent with design system."]
+      }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "ProjectDetail.js — wrap 'Edit Project' and 'AI Reschedule' buttons in the same role/permission guard already used for Delete/Add Allocation. Resources (non-lead, non-admin) must not see these.",
+    "WBS view (Board/List/Plan) — hide/disable 'Add Task', 'Add Task manually', and 'Generate with AI' for role=resource (unless project lead). Also verify Edit/Delete task actions in Board/List rows are similarly gated.",
+    "Holidays.js — hide 'Add Holiday' button (and disable POST route via role) for role=resource. Page should be view-only for non-admins.",
+    "MyTimesheets — surface a disabled Submit button with a helpful tooltip when there are zero entries in the current week, so users understand why submit is unavailable.",
+    "AI Chat — swap the quick-prompt suggestions when role=resource to resource-scoped prompts, and update the input placeholder to remove the 'request an action' phrasing for read-only role.",
+    "Replace native <input type='date'> in AddHolidayDialog and AddLeaveDialog with the shadcn Calendar/Popover pattern used elsewhere in the app."
+  ],
+  "critical_code_review_comments": [
+    "Permission-guard pattern is inconsistent: Delete Project and Add Allocation are hidden but Edit Project / AI Reschedule are not — indicates ad-hoc conditional rendering rather than a centralised RBAC helper. Consider introducing a hasProjectPermission(user, project, action) helper and using it uniformly.",
+    "WBS view has NO role gating on mutation controls, meaning resources can attempt task creation. Even if the backend rejects it, exposing controls is poor UX.",
+    "Holidays page appears to render Add button unconditionally — should read auth.role and only render for admin.",
+    "AI Chat quick-prompts are hardcoded and not filtered by role — this is a client-side data leak of admin-oriented capabilities into a resource UI (even if backend enforces limits).",
+    "Two dialogs (Add Holiday, Add Time Off) use native <input type='date'> despite the codebase having a shadcn Calendar. Design-system drift."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (frontend-only request)", "frontend": "9/12 flows fully pass (Dashboard, My Allocations, My Timesheets autofill, Projects list, Time Off list+dialog scoping, Help page, Sidebar nav, AI chat open+reply, autofill=0 handled). 3/12 flows FAIL on permission leaks (Project Detail edit/AIR, WBS mutation buttons, Holidays add)."},
+  "test_credentials": "riley@test.com / riley123 (resource role, linked to Riley Resource, allocated 50% to Website Redesign Jul 10-20 per AI chat reply).",
+  "seed_data_creation": "None. No leave or holiday was actually created (dialog opened only, then cancelled). No timesheet was submitted (autofill returned 0 entries).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Current server date is Sat Jul 25 2026, current week = Jul 20-24. Riley's allocation to Website Redesign ended Jul 20, so autofill returns 0 entries (correct). To test a non-empty autofill/submit flow, either extend Riley's allocation past Jul 25 or create a new allocation covering the current week, then retest /my-timesheets. Timesheet submit is Thu 00:00–Mon 12:00 Sydney time; Sat Jul 25 falls inside this window so submit SHOULD be allowed with data present. After main agent fixes permission leaks on ProjectDetail/WBS/Holidays, verify by logging in as Riley and confirming Edit Project + AI Reschedule + Add Task* + Add Holiday buttons are hidden.",
+  "rca of the issue": {
+    "bug": "Three admin-only controls are exposed to resource users: Edit Project + AI Reschedule (ProjectDetail header), Add Task + Generate with AI + Add Task manually (WBS view), and Add Holiday (Holidays page).",
+    "reproduction": "1) Login riley@test.com/riley123. 2) Navigate to /projects → click Website Redesign → observe 'Edit Project' and 'AI Reschedule' buttons in header. 3) Click 'WBS & Plan' tab → observe 'Add Task', 'Generate with AI', 'Add Task manually' buttons. 4) Navigate to /holidays → observe 'Add Holiday' button; clicking opens Add Global Holiday dialog.",
+    "root_cause": "ProjectDetail already gates Delete and Add-Allocation buttons but NOT Edit/AI-Reschedule. WBS tab renders mutation controls unconditionally. Holidays page renders Add Holiday button unconditionally. No unified isAdmin/canEditProject helper is being consulted.",
+    "mitigation": "Introduce a role/permission check (e.g., useAuth().user.role === 'admin' OR user is projectLead) and conditionally render each of these buttons. Apply the same helper across ProjectDetail, WBS Board/List/Plan headers, and Holidays page. Backend should also 403 the underlying endpoints if not already, to prevent bypass."
+  }
+}
