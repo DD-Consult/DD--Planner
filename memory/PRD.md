@@ -379,6 +379,21 @@ DD Planner is a full-stack resource planning and project management application 
 - ProjectDetail `calculateAllocationEffort` respects standard_capacity for Est. Hours column
 - Testing: 5/8 UI tests pass in iter 33 → root cause found (missing standard_capacity in groupedByResource) → fixed
 
+## Bug Fix: Resource Role Permission Leaks (Feb 2026)
+
+### Issues Found (iter 34 audit)
+1. **ProjectDetail**: "Edit Project" and "AI Reschedule" buttons visible to resource users (non-lead, non-admin)
+2. **WBS Tab**: "Add Task", "Generate with AI", "Add Task manually" buttons visible to resource users
+3. **Holidays page**: "Add Holiday" and delete buttons visible to resource users
+
+### Fixes Applied
+- ProjectDetail.js: Wrapped Edit/AI Reschedule in `(isAdmin || isLead)` guard
+- WBSView: Now receives `readOnly={!isAdmin && !isLead}` from ProjectDetail; empty state also respects readOnly
+- Holidays.js: Added `getMe` query + `isAdmin` check; Add/Delete buttons hidden for non-admins
+- ChatPanel.js: Role-aware quick prompts (resources see "My allocations/projects/hours/leave" instead of admin prompts); placeholder updated to "Ask a question..." for non-admins
+- Testing: 100% pass on all 9 verification points (iter 35)
+
+
 - P1: Refactor `<ResourceSelect>` reusable component
 - P1: Timesheet reminder / dashboard nudge for missing timesheets
 - P2: "Show inactive" toggle on Resources page
