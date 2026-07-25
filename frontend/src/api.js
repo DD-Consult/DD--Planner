@@ -140,6 +140,7 @@ export const deleteUser = (userId) => api.delete(`/admin/users/${userId}`);
 
 // Projects
 export const getProjects = () => api.get('/projects');
+export const getAllActiveProjectsSummary = () => api.get('/projects/all-active-summary');
 export const getProject = (id) => api.get(`/projects/${id}`);
 export const getProjectRisks = (id) => api.get(`/projects/${id}/risks`);
 export const getProjectAllocations = (id) => api.get(`/projects/${id}/allocations`);

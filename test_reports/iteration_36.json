@@ -1,0 +1,60 @@
+{
+  "summary": "Iteration 36: Tested resource timesheet manual entry (Add Entry dialog + non-allocated project support + over-allocation warning) for riley@test.com. Backend: all 6 pytest cases pass (all-active-summary endpoint, timesheet creation for non-allocated project, project detail access after timesheet). Frontend: Add Entry button, dialog, project dropdown (all 3 active projects), non-allocated warning for Mobile App, and entry creation all work. Submit Week button appears with Draft badge. HOWEVER — over-allocation warning does NOT trigger for Website Redesign because the frontend queries getMyAllocations('week') which uses a 14-day forward-looking window from today (Jul 25, 2026), while Riley's Website Redesign allocation ended Jul 20, 2026. As a result Website Redesign is also incorrectly labeled 'You are not currently allocated to this project'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "MyTimesheets Add Entry Dialog — over-allocation warning",
+        "issue": "The `overAllocWarning` computation depends on `allocationForProject` which is derived from `getMyAllocations('week')` (14 days from today, forward-looking). If the resource's allocation for a project ended before today, it is not returned and both (a) 'You are not currently allocated to this project' amber warning shows incorrectly for Website Redesign, and (b) 'You are logging Xh but your allocation is Yh/wk' over-allocation warning never appears. Reproduced with Riley + Website Redesign (allocation 2026-07-10 → 2026-07-20, today 2026-07-25).",
+        "selector": "[data-testid=\"over-alloc-warning\"] and 'You are not currently allocated to this project' text",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Over-allocation warning for allocated project",
+        "issue": "Frontend should either (a) call getMyAllocations without period restriction or with a broader window (e.g., '3months'), or (b) match allocations that overlap the currently-selected timesheet week rather than today+14d. Ideal fix: pass `period='3months'` OR filter myAllocsData allocations whose date range overlaps `currentWeekStart..currentWeekEnd`.",
+        "affected_selectors": ["[data-testid=\"over-alloc-warning\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "verification_results": {
+    "add-entry-btn.visible": true,
+    "autofill-btn.visible": true,
+    "add-entry-dialog.opens": true,
+    "ts-project-select.options": ["Data Migration — BigData Inc", "Mobile App — TechStart", "Website Redesign — Acme Corp"],
+    "ts-project-select.returns_non_allocated_projects": true,
+    "mobile_app.not_allocated_warning": "SHOWN (correct)",
+    "mobile_app.entry_creation": "SUCCESS — 8h entry created, appears in current-week table, Draft badge visible, Submit week button visible",
+    "website_redesign.not_allocated_warning": "SHOWN (INCORRECT — Riley IS allocated 50%/20h/wk, but allocation ended 2026-07-20 which is before period_start 2026-07-25)",
+    "website_redesign.over_alloc_warning_for_25h": "NOT SHOWN (BUG — should show 'You are logging 25h but your allocation is 20.0h/wk')",
+    "backend./api/projects/all-active-summary": "200 OK, returns 3 projects with id/name/client_name/phases/status (no _id leak)",
+    "backend.POST /api/timesheets for non-allocated project": "200 OK",
+    "backend.GET /api/projects/{mobile_app_id} after timesheet exists": "200 OK (previously 403)"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration36_timesheet_manual_entry.py",
+    "/app/test_reports/pytest/iteration36.xml"
+  ],
+  "action_items": [
+    "HIGH: Fix over-allocation warning/'not allocated' detection in /app/frontend/src/pages/MyTimesheets.js — change getMyAllocations('week') to a broader window (e.g., '3months') OR match allocations whose start_date..end_date overlap currentWeekStart..currentWeekEnd instead of period=today+14d. Recommended change on line ~222: `getMyAllocations('3months')`. Also consider tightening the `allocationForProject` check to filter by date-overlap with the timesheet week."
+  ],
+  "critical_code_review_comments": [
+    "MyTimesheets.js line 222 uses period='week' (today + 14d) which does NOT overlap timesheet week if the week is in the past or the allocation ended recently. Recommend using '3months' or fetching all allocations and filtering by week overlap in the client.",
+    "Backend /api/projects/all-active-summary correctly excludes `_id` via `serialize_doc` — verified.",
+    "Backend POST /api/timesheets correctly allows non-allocated project creation (allocation lookup is best-effort, does not raise if missing) — verified.",
+    "Backend GET /api/projects/{id} now allows resource access when a timesheet exists for that project — verified."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (6/6 pytest)", "frontend": "80% — 4/5 sub-flows pass; over-allocation + not-allocated detection broken for allocations ending before today"},
+  "test_credentials": "riley@test.com / riley123 (resource, allocated to Website Redesign 50%/20h/wk 2026-07-10→2026-07-20; NOT allocated to Mobile App)",
+  "seed_data_creation": "Created and deleted test timesheet entries for Mobile App via pytest fixtures and manual cleanup. One leftover entry (id 6a64b23d8a290eaa6ada58b0) from Playwright run was manually deleted.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The Add Entry flow works end-to-end for non-allocated projects. The remaining fix is in /app/frontend/src/pages/MyTimesheets.js around line 220-223: change `getMyAllocations('week')` to `getMyAllocations('3months')` (or 'month'). After the fix, re-verify: (1) select Website Redesign → 'not allocated' banner should NOT appear, (2) enter 25 in Actual Hours → over-alloc-warning testid should appear with 'You are logging 25h but your allocation is 20.0h/wk for this project.' — Note: 'today' in the preview env is Jul 25, 2026, so time-window sensitive tests need that context.",
+  "rca of the issue": "RCA: In /app/frontend/src/pages/MyTimesheets.js line ~222, `getMyAllocations('week')` requests allocations for a 14-day window starting today (period_start=today, period_end=today+13d — see /app/backend/routes/allocations.py lines 729-732). Riley's Website Redesign allocation range is 2026-07-10 → 2026-07-20 but today is 2026-07-25, so the allocation is filtered out server-side (start_date/end_date overlap check fails). Consequently `myAllocsData.allocations` is empty, `allocationForProject` is null for Website Redesign, and both the 'not allocated' banner and the over-allocation warning (which requires a non-null allocationForProject) misbehave. Reproduction: login riley@test.com → /my-timesheets → Add Entry → select Website Redesign. Mitigation: use `getMyAllocations('3months')` or fetch all allocations and filter by date-overlap with the currently-displayed timesheet week rather than today+14d."
+}

@@ -71,7 +71,6 @@ async def create_timesheet(timesheet: TimesheetCreate, current_user: dict = Depe
         
         # If phase allocation is 0%, warn but allow (they might be reallocated mid-week)
         if phase_percentage == 0 and actual_hours > 0:
-            # Log warning but don't block (super admins can override)
             import logging
             logging.getLogger(__name__).warning(
                 f"Timesheet created for resource {resource_id} with 0% allocation in phase {phase_id}"
@@ -84,6 +83,8 @@ async def create_timesheet(timesheet: TimesheetCreate, current_user: dict = Depe
                 f"Timesheet hours ({actual_hours}) significantly exceed phase allocation ({phase_weekly_hours}h/week) "
                 f"for resource {resource_id} in phase {phase_id}"
             )
+    
+    # No allocation for this project — that's OK, still allow
     
     # Convert dates to datetime for MongoDB
     if isinstance(timesheet_doc.get("week_start_date"), date):

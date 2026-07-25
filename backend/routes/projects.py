@@ -24,6 +24,18 @@ from services.ai_providers import get_ai_config, call_openai_api, call_gemini_ap
 
 router = APIRouter()
 
+@router.get("/api/projects/all-active-summary")
+async def get_all_active_projects_summary(current_user: dict = Depends(get_current_user)):
+    """Return minimal project list (id, name, client, phases) for timesheet entry.
+    Any authenticated user can see active projects — needed for manual timesheet entries."""
+    cursor = projects_collection.find(
+        {"status": {"$in": ["Active", "Pipeline"]}},
+        {"_id": 1, "name": 1, "client_name": 1, "phases": 1, "status": 1}
+    ).sort("name", 1)
+    projects = await cursor.to_list(length=500)
+    return serialize_doc(projects)
+
+
 @router.get("/api/projects", response_model=List[ProjectResponse])
 async def get_projects(current_user: dict = Depends(get_current_user)):
     query = {}
@@ -92,13 +104,17 @@ async def get_project(project_id: str, current_user: dict = Depends(get_current_
     elif current_user["role"] in [UserRole.RESOURCE, UserRole.CONTRACTOR]:
         resource = await find_user_resource(current_user)
         if resource:
+            rid = str(resource["_id"])
             alloc = await allocations_collection.find_one(
-                {"resource_id": str(resource["_id"]), "project_id": project_id}
+                {"resource_id": rid, "project_id": project_id}
             )
-            project_check = await projects_collection.find_one(
-                {"_id": ObjectId(project_id), "project_lead_id": str(resource["_id"])}
+            is_lead = await projects_collection.find_one(
+                {"_id": ObjectId(project_id), "project_lead_id": rid}
             )
-            if not alloc and not project_check:
+            has_timesheets = await timesheets_collection.find_one(
+                {"resource_id": rid, "project_id": project_id}
+            ) if not alloc and not is_lead else None
+            if not alloc and not is_lead and not has_timesheets:
                 raise HTTPException(status_code=403, detail="Access denied to this project")
         else:
             raise HTTPException(status_code=403, detail="Access denied to this project")

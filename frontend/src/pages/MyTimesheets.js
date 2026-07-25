@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getMyTimesheetHistory, autoFillTimesheets, submitWeekTimesheets } from '../api';
-import { format, startOfWeek, addWeeks } from 'date-fns';
+import { getMyTimesheetHistory, autoFillTimesheets, submitWeekTimesheets, getAllActiveProjectsSummary, createTimesheet, getMe, getMyAllocations } from '../api';
+import { format, startOfWeek, addDays } from 'date-fns';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
 import {
   Table,
   TableBody,
@@ -12,7 +14,21 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
-import { Clock, AlertCircle, ChevronDown, ChevronRight, Zap, Send, CheckCircle } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '../components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Clock, AlertCircle, ChevronDown, ChevronRight, Zap, Send, CheckCircle, Plus, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const getCurrentWeekStart = () => {
@@ -26,7 +42,7 @@ const STATUS_COLORS = {
   Approved: 'bg-blue-100 text-blue-700 border-blue-200',
 };
 
-const WeekBlock = ({ week, isCurrentWeek, onAutofill, onSubmit, autofilling, submitting }) => {
+const WeekBlock = ({ week, isCurrentWeek, onAutofill, onSubmit, onAddEntry, autofilling, submitting }) => {
   const [expanded, setExpanded] = useState(isCurrentWeek);
   const entries = week.entries || [];
   const allSubmitted = entries.length > 0 && entries.every((e) => e.status === 'Submitted');
@@ -86,7 +102,7 @@ const WeekBlock = ({ week, isCurrentWeek, onAutofill, onSubmit, autofilling, sub
               <Button
                 size="sm"
                 variant="outline"
-                onClick={onAutofill}
+                onClick={(e) => { e.stopPropagation(); onAutofill(); }}
                 disabled={autofilling}
                 className="h-8 text-xs gap-1.5"
                 data-testid="autofill-btn"
@@ -94,10 +110,20 @@ const WeekBlock = ({ week, isCurrentWeek, onAutofill, onSubmit, autofilling, sub
                 <Zap size={13} className="text-[#1570EF]" />
                 {autofilling ? 'Autofilling...' : 'Autofill from allocations'}
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={(e) => { e.stopPropagation(); onAddEntry(); }}
+                className="h-8 text-xs gap-1.5"
+                data-testid="add-entry-btn"
+              >
+                <Plus size={13} />
+                Add Entry
+              </Button>
               {entries.some((e) => e.status === 'Draft') && (
                 <Button
                   size="sm"
-                  onClick={onSubmit}
+                  onClick={(e) => { e.stopPropagation(); onSubmit(); }}
                   disabled={submitting}
                   className="h-8 text-xs gap-1.5 bg-[#1570EF] hover:bg-[#0F5DC9]"
                   data-testid="submit-week-btn"
@@ -110,7 +136,7 @@ const WeekBlock = ({ week, isCurrentWeek, onAutofill, onSubmit, autofilling, sub
           )}
 
           {entries.length === 0 ? (
-            <p className="text-xs text-[#98A2B3] py-2">No timesheet entries for this week.</p>
+            <p className="text-xs text-[#98A2B3] py-2">No timesheet entries for this week. Use Autofill or Add Entry to get started.</p>
           ) : (
             <Table>
               <TableHeader>
@@ -119,19 +145,30 @@ const WeekBlock = ({ week, isCurrentWeek, onAutofill, onSubmit, autofilling, sub
                   <TableHead className="text-xs">Phase</TableHead>
                   <TableHead className="text-xs text-right">Planned h</TableHead>
                   <TableHead className="text-xs text-right">Actual h</TableHead>
+                  <TableHead className="text-xs text-right">Variance</TableHead>
                   <TableHead className="text-xs">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {entries.map((entry) => (
-                  <TableRow key={entry.id} data-testid={`ts-row-${entry.id}`}>
-                    <TableCell className="text-sm font-medium">{entry.project_name}</TableCell>
-                    <TableCell className="text-xs text-[#667085]">{entry.phase_name}</TableCell>
-                    <TableCell className="text-sm text-right">{entry.planned_hours?.toFixed(1)}</TableCell>
-                    <TableCell className="text-sm text-right font-medium">{entry.actual_hours?.toFixed(1)}</TableCell>
+                {entries.map((entry, idx) => (
+                  <TableRow key={entry.id || idx}>
+                    <TableCell className="text-xs font-medium">
+                      {entry.project_name || entry.project_id}
+                      {entry.task_name && (
+                        <span className="block text-[10px] text-[#98A2B3] mt-0.5">{entry.task_name}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs">{entry.phase_name || '-'}</TableCell>
+                    <TableCell className="text-xs text-right">{entry.planned_hours}</TableCell>
+                    <TableCell className="text-xs text-right font-medium">{entry.actual_hours}</TableCell>
+                    <TableCell className="text-xs text-right">
+                      <span className={entry.variance_hours > 0 ? 'text-red-600' : entry.variance_hours < 0 ? 'text-green-600' : ''}>
+                        {entry.variance_hours > 0 ? '+' : ''}{entry.variance_hours}h
+                      </span>
+                    </TableCell>
                     <TableCell>
-                      <Badge className={`text-xs border ${STATUS_COLORS[entry.status] || 'bg-gray-100 text-gray-600'}`}>
-                        {entry.status || 'Draft'}
+                      <Badge variant="outline" className={`text-[10px] ${STATUS_COLORS[entry.status] || ''}`}>
+                        {entry.status}
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -145,10 +182,26 @@ const WeekBlock = ({ week, isCurrentWeek, onAutofill, onSubmit, autofilling, sub
   );
 };
 
+// ─── Main component ───────────────────────────────────────────────────────────
+
 const MyTimesheets = () => {
   const queryClient = useQueryClient();
   const currentWeekStart = getCurrentWeekStart();
+  const currentWeekEnd = format(addDays(new Date(currentWeekStart + 'T00:00:00'), 4), 'yyyy-MM-dd');
   const [weeksToLoad, setWeeksToLoad] = useState(12);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [addForm, setAddForm] = useState({
+    project_id: '',
+    phase_id: '',
+    planned_hours: 0,
+    actual_hours: 0,
+    notes: '',
+  });
+
+  const { data: userData } = useQuery({
+    queryKey: ['me'],
+    queryFn: async () => { const r = await getMe(); return r.data; },
+  });
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['myTimesheetHistory', weeksToLoad],
@@ -156,6 +209,17 @@ const MyTimesheets = () => {
       const res = await getMyTimesheetHistory(weeksToLoad);
       return res.data;
     },
+  });
+
+  const { data: allProjectsData } = useQuery({
+    queryKey: ['allActiveProjects'],
+    queryFn: async () => { const r = await getAllActiveProjectsSummary(); return r.data; },
+    enabled: showAddDialog,
+  });
+
+  const { data: myAllocsData } = useQuery({
+    queryKey: ['myAllocations', 'week'],
+    queryFn: async () => { const r = await getMyAllocations('week'); return r.data; },
   });
 
   const autofillMutation = useMutation({
@@ -179,8 +243,73 @@ const MyTimesheets = () => {
     onError: (err) => toast.error(err.response?.data?.detail || 'Submission failed'),
   });
 
+  const createEntryMutation = useMutation({
+    mutationFn: (entryData) => createTimesheet(entryData),
+    onSuccess: () => {
+      toast.success('Timesheet entry added');
+      queryClient.invalidateQueries(['myTimesheetHistory']);
+      refetch();
+      setShowAddDialog(false);
+      setAddForm({ project_id: '', phase_id: '', planned_hours: 0, actual_hours: 0, notes: '' });
+    },
+    onError: (err) => toast.error(err.response?.data?.detail || 'Failed to create entry'),
+  });
+
   const resource = data?.resource;
   const weeks = data?.weeks || [];
+
+  // Check if resource is allocated to the selected project
+  const allocationForProject = useMemo(() => {
+    if (!addForm.project_id || !myAllocsData?.allocations) return null;
+    return myAllocsData.allocations.find(a => a.project_id === addForm.project_id);
+  }, [addForm.project_id, myAllocsData]);
+
+  // Get phases for selected project
+  const selectedProjectPhases = useMemo(() => {
+    if (!addForm.project_id || !allProjectsData) return [];
+    const proj = allProjectsData.find(p => p.id === addForm.project_id);
+    return proj?.phases || [];
+  }, [addForm.project_id, allProjectsData]);
+
+  const handleAddEntry = () => {
+    if (!resource) {
+      toast.error('No resource profile linked to your account');
+      return;
+    }
+    if (!addForm.project_id) {
+      toast.error('Please select a project');
+      return;
+    }
+    if (!addForm.phase_id) {
+      toast.error('Please select a phase');
+      return;
+    }
+    if (addForm.actual_hours <= 0) {
+      toast.error('Please enter actual hours');
+      return;
+    }
+    createEntryMutation.mutate({
+      resource_id: resource.id,
+      project_id: addForm.project_id,
+      phase_id: addForm.phase_id,
+      week_start_date: currentWeekStart,
+      week_end_date: currentWeekEnd,
+      planned_hours: parseFloat(addForm.planned_hours) || 0,
+      actual_hours: parseFloat(addForm.actual_hours),
+      notes: addForm.notes || '',
+      status: 'Draft',
+    });
+  };
+
+  // Over-allocation warning
+  const overAllocWarning = useMemo(() => {
+    if (!addForm.actual_hours || !allocationForProject) return null;
+    const weeklyHrs = allocationForProject.weekly_hours || 0;
+    if (weeklyHrs > 0 && addForm.actual_hours > weeklyHrs) {
+      return `You are logging ${addForm.actual_hours}h but your allocation is ${weeklyHrs.toFixed(1)}h/wk for this project.`;
+    }
+    return null;
+  }, [addForm.actual_hours, allocationForProject]);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6" data-testid="my-timesheets-page">
@@ -189,7 +318,7 @@ const MyTimesheets = () => {
         <h1 className="text-3xl font-bold text-[#0B1220]">My Timesheets</h1>
         {resource && (
           <p className="text-sm text-[#667085] mt-1">
-            {resource.name} · {resource.role}
+            {resource.name} &middot; {resource.role}
           </p>
         )}
       </div>
@@ -200,7 +329,7 @@ const MyTimesheets = () => {
         <div>
           <p className="text-sm font-semibold text-amber-800">Timesheet history is read-only</p>
           <p className="text-xs text-amber-700 mt-0.5">
-            To correct or edit past entries, please contact your admin. You can autofill and submit the <strong>current week</strong> below.
+            To correct or edit past entries, please contact your admin. You can autofill, add entries, and submit the <strong>current week</strong> below.
           </p>
         </div>
       </div>
@@ -227,6 +356,7 @@ const MyTimesheets = () => {
               isCurrentWeek
               onAutofill={() => autofillMutation.mutate()}
               onSubmit={() => submitMutation.mutate()}
+              onAddEntry={() => setShowAddDialog(true)}
               autofilling={autofillMutation.isPending}
               submitting={submitMutation.isPending}
             />
@@ -238,6 +368,7 @@ const MyTimesheets = () => {
               isCurrentWeek={week.week_start === currentWeekStart}
               onAutofill={() => autofillMutation.mutate()}
               onSubmit={() => submitMutation.mutate()}
+              onAddEntry={() => setShowAddDialog(true)}
               autofilling={autofillMutation.isPending}
               submitting={submitMutation.isPending}
             />
@@ -264,6 +395,133 @@ const MyTimesheets = () => {
           )}
         </div>
       )}
+
+      {/* Add Entry Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-w-lg" data-testid="add-entry-dialog">
+          <DialogHeader>
+            <DialogTitle>Add Timesheet Entry</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Project */}
+            <div>
+              <Label className="text-sm font-medium mb-1.5 block">Project *</Label>
+              <Select
+                value={addForm.project_id}
+                onValueChange={(v) => setAddForm({ ...addForm, project_id: v, phase_id: '' })}
+              >
+                <SelectTrigger data-testid="ts-project-select">
+                  <SelectValue placeholder="Select a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allProjectsData?.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} — {p.client_name || 'No client'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {addForm.project_id && !allocationForProject && (
+                <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                  <AlertTriangle size={12} />
+                  You are not currently allocated to this project
+                </p>
+              )}
+            </div>
+
+            {/* Phase */}
+            <div>
+              <Label className="text-sm font-medium mb-1.5 block">Phase *</Label>
+              <Select
+                value={addForm.phase_id}
+                onValueChange={(v) => setAddForm({ ...addForm, phase_id: v })}
+                disabled={!addForm.project_id}
+              >
+                <SelectTrigger data-testid="ts-phase-select">
+                  <SelectValue placeholder={addForm.project_id ? 'Select a phase' : 'Select a project first'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectedProjectPhases.map((phase) => (
+                    <SelectItem key={phase.id} value={phase.id}>
+                      {phase.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Hours */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm font-medium mb-1.5 block">Planned Hours</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={addForm.planned_hours}
+                  onChange={(e) => setAddForm({ ...addForm, planned_hours: e.target.value })}
+                  data-testid="ts-planned-hours"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium mb-1.5 block">Actual Hours *</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={addForm.actual_hours}
+                  onChange={(e) => setAddForm({ ...addForm, actual_hours: e.target.value })}
+                  data-testid="ts-actual-hours"
+                />
+              </div>
+            </div>
+
+            {/* Over-allocation warning */}
+            {overAllocWarning && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200" data-testid="over-alloc-warning">
+                <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                <p className="text-xs text-amber-800">{overAllocWarning}</p>
+              </div>
+            )}
+
+            {/* Not-allocated info */}
+            {addForm.project_id && !allocationForProject && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200">
+                <AlertCircle size={16} className="text-blue-600 mt-0.5 shrink-0" />
+                <p className="text-xs text-blue-800">
+                  You can still log time to this project even without a formal allocation. Your admin will see the entry.
+                </p>
+              </div>
+            )}
+
+            {/* Notes */}
+            <div>
+              <Label className="text-sm font-medium mb-1.5 block">Notes (optional)</Label>
+              <Input
+                value={addForm.notes}
+                onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
+                placeholder="What did you work on?"
+                data-testid="ts-notes"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddEntry}
+              disabled={createEntryMutation.isPending}
+              className="bg-[#1570EF] hover:bg-[#0F5DC9]"
+              data-testid="ts-submit-entry"
+            >
+              {createEntryMutation.isPending ? 'Adding...' : 'Add Entry'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
