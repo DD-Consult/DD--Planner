@@ -218,8 +218,8 @@ const MyTimesheets = () => {
   });
 
   const { data: myAllocsData } = useQuery({
-    queryKey: ['myAllocations', 'week'],
-    queryFn: async () => { const r = await getMyAllocations('week'); return r.data; },
+    queryKey: ['myAllocations', 'month'],
+    queryFn: async () => { const r = await getMyAllocations('month'); return r.data; },
   });
 
   const autofillMutation = useMutation({

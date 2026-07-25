@@ -391,6 +391,18 @@ DD Planner is a full-stack resource planning and project management application 
 - WBSView: Now receives `readOnly={!isAdmin && !isLead}` from ProjectDetail; empty state also respects readOnly
 - Holidays.js: Added `getMe` query + `isAdmin` check; Add/Delete buttons hidden for non-admins
 - ChatPanel.js: Role-aware quick prompts (resources see "My allocations/projects/hours/leave" instead of admin prompts); placeholder updated to "Ask a question..." for non-admins
+
+## Feature: Manual Timesheet Entry + Non-Allocated Project Support (Feb 2026)
+
+### Changes
+1. **New "Add Entry" button** on My Timesheets current week — opens dialog with project picker (all active projects), phase picker, planned/actual hours, notes
+2. **Non-allocated project support**: Resources can now log time to ANY active project, even if not formally allocated. Shows amber "You are not currently allocated to this project" info note
+3. **Over-allocation warning**: When actual hours exceed the resource's allocation h/wk for a project, shows amber warning (e.g., "You are logging 25h but your allocation is 20.0h/wk")
+4. **New endpoint** `GET /api/projects/all-active-summary` — returns minimal project data (id, name, client, phases) for all Active/Pipeline projects, accessible to any authenticated user
+5. **Relaxed project detail access**: Resources can now view project details for any project they have timesheet entries for (in addition to allocated/lead projects)
+- Files: MyTimesheets.js (rewritten), projects.py (new endpoint + access fix), api.js (new function)
+- Testing: 6/6 backend + 4/5 frontend pass (iter 36); over-alloc window fix applied
+
 - Testing: 100% pass on all 9 verification points (iter 35)
 
 
