@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { sendChatMessage, getChatSessions, getChatSession, deleteChatSession, executeChatAction, undoLastAction, executeActionPlan } from '../api';
+import { sendChatMessage, getChatSessions, getChatSession, deleteChatSession, executeChatAction, undoLastAction, executeActionPlan, getMe } from '../api';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
@@ -513,6 +513,12 @@ const ChatPanel = () => {
   const inputRef = useRef(null);
   const queryClient = useQueryClient();
 
+  const { data: chatUser } = useQuery({
+    queryKey: ['me'],
+    queryFn: async () => { const r = await getMe(); return r.data; },
+  });
+  const chatIsAdmin = chatUser?.role === 'admin' || chatUser?.role === 'super_admin';
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -727,11 +733,16 @@ const ChatPanel = () => {
     setUndoLabel(null);
   };
 
-  const quickPrompts = [
+  const quickPrompts = chatIsAdmin ? [
     { label: 'Team utilization', prompt: 'Give me a summary of team utilization this week' },
     { label: 'Projects at risk', prompt: 'Which projects are at risk or over budget?' },
     { label: 'Available resources', prompt: 'Who is available for new work this week?' },
     { label: 'Timesheet status', prompt: 'Show me the timesheet submission status for this week' },
+  ] : [
+    { label: 'My allocations', prompt: 'What are my current project allocations?' },
+    { label: 'My projects', prompt: 'Give me a summary of my active projects' },
+    { label: 'My hours', prompt: 'How many hours am I allocated this week?' },
+    { label: 'My upcoming leave', prompt: 'When is my next scheduled time off?' },
   ];
 
   if (!isOpen) {
@@ -894,7 +905,7 @@ const ChatPanel = () => {
                 ref={inputRef}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Ask or request an action..."
+                placeholder={chatIsAdmin ? "Ask or request an action..." : "Ask a question..."}
                 className="flex-1 text-sm"
                 disabled={sendMutation.isPending}
                 data-testid="chat-input"

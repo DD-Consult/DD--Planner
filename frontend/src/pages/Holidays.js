@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getHolidays, createHoliday, deleteHoliday } from '../api';
+import { getHolidays, createHoliday, deleteHoliday, getMe } from '../api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -32,6 +32,12 @@ const Holidays = () => {
     date: '',
   });
   const [error, setError] = useState('');
+
+  const { data: userData } = useQuery({
+    queryKey: ['me'],
+    queryFn: async () => { const r = await getMe(); return r.data; },
+  });
+  const isAdmin = userData?.role === 'admin' || userData?.role === 'super_admin';
 
   // Fetch holidays
   const { data: holidays, isLoading } = useQuery({
@@ -108,10 +114,12 @@ const Holidays = () => {
             Manage company-wide holidays that affect all resources
           </p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)} data-testid="add-holiday-button">
-          <Plus size={16} className="mr-2" />
-          Add Holiday
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => setIsDialogOpen(true)} data-testid="add-holiday-button">
+            <Plus size={16} className="mr-2" />
+            Add Holiday
+          </Button>
+        )}
       </div>
 
       {/* Holidays Table */}
@@ -125,10 +133,12 @@ const Holidays = () => {
           <div className="p-8 text-center">
             <Calendar size={48} className="mx-auto mb-4 text-[#98A2B3]" />
             <p className="text-[#667085] mb-4">No holidays configured yet</p>
-            <Button variant="outline" onClick={() => setIsDialogOpen(true)}>
-              <Plus size={16} className="mr-2" />
-              Add Your First Holiday
-            </Button>
+            {isAdmin && (
+              <Button variant="outline" onClick={() => setIsDialogOpen(true)}>
+                <Plus size={16} className="mr-2" />
+                Add Your First Holiday
+              </Button>
+            )}
           </div>
         ) : (
           <Table>
@@ -136,7 +146,7 @@ const Holidays = () => {
               <TableRow>
                 <TableHead>Holiday Name</TableHead>
                 <TableHead>Date</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                {isAdmin && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -146,17 +156,19 @@ const Holidays = () => {
                   <TableCell>
                     {format(new Date(holiday.date), 'MMMM d, yyyy')}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(holiday.id)}
-                      disabled={deleteMutation.isLoading}
-                      data-testid={`delete-holiday-${holiday.id}`}
-                    >
-                      <Trash2 size={16} className="text-[#EF4444]" />
-                    </Button>
-                  </TableCell>
+                  {isAdmin && (
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(holiday.id)}
+                        disabled={deleteMutation.isLoading}
+                        data-testid={`delete-holiday-${holiday.id}`}
+                      >
+                        <Trash2 size={16} className="text-[#EF4444]" />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

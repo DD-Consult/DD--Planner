@@ -1268,26 +1268,30 @@ const ProjectDetail = () => {
                 <Badge className={getStatusColor(project.status)}>
                   {project.status}
                 </Badge>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleEditProject}
-                  className="ml-2"
-                  data-testid="edit-project-btn"
-                >
-                  <Edit2 size={14} className="mr-2" />
-                  Edit Project
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAIReschedule(true)}
-                  className="ml-2 text-purple-700 border-purple-200 hover:bg-purple-50"
-                  data-testid="ai-reschedule-btn"
-                >
-                  <Sparkles size={14} className="mr-2 text-purple-600" />
-                  AI Reschedule
-                </Button>
+                {(isAdmin || isLead) && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleEditProject}
+                      className="ml-2"
+                      data-testid="edit-project-btn"
+                    >
+                      <Edit2 size={14} className="mr-2" />
+                      Edit Project
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowAIReschedule(true)}
+                      className="ml-2 text-purple-700 border-purple-200 hover:bg-purple-50"
+                      data-testid="ai-reschedule-btn"
+                    >
+                      <Sparkles size={14} className="mr-2 text-purple-600" />
+                      AI Reschedule
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -2127,6 +2131,7 @@ const ProjectDetail = () => {
             project={project}
             phases={project?.phases || []}
             resources={resources || []}
+            readOnly={!isAdmin && !isLead}
             currentUserEmail={currentUser?.email}
           />
         </TabsContent>

@@ -1,0 +1,36 @@
+{
+  "summary": "RETEST of iteration_34 permission leak fixes for resource role (riley@test.com). All 3 HIGH-priority permission leaks are now fixed. Additionally verified chat panel role-awareness, sidebar nav items, dashboard, My Allocations, My Timesheets, and Time Off pages all render correctly for resource user.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verification_results": {
+    "ProjectDetail.edit-project-btn": "HIDDEN (fixed)",
+    "ProjectDetail.ai-reschedule-btn": "HIDDEN (fixed)",
+    "WBS.add-task-btn": "HIDDEN (fixed)",
+    "WBS.generate-ai-btn": "HIDDEN (fixed)",
+    "WBS.add-task-manually-btn": "HIDDEN (fixed)",
+    "WBS.text_check[Add Task | Generate with AI | Add Task manually]": "All HIDDEN",
+    "Holidays.add-holiday-button": "HIDDEN (fixed)",
+    "Holidays.delete_buttons_visible": 0,
+    "Chat.placeholder": "'Ask a question...' (resource-appropriate)",
+    "Chat.quick_prompts": "'My allocations', 'My projects', 'My hours', 'My upcoming leave' (resource-appropriate)",
+    "Sidebar.items": "Dashboard, Projects, My Allocations, My Timesheets, Time Off, Holidays, Help & Guide (no admin items)",
+    "Dashboard": "Loads with 'Good afternoon, Riley' greeting, KPI cards, My Allocations section",
+    "MyAllocations": "Loads with Website Redesign allocation data (50%, 20h/wk)",
+    "MyTimesheets": "Loads with Autofill button visible",
+    "TimeOff.add-leave-button": "Visible (correct for resource)"
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "test_credentials": "riley@test.com / riley123 (resource)",
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 34 permission leaks all fixed and confirmed in iteration 35. Resource role now has proper read-only view on ProjectDetail (no Edit/AI Reschedule), WBS tab (no Add/Generate buttons), Holidays (no Add/Delete). Chat panel is role-aware. All resource-facing pages (Dashboard, My Allocations, My Timesheets, Time Off) load correctly."
+}

@@ -1191,24 +1191,26 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
           </div>
           <h4 className="font-medium text-gray-700 mb-1">No tasks yet</h4>
           <p className="text-sm text-gray-500 mb-6">
-            Start building your Work Breakdown Structure manually or use AI to generate one.
+            {readOnly ? 'No tasks have been created for this project yet.' : 'Start building your Work Breakdown Structure manually or use AI to generate one.'}
           </p>
-          <div className="flex items-center justify-center gap-3">
-            <Button
-              variant="outline"
-              onClick={() => { setEditingTask(null); setShowTaskDialog(true); }}
-            >
-              <Plus size={14} className="mr-2" />
-              Add Task manually
-            </Button>
-            <Button
-              onClick={() => setShowAIGenerator(true)}
-              className="bg-[#1570EF] hover:bg-[#1570EF]/90 text-white"
-            >
-              <Sparkles size={14} className="mr-2" />
-              Generate with AI
-            </Button>
-          </div>
+          {!readOnly && (
+            <div className="flex items-center justify-center gap-3">
+              <Button
+                variant="outline"
+                onClick={() => { setEditingTask(null); setShowTaskDialog(true); }}
+              >
+                <Plus size={14} className="mr-2" />
+                Add Task manually
+              </Button>
+              <Button
+                onClick={() => setShowAIGenerator(true)}
+                className="bg-[#1570EF] hover:bg-[#1570EF]/90 text-white"
+              >
+                <Sparkles size={14} className="mr-2" />
+                Generate with AI
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
