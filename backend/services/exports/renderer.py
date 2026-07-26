@@ -110,6 +110,8 @@ async def render_pdf(
     *,
     landscape: bool = True,
     format: str = "A4",
+    width: str = None,
+    height: str = None,
     margin: dict = None,
     wait_selector: str = "[data-export-ready='true']",
     timeout_ms: int = 30000
@@ -119,8 +121,10 @@ async def render_pdf(
     
     Args:
         url: The URL to render
-        landscape: Use landscape orientation
-        format: Paper format (A4, Letter, etc.)
+        landscape: Use landscape orientation (ignored if width+height given)
+        format: Paper format (A4, Letter, etc.) — ignored if width+height given
+        width: Custom page width (e.g. "13.333in"). Overrides `format`.
+        height: Custom page height (e.g. "7.5in"). Overrides `format`.
         margin: Dict with top/bottom/left/right in mm (e.g., {'top': '8mm'})
         wait_selector: CSS selector to wait for before rendering
         timeout_ms: Maximum wait time in milliseconds
@@ -147,15 +151,20 @@ async def render_pdf(
         # Small additional delay to ensure all rendering is complete
         await page.wait_for_timeout(500)
         
-        # Generate PDF
+        # Generate PDF — prefer width/height when supplied (16:9 widescreen)
         logger.info("Generating PDF")
-        pdf_bytes = await page.pdf(
-            format=format,
-            landscape=landscape,
-            print_background=True,
-            margin=margin,
-            prefer_css_page_size=False
-        )
+        pdf_kwargs = {
+            "print_background": True,
+            "margin": margin,
+            "prefer_css_page_size": False,
+        }
+        if width and height:
+            pdf_kwargs["width"] = width
+            pdf_kwargs["height"] = height
+        else:
+            pdf_kwargs["format"] = format
+            pdf_kwargs["landscape"] = landscape
+        pdf_bytes = await page.pdf(**pdf_kwargs)
         
         logger.info(f"PDF generated successfully: {len(pdf_bytes)} bytes")
         return pdf_bytes

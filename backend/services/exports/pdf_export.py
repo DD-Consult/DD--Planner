@@ -24,9 +24,12 @@ async def build_project_pdf(project_id: str, token: str, frontend_base_url: str)
     
     pdf_bytes = await render_pdf(
         url,
-        landscape=True,
-        format='A4',
-        margin={'top': '8mm', 'bottom': '8mm', 'left': '8mm', 'right': '8mm'}
+        # 16:9 widescreen — matches PPTX / Google Slides so exports can be
+        # dropped into a deck without re-formatting.
+        width="13.333in",
+        height="7.5in",
+        landscape=False,  # dimensions already landscape (width > height)
+        margin={'top': '6mm', 'bottom': '6mm', 'left': '6mm', 'right': '6mm'}
     )
     
     logger.info(f"Project PDF generated: {len(pdf_bytes)} bytes")
@@ -50,9 +53,10 @@ async def build_wbs_pdf(project_id: str, token: str, frontend_base_url: str) -> 
     
     pdf_bytes = await render_pdf(
         url,
-        landscape=True,
-        format='A4',
-        margin={'top': '8mm', 'bottom': '8mm', 'left': '8mm', 'right': '8mm'}
+        width="13.333in",
+        height="7.5in",
+        landscape=False,
+        margin={'top': '6mm', 'bottom': '6mm', 'left': '6mm', 'right': '6mm'}
     )
     
     logger.info(f"WBS PDF generated: {len(pdf_bytes)} bytes")

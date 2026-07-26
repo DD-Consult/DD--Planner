@@ -1,0 +1,34 @@
+{
+  "summary": "Verified 16:9 widescreen exports for project & WBS PDF/PPTX + WBS marker present in served frontend bundle. All 6 pytest cases passed. PDF MediaBox is exactly 960x540 pt (aspect 1.778), PPTX slide size is 13.333in x 7.5in with 7 section slides, and each picture shape has distinct dimensions proving per-section aspect ratio is preserved (no fixed 12.933x6.7 stretch on every slide).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/projects/{id}/export/pdf & /api/projects/{id}/export/ppt (and wbs variants)",
+        "issue": "Endpoints only require an authenticated user (Depends(get_current_user)) — the resource role riley@test.com received HTTP 200 on the project PDF export. The review request suggested resource users should NOT be able to see PDF/PPT exports if the endpoint is admin-only. Either add an explicit role gate or update the requirement. This is not a regression from this bug-fix session, but worth confirming with the product owner."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration37_widescreen_exports.py",
+    "/app/test_reports/pytest/iteration37_results.xml"
+  ],
+  "action_items": [
+    "Confirm intended permission model for /export/pdf, /export/ppt, /export/wbs/pdf, /export/wbs/ppt — currently accessible to any authenticated user including 'resource' role."
+  ],
+  "critical_code_review_comments": [
+    "Export endpoints depend only on get_current_user; consider a role/permission decorator if these should be admin/project-lead only.",
+    "PPTX picture sizing evidence (slide dims per test log): [12.933x1.417, 12.933x5.358, 12.933x2.608, 12.933x1.125, 12.933x1.158, 9.810x6.700, 12.933x2.758] — widths are frequently capped at the full 12.933in usable width which is fine, but slide 5 shows the aspect-preserving path working correctly (height limited to 6.7in, width scaled down to 9.81in).",
+    "reports.py docstring for /export/pdf still says 'landscape A4' — update to 16:9 widescreen to match new implementation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration37_widescreen_exports.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "admin@test.com/admin123 (super_admin), riley@test.com/riley123 (resource)",
+  "seed_data_creation": "None — used existing seeded 'Website Redesign' project",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 37 verifies the 16:9 widescreen export bug fix. Test file: /app/backend/tests/test_iteration37_widescreen_exports.py. All 6 tests pass. PDF is exactly 960x540pt, PPTX is 13.333x7.5in with per-section slides and preserved image aspect ratios. WBS section marker (data-export-section=\"wbs\") confirmed in served JS bundle. Note: export endpoints are not role-gated — resource users can access them (returns 200)."
+}

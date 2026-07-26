@@ -1142,7 +1142,7 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
                     <FileText size={16} className="mr-2 text-red-600" />
                     <div className="flex flex-col">
                       <span className="font-medium">Export as PDF</span>
-                      <span className="text-xs text-gray-500">DD-branded • landscape A4 • 1 page</span>
+                      <span className="text-xs text-gray-500">DD-branded • 16:9 widescreen • PPT-ready</span>
                     </div>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={exportToPPTX} disabled={!!exporting} data-testid="export-pptx-item">
@@ -1234,7 +1234,7 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
 
         {/* Client Status Summary — shown FIRST */}
         <div id="report-body">
-        <div className="mb-8">
+        <div className="mb-8" data-export-section="summary">
           <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
             <Sparkles className="h-6 w-6 text-[#4A9CC7]" />
             Status Summary
@@ -1290,7 +1290,7 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
 
         {/* Budget & Time Tracking */}
         {timeReport && (
-          <div className="mb-8">
+          <div className="mb-8" data-export-section="budget">
             <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
               <Clock className="h-6 w-6 text-gray-600" />
               Budget & Time Tracking
@@ -1427,6 +1427,24 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
         )}
 
         {/* Team Allocations section removed per user request — see Team tab on Project Detail for staffing info */}
+
+        {/* Work Breakdown Structure — always included in the client report */}
+        <div className="mb-8" data-export-section="wbs" data-print-section="wbs">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Target className="h-6 w-6 text-[#4A9CC7]" />
+            Work Breakdown Structure
+          </h2>
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <WBSView
+              projectId={id}
+              project={project}
+              phases={project.phases}
+              resources={[]}
+              readOnly={true}
+              defaultView="plan"
+            />
+          </div>
+        </div>
 
         {/* Footer */}
         <div className="report-footer mt-12 pt-6 border-t border-gray-200 text-center text-sm text-gray-500">

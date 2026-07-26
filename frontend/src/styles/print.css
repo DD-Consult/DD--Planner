@@ -10,11 +10,14 @@
  * ============================================================ */
 
 /* ────────────────────────────────────────────────────────────
- * 1. Page setup
+ * 1. Page setup — 16:9 widescreen to match PPTX / Google Slides
+ * A4 landscape (297×210mm ≈ 4:3) has been replaced with a true
+ * 16:9 page (13.333in × 7.5in) so PDF exports open cleanly in
+ * PPT / Google Slides without letterboxing or cropping.
  * ──────────────────────────────────────────────────────────── */
 @page {
-  size: A4 landscape;
-  margin: 8mm;
+  size: 13.333in 7.5in;
+  margin: 6mm;
 }
 
 @media print {
@@ -99,6 +102,11 @@
   }
   /* Team allocations on its own page (if there are any) */
   [data-print-section="team"] {
+    page-break-before: always;
+    break-before: page;
+  }
+  /* WBS section starts on its own page in the main client report */
+  [data-print-section="wbs"] {
     page-break-before: always;
     break-before: page;
   }
