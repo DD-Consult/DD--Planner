@@ -20,6 +20,84 @@
   margin: 6mm;
 }
 
+/* ────────────────────────────────────────────────────────────
+ * 1a. Branded cover page (first page of the PDF only)
+ * Displayed only in print mode; forces its own page.
+ * ──────────────────────────────────────────────────────────── */
+.report-cover {
+  display: flex;
+  width: 100%;
+  height: calc(7.5in - 12mm);           /* fill page minus @page margin */
+  min-height: calc(7.5in - 12mm);
+  background: #1B2A47;
+  color: #FFFFFF;
+  padding: 0.9in 1.1in 0.7in;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  page-break-after: always;
+  break-after: page;
+  box-sizing: border-box;
+}
+.report-cover-inner {
+  position: relative;
+  padding-left: 0.3in;
+}
+.report-cover-accent {
+  position: absolute;
+  left: 0;
+  top: 0.05in;
+  width: 0.15in;
+  height: 4.5in;
+  background: #C9A84C;
+}
+.report-cover-eyebrow {
+  color: #C9A84C;
+  font-size: 14pt;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 0.5in;
+}
+.report-cover-title {
+  color: #FFFFFF !important;
+  font-size: 52pt;
+  font-weight: 800;
+  line-height: 1.05;
+  margin: 0 0 0.4in 0;
+}
+.report-cover-client {
+  color: #E8EDF2;
+  font-size: 22pt;
+  margin-bottom: 0.4in;
+}
+.report-cover-meta {
+  color: #C9A84C;
+  font-size: 15pt;
+  font-weight: 500;
+}
+.report-cover-dot {
+  margin: 0 0.15in;
+  color: #C9A84C;
+}
+.report-cover-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 0.25in;
+}
+.report-cover-brand {
+  color: #C9A84C;
+  font-weight: 700;
+  font-size: 12pt;
+}
+.report-cover-confidential {
+  color: #E8EDF2;
+  font-size: 10pt;
+  letter-spacing: 0.15em;
+}
+
 @media print {
   /* Force color print (Chromium needs this to render bg/badges) */
   * {

@@ -1190,6 +1190,35 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
 
       {/* Report Content */}
       <div id="report-root" className={`mx-auto px-6 py-8 bg-white ${printMode ? 'max-w-[1600px] my-0 shadow-none' : 'max-w-7xl my-8 shadow-sm rounded-lg'} print:shadow-none print:my-0`}>
+        {/* Print-only branded cover page (first page of PDF; not rendered on screen) */}
+        {printMode && (
+          <div
+            id="report-cover"
+            className="report-cover"
+            data-export-section="cover"
+          >
+            <div className="report-cover-inner">
+              <div className="report-cover-eyebrow">PROJECT STATUS REPORT</div>
+              <div className="report-cover-accent" />
+              <h1 className="report-cover-title">{project.name}</h1>
+              {project.client_name && (
+                <div className="report-cover-client">For {project.client_name}</div>
+              )}
+              <div className="report-cover-meta">
+                {project.start_date && project.end_date && (
+                  <span>{format(new Date(project.start_date), 'MMM yyyy')} – {format(new Date(project.end_date), 'MMM yyyy')}</span>
+                )}
+                <span className="report-cover-dot">·</span>
+                <span>{format(new Date(), 'MMMM d, yyyy')}</span>
+              </div>
+            </div>
+            <div className="report-cover-footer">
+              <span className="report-cover-brand">Prepared by DD Consulting</span>
+              <span className="report-cover-confidential">CONFIDENTIAL</span>
+            </div>
+          </div>
+        )}
+
         {/* Header with Logo */}
         <div id="report-header" className="border-b-4 border-[#1B2A47] pb-6 mb-8">
           <div className="flex items-start justify-between mb-6">
