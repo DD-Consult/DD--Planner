@@ -140,6 +140,25 @@ DD Planner is a full-stack resource planning and project management application 
 - **Service Layer**: `services/ai_instructions.py` helper fetches applicable instructions and formats them for prompt injection
 - Files: `services/ai_instructions.py`, `routes/ai_instructions.py`, `AIInstructionsPanel.js`, `AIFeedbackButtons.js`, `risk_ai.py`, `ai.py`, `wbs.py`, `projects.py`, `ProjectDetail.js`, `AIRescheduleDialog.js`
 
+## Session: Client Report Overhaul — 16:9 Widescreen + WBS + Export Fixes (Feb 2026)
+
+### Bug Fix: Client Report Widescreen & Export Formatting
+- **PDF export** now generates a true 16:9 widescreen PDF (13.333in × 7.5in ≈ 960×540pt) so it imports cleanly into PowerPoint / Google Slides without letterboxing. Previously landscape A4 (~4:3).
+- **Print CSS** `@page` size updated to `13.333in 7.5in`
+- **`renderer.render_pdf`** now accepts custom `width`/`height` params
+- **PPTX export** overhauled: previously it took a single tall full-page screenshot and squished it into 12.933×6.7in. Now takes one screenshot per report section (Summary, Timeline, Overview, Budget, Risks, WBS) and each becomes its own 16:9 slide with **preserved aspect ratio** via PIL-based dimension reading + fit-to-contain math.
+- **WBS section** now included in the main project report body (`data-export-section="wbs"`) so it appears in both the on-screen report and every export format
+- data-export-section markers added to Summary, Timeline, Overview, Budget sections for reliable section selection during export
+- Docstrings in `reports.py` updated (removed stale "landscape A4" references)
+
+### Testing
+- 6/6 backend tests pass — iteration_37.json
+- PDF MediaBox verified exactly 960×540pt (16:9 aspect 1.778)
+- PPTX verified as 13.333×7.5in with 7 section slides, each with distinct dimensions proving aspect-ratio preservation
+
+### Known behaviour (not this session's scope)
+- Export endpoints allow any authenticated user (incl. `resource`) — pre-existing behavior, worth a product decision if it should be admin+/lead-only
+
 ## Session: Timing/Budget Consistency Overhaul (June 2026)
 
 ### User Decisions

@@ -903,7 +903,8 @@ async def export_project_pdf(
     """Export the project report as a pixel-perfect PDF.
 
     Uses Playwright (headless Chromium) to render the same React UI shown at
-    /projects/:id/report and save it as a single landscape A4 PDF.
+    /projects/:id/report and save it as a 16:9 widescreen PDF (13.333in × 7.5in)
+    so it drops cleanly into PowerPoint / Google Slides.
     """
     project = await _find_project(project_id)
     if not project:
@@ -963,7 +964,7 @@ async def export_project_wbs_pdf(
     request: Request,
     current_user: dict = Depends(get_current_user),
 ):
-    """Export only the Work Breakdown Structure as a landscape A4 PDF."""
+    """Export only the Work Breakdown Structure as a 16:9 widescreen PDF."""
     project = await _find_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
