@@ -140,6 +140,20 @@ DD Planner is a full-stack resource planning and project management application 
 - **Service Layer**: `services/ai_instructions.py` helper fetches applicable instructions and formats them for prompt injection
 - Files: `services/ai_instructions.py`, `routes/ai_instructions.py`, `AIInstructionsPanel.js`, `AIFeedbackButtons.js`, `risk_ai.py`, `ai.py`, `wbs.py`, `projects.py`, `ProjectDetail.js`, `AIRescheduleDialog.js`
 
+## Session: Branded Cover Slide for Client Report Exports (Feb 2026)
+
+### Feature: Branded Cover for PPT & PDF Exports
+- **PPTX cover slide (first slide)**: Full-bleed DD Navy background, gold accent bar + eyebrow ("PROJECT STATUS REPORT" or "WORK BREAKDOWN STRUCTURE"), large project name, "For {client_name}" subtitle, period + report date, and footer with "Prepared by DD Consulting" (gold) + "CONFIDENTIAL" (right)
+- **PDF cover page (first page)**: Matching HTML/CSS design rendered only in `printMode`, with `page-break-after: always` so it occupies its own page. Colors match PPTX exactly (navy #1B2A47, gold #C9A84C, light #E8EDF2)
+- New `_add_cover_slide()` and `_fetch_cover_meta()` in `ppt_export.py`. `_compose_pptx()` accepts optional `cover` dict
+- Section slide headers no longer show "Slide N" — cleaner just showing project name
+- Resilient: `_fetch_cover_meta` returns a fallback dict when project_id can't be parsed
+
+### Testing
+- 8/8 backend tests pass — iteration_42.json
+- PPTX now returns 8 slides (1 cover + 7 section); WBS PPTX returns 2 (1 cover + 1 WBS)
+- PDF still 960×540pt (16:9), 2+ pages including cover
+
 ## Session: Client Report Overhaul — 16:9 Widescreen + WBS + Export Fixes (Feb 2026)
 
 ### Bug Fix: Client Report Widescreen & Export Formatting
