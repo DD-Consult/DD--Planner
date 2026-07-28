@@ -20,6 +20,7 @@ import {
   PopoverTrigger,
 } from './ui/popover';
 import { ConfirmCommandDialog } from './ConfirmCommandDialog';
+import { toast } from 'sonner';
 import { useSandbox } from '../contexts/SandboxContext';
 import { format } from 'date-fns';
 
@@ -694,13 +695,8 @@ const Layout = ({ children, token, onLogout }) => {
                         await queryClient.cancelQueries();
                         await queryClient.invalidateQueries();
                         await queryClient.refetchQueries({ type: 'active' });
-                        // Also nudge the app to re-read state from server for critical widgets
                         window.dispatchEvent(new CustomEvent('dd:data-refreshed'));
-                        // Small confirmation
-                        try {
-                          const { toast } = await import('sonner');
-                          toast.success('Data refreshed');
-                        } catch (_e) { /* noop */ }
+                        toast.success('Data refreshed');
                       }}
                       className="px-3 py-2 bg-[#1A2332] border border-[#2A3648] rounded-md text-[#94A3B8] hover:bg-[#22304A] hover:text-white transition-colors"
                       data-testid="sidebar-refresh-btn"

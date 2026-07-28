@@ -140,6 +140,25 @@ DD Planner is a full-stack resource planning and project management application 
 - **Service Layer**: `services/ai_instructions.py` helper fetches applicable instructions and formats them for prompt injection
 - Files: `services/ai_instructions.py`, `routes/ai_instructions.py`, `AIInstructionsPanel.js`, `AIFeedbackButtons.js`, `risk_ai.py`, `ai.py`, `wbs.py`, `projects.py`, `ProjectDetail.js`, `AIRescheduleDialog.js`
 
+## Session: Sidebar UX Fixes — Command Palette Trigger + Data Refresh (Feb 2026)
+
+### Bug Fix: Floating ⌘K Trigger Overlapping Sign Out
+- Removed the floating `fixed bottom-4 left-4` command palette trigger (was overlapping the Sign Out button inside the sidebar)
+- Added a proper **Search pill button** in the sidebar footer (`data-testid="sidebar-command-palette-btn"`) with the ⌘K keyboard shortcut badge
+- CommandPalette now listens for a `dd:open-command-palette` CustomEvent so any button can open it from anywhere
+- Cmd/Ctrl+K keyboard shortcut retained
+
+### Bug Fix: Users Had to Sign Out to Refresh Data
+- Added a **Refresh Data button** in the sidebar footer (`data-testid="sidebar-refresh-btn"`, RefreshCw icon)
+- Click behavior: `queryClient.cancelQueries() → invalidateQueries() → refetchQueries({type:'active'})` + "Data refreshed" toast
+- User stays logged in — no more sign-out-and-back-in workaround
+- Also dispatches `dd:data-refreshed` custom event for future widgets that may need a manual refresh hook
+
+### Testing
+- Testing agent iteration_43: 8/8 tests passed, 100% frontend success
+- Verified for both super_admin (admin@test.com) and resource role (riley@test.com)
+- No DOM overlap between Search/Refresh/Sign Out (Search y=968..1008, Logout y=1020..1056)
+
 ## Session: Branded Cover Slide for Client Report Exports (Feb 2026)
 
 ### Feature: Branded Cover for PPT & PDF Exports
