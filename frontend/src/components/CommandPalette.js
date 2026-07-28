@@ -10,6 +10,10 @@ import {
 import { globalSearch } from '../api';
 import { toast } from 'sonner';
 
+// Detect Mac for keyboard shortcut label
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform);
+const CMD_KEY = IS_MAC ? '⌘' : 'Ctrl';
+
 // ─── Static navigation targets (fuzzy-match top of palette) ──────────
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Dashboard',          href: '/',                keywords: 'home overview' },
@@ -55,7 +59,7 @@ const CommandPalette = () => {
   const recognitionRef = useRef(null);
   const navigate = useNavigate();
 
-  // ⌘K / Ctrl+K shortcut
+  // ⌘K / Ctrl+K shortcut + custom event trigger (used by sidebar button)
   useEffect(() => {
     const onKey = (e) => {
       const isCmdK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k';
@@ -65,8 +69,13 @@ const CommandPalette = () => {
       }
       if (e.key === 'Escape' && open) setOpen(false);
     };
+    const onOpenEvent = () => setOpen(true);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('dd:open-command-palette', onOpenEvent);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('dd:open-command-palette', onOpenEvent);
+    };
   }, [open]);
 
   // Focus input when opened
@@ -161,18 +170,9 @@ const CommandPalette = () => {
 
   return (
     <>
-      {/* Floating trigger hint — visible on desktop only */}
-      <button
-        onClick={() => setOpen(true)}
-        className="hidden md:flex fixed bottom-4 left-4 items-center gap-2 px-3 py-2 bg-white border border-[#E6E8EC] rounded-full shadow-md hover:shadow-lg transition-all text-xs text-[#667085] hover:text-[#0B1220] z-40"
-        data-testid="command-palette-trigger"
-      >
-        <Search size={14} />
-        <span>Search / commands</span>
-        <kbd className="text-[10px] px-1.5 py-0.5 bg-[#F2F3F5] border border-[#E6E8EC] rounded">⌘K</kbd>
-      </button>
-
-      {/* Overlay */}
+      {/* Overlay — the palette itself. The trigger button lives in the sidebar
+          (Layout.js) so it no longer floats over Sign Out. Users can also press
+          Cmd/Ctrl+K from anywhere. */}
       {open && (
         <div
           className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-[10vh] px-4"
@@ -270,6 +270,7 @@ const CommandPalette = () => {
             <div className="px-4 py-2 border-t border-[#E6E8EC] bg-[#FAFAFB] text-[11px] text-[#667085] flex items-center gap-3">
               <span><kbd className="px-1 py-0.5 bg-white border rounded">↑↓</kbd> navigate</span>
               <span><kbd className="px-1 py-0.5 bg-white border rounded">↵</kbd> select</span>
+              <span><kbd className="px-1 py-0.5 bg-white border rounded">{CMD_KEY}+K</kbd> toggle</span>
               <span><kbd className="px-1 py-0.5 bg-white border rounded">esc</kbd> close</span>
               <span className="ml-auto">Powered by DD Planner AI</span>
             </div>

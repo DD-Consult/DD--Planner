@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { setAuthToken, getMe, getResources, getProjects, getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead } from '../api';
-import { LayoutDashboard, Users, Briefcase, Calendar, LogOut, Settings as SettingsIcon, CalendarOff, CalendarDays, FlaskConical, Clock, Sparkles, BarChart3, Bell, Check, X, User, Building2, Menu, ClipboardList, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, Users, Briefcase, Calendar, LogOut, Settings as SettingsIcon, CalendarOff, CalendarDays, FlaskConical, Clock, Sparkles, BarChart3, Bell, Check, X, User, Building2, Menu, ClipboardList, HelpCircle, Search, RefreshCw } from 'lucide-react';
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
@@ -593,7 +593,7 @@ const Layout = ({ children, token, onLogout }) => {
             </nav>
 
             {/* User Info & Logout */}
-            <div className="pt-6 border-t border-[#1A2332]">
+            <div className="pt-6 border-t border-[#1A2332] flex flex-col gap-3">
               {user && (
                 <div className="mb-4 flex items-center justify-between">
                   <div>
@@ -667,6 +667,53 @@ const Layout = ({ children, token, onLogout }) => {
                   </Popover>
                 </div>
               )}
+              {/* Global search / commands trigger + Refresh data */}
+              <div className="flex gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent('dd:open-command-palette'))}
+                      className="flex-1 flex items-center gap-2 px-3 py-2 bg-[#1A2332] border border-[#2A3648] rounded-md text-[#94A3B8] hover:bg-[#22304A] hover:text-white text-xs transition-colors"
+                      data-testid="sidebar-command-palette-btn"
+                    >
+                      <Search size={14} />
+                      <span className="flex-1 text-left">Search</span>
+                      <kbd className="text-[10px] px-1.5 py-0.5 bg-[#0B1220] border border-[#2A3648] rounded">⌘K</kbd>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    <p>Search & jump to anything (⌘K / Ctrl+K)</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={async () => {
+                        // Cancel in-flight → invalidate → refetch active queries so
+                        // users see fresh data without signing out.
+                        await queryClient.cancelQueries();
+                        await queryClient.invalidateQueries();
+                        await queryClient.refetchQueries({ type: 'active' });
+                        // Also nudge the app to re-read state from server for critical widgets
+                        window.dispatchEvent(new CustomEvent('dd:data-refreshed'));
+                        // Small confirmation
+                        try {
+                          const { toast } = await import('sonner');
+                          toast.success('Data refreshed');
+                        } catch (_e) { /* noop */ }
+                      }}
+                      className="px-3 py-2 bg-[#1A2332] border border-[#2A3648] rounded-md text-[#94A3B8] hover:bg-[#22304A] hover:text-white transition-colors"
+                      data-testid="sidebar-refresh-btn"
+                    >
+                      <RefreshCw size={14} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    <p>Refresh data (no need to sign out)</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
