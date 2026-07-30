@@ -682,3 +682,34 @@ Over Phases 1-5, added 14 new AI-powered capabilities:
 ### Deferred (testing agent recommendations)
 - WBSView.js now 1312 lines — splitting into sub-files recommended (P3)
 - Milestone checkbox uses raw `fetch()` instead of shared api.js client — inconsistent auth/error handling (P3)
+
+
+## Session: WBS Topological Sort + Auto End-Date Calculation (Jul 2026)
+
+### Feature: Dependency-Based Topological Sort for List & Plan Views
+- **Problem**: Plan view sorted by phase → start_date causing jumps (e.g., a July task appearing before a June task because of phase grouping). List view used raw creation order. Neither respected dependency chains.
+- **Fix**: Both List and Plan views now use **Kahn's topological sort algorithm** based on task dependencies. Tasks that are prerequisites always appear before their dependent tasks. Start_date is used as tiebreaker for tasks at the same dependency level. Parent → children grouping maintained (sub-tasks appear right after their parent in their topological order).
+- **Board view**: Unchanged (grouped by phase, sorted by order within phase)
+- Files: `WBSView.js` (topoSortedTasks useMemo)
+
+### Feature: Auto-Calculate End Dates from Estimated Hours + Resource Allocation
+- **Problem**: Users had to manually set end dates for every WBS task — tedious and inconsistent
+- **Fix**: End dates are now auto-computed:
+  - `hours_per_day = (alloc_% / 100) × (std_cap / 100) × 8`
+  - `biz_days = ceil(estimated_hours / hours_per_day)`
+  - `end_date = start_date + (biz_days - 1) business days` (Mon-Fri only)
+  - Falls back to 8h/day (100% allocation) when no allocation found
+- **Auto-triggers on**: Task create, task update (when estimated_hours, assigned_to, or start_date change)
+- **Retroactive**: New endpoint `POST /api/projects/{id}/wbs/recalculate-dates` recalculates all non-milestone tasks
+- **"Recalc Dates" button** added to WBS toolbar for manual trigger
+- **Milestones excluded**: Sprint milestones keep their milestone_date
+- Files: `utils.py` (add_business_days, compute_task_end_date), `routes/wbs.py` (create/update auto-calc + recalculate endpoint), `WBSView.js` (button), `api.js` (recalculateWBSDates)
+
+### Testing
+- 9/9 backend tests + 100% frontend verification pass (iteration_48)
+- Verified: 60% allocation → 4.8h/day → correct biz days; milestones preserved; create/update both auto-compute
+
+### Deferred (testing agent recommendations)
+- routes/wbs.py 1500+ lines — candidate for splitting (P3)
+- Changing only assigned_to (not hours) triggers end_date recompute — correct but could surprise users (P3 doc)
+- recalculate endpoint could return skipped_count for better observability (P3)
