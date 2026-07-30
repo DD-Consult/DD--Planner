@@ -410,6 +410,13 @@ class TimesheetResponse(BaseModel):
     created_at: str
     task_id: Optional[str] = None
     task_name: Optional[str] = None
+    # Optional enrichment fields — populated by /my-week and /history so the
+    # UI can render project/client names without a second round-trip. Kept
+    # optional because not every endpoint enriches them.
+    project_name: Optional[str] = None
+    client_name: Optional[str] = None
+    phase_name: Optional[str] = None
+    resource_name: Optional[str] = None
 
 
 # ============================================================
