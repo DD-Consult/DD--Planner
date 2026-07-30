@@ -140,6 +140,28 @@ DD Planner is a full-stack resource planning and project management application 
 - **Service Layer**: `services/ai_instructions.py` helper fetches applicable instructions and formats them for prompt injection
 - Files: `services/ai_instructions.py`, `routes/ai_instructions.py`, `AIInstructionsPanel.js`, `AIFeedbackButtons.js`, `risk_ai.py`, `ai.py`, `wbs.py`, `projects.py`, `ProjectDetail.js`, `AIRescheduleDialog.js`
 
+## Session: Enrichment Gap Fix + Submit Week Confirmation (Feb 2026)
+
+### Bug Fix: "Unknown Project" enrichment gap
+- `TimesheetResponse` Pydantic schema was declaring only core fields; FastAPI was **stripping** the `project_name`, `client_name`, `phase_name`, `resource_name` fields that the backend was actually enriching in `get_my_week_timesheets`
+- Fix: added those 4 as `Optional[str] = None` on `TimesheetResponse` (`schemas.py:394-421`)
+- Now `/api/timesheets/my-week` correctly returns real project/client/phase names even when the resource is NOT allocated to that project (the original repro case)
+- No backend logic change — pure schema fix
+
+### Confirmation: Submit Week button
+- The Submit Week button already lived inside `TimesheetWeeklyCheckin` (lines 711-727) — since that component is now on the ResourceDashboard, the button is automatically available
+- Gated by the existing Thu/Fri Sydney-time business policy (unchanged)
+- Amber message displayed on other days: "Submissions are only allowed on Thursday and Friday"
+
+### Testing
+- Testing agent iteration_46: 100% backend + 100% frontend pass
+- New regression test at `/app/backend/tests/test_timesheet_enrichment.py`
+- Confirmed no regression on `planned_hours` PUT, core response fields
+
+### Deferred (testing agent recommendations)
+- `TimesheetWeeklyCheckin.js` approaching 700 lines — consider splitting into subcomponents in a future refactor (P2)
+- N+1 project/phase lookups in `get_my_week_timesheets` — replace with single aggregation for perf on larger weeks (P2)
+
 ## Session: Resource Dashboard Timesheet + Inline Edit + planned_hours Fix (Feb 2026)
 
 ### Feature: My Weekly Timesheet on Resource Dashboard
