@@ -140,6 +140,29 @@ DD Planner is a full-stack resource planning and project management application 
 - **Service Layer**: `services/ai_instructions.py` helper fetches applicable instructions and formats them for prompt injection
 - Files: `services/ai_instructions.py`, `routes/ai_instructions.py`, `AIInstructionsPanel.js`, `AIFeedbackButtons.js`, `risk_ai.py`, `ai.py`, `wbs.py`, `projects.py`, `ProjectDetail.js`, `AIRescheduleDialog.js`
 
+## Session: Resource Dashboard Timesheet + Inline Edit + planned_hours Fix (Feb 2026)
+
+### Feature: My Weekly Timesheet on Resource Dashboard
+- Added `<TimesheetWeeklyCheckin />` widget to the ResourceDashboard as a collapsible card (open by default)
+- Data-testid: `dashboard-weekly-timesheet-card`
+- Resources now get direct access to autofill + inline edit without leaving the dashboard
+
+### Feature: Inline Edit of Current-Week Draft Entries on /my-timesheets
+- `WeekBlock` component now supports edit mode for current-week Draft rows only
+- Pencil icon opens inline inputs for planned_hours, actual_hours, notes
+- Save/Cancel buttons; loading spinner during save; toast on success
+- Non-Draft (Submitted/Approved) rows and past-week rows remain read-only
+- Banner text updated: "Only current week is editable"
+
+### Bug Fix: planned_hours silently dropped by backend
+- Testing agent iteration_44 discovered TimesheetUpdate Pydantic schema was missing planned_hours field
+- Added `planned_hours: Optional[float] = None` to `TimesheetUpdate` (schemas.py:385)
+- Extended variance recalc in `update_timesheet` route to trigger on planned_hours OR actual_hours change (timesheets.py:229)
+- Iteration_45 retest: 100% backend pass
+
+### Known pre-existing (not this session's scope)
+- ResourceDashboard 'My Weekly Timesheet' widget can show 'Unknown Project' for rows whose project the resource isn't allocated to — enrichment gap in the endpoint that powers TimesheetWeeklyCheckin. Documented for a future session.
+
 ## Session: Sidebar UX Fixes — Command Palette Trigger + Data Refresh (Feb 2026)
 
 ### Bug Fix: Floating ⌘K Trigger Overlapping Sign Out
