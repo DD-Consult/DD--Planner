@@ -95,15 +95,16 @@ def test_riley_can_update_own_draft(riley_headers):
     print(f"Draft entry id: {entry_id}, planned={draft_entry.get('planned_hours')}, actual={draft_entry.get('actual_hours')}")
 
     # Update it
-    upd = {"planned_hours": 3.5, "actual_hours": 4.25, "notes": "TEST_updated_via_pytest"}
+    upd = {"planned_hours": 3.5, "actual_hours": 5, "notes": "TEST_updated_via_pytest"}
     r = requests.put(f"{BASE_URL}/api/timesheets/{entry_id}", json=upd, headers=riley_headers, timeout=30)
     assert r.status_code == 200, f"update failed: {r.status_code} {r.text}"
     updated = r.json()
-    assert updated["actual_hours"] == 4.25, updated
+    assert updated["actual_hours"] == 5, updated
     assert updated["notes"] == "TEST_updated_via_pytest"
-    # BUG: TimesheetUpdate schema is missing planned_hours field — frontend edit sends it
-    # but backend silently drops it. This assertion is expected to FAIL until schema is fixed.
-    assert updated["planned_hours"] == 3.5, f"planned_hours not persisted (backend TimesheetUpdate schema missing field): {updated}"
+    # FIX verification: planned_hours must now persist (TimesheetUpdate schema field added)
+    assert updated["planned_hours"] == 3.5, f"planned_hours not persisted: {updated}"
+    # variance = actual - planned = 5 - 3.5 = 1.5
+    assert updated["variance_hours"] == 1.5, f"variance not recalculated: {updated}"
 
     # Verify persistence via GET history
     r = requests.get(f"{BASE_URL}/api/timesheets/history?weeks=1", headers=riley_headers, timeout=30)
@@ -112,16 +113,46 @@ def test_riley_can_update_own_draft(riley_headers):
     for w in r.json().get("weeks", []):
         for e in w.get("entries", []):
             if e.get("id") == entry_id:
-                assert e["actual_hours"] == 4.25
+                assert e["actual_hours"] == 5
+                assert e["planned_hours"] == 3.5, f"planned_hours not persisted in GET: {e}"
+                assert e["variance_hours"] == 1.5
                 found = True
     assert found, "updated entry not found in history"
 
+    # Test 2: planned=8 & actual=6 → variance=-2
+    upd2 = {"planned_hours": 8, "actual_hours": 6}
+    r = requests.put(f"{BASE_URL}/api/timesheets/{entry_id}", json=upd2, headers=riley_headers, timeout=30)
+    assert r.status_code == 200
+    u2 = r.json()
+    assert u2["planned_hours"] == 8
+    assert u2["actual_hours"] == 6
+    assert u2["variance_hours"] == -2, f"expected -2, got {u2['variance_hours']}"
 
-def test_riley_cannot_update_submitted(riley_headers):
-    """Create + submit an entry, then attempt update — expect 403."""
-    week_start, week_end = _current_week()
-    # Find or create a Draft entry, submit it, then try update
-    r = requests.get(f"{BASE_URL}/api/timesheets/history?weeks=1", headers=riley_headers, timeout=30)
+    # Test 3: update only actual_hours - variance should recalc using existing planned=8
+    upd3 = {"actual_hours": 10}
+    r = requests.put(f"{BASE_URL}/api/timesheets/{entry_id}", json=upd3, headers=riley_headers, timeout=30)
+    assert r.status_code == 200
+    u3 = r.json()
+    assert u3["planned_hours"] == 8, "planned should be unchanged"
+    assert u3["actual_hours"] == 10
+    assert u3["variance_hours"] == 2, f"variance regression on actual-only update: {u3}"
+
+    # Test 4: update only notes - variance should NOT recalc; prior values preserved
+    prior_variance = u3["variance_hours"]
+    upd4 = {"notes": "TEST_notes_only"}
+    r = requests.put(f"{BASE_URL}/api/timesheets/{entry_id}", json=upd4, headers=riley_headers, timeout=30)
+    assert r.status_code == 200
+    u4 = r.json()
+    assert u4["notes"] == "TEST_notes_only"
+    assert u4["planned_hours"] == 8
+    assert u4["actual_hours"] == 10
+    assert u4["variance_hours"] == prior_variance, f"variance mutated on notes-only update: {u4}"
+
+
+def test_riley_cannot_update_submitted(riley_headers, admin_headers):
+    """Find or admin-flip a timesheet to Submitted, then Riley PUT — expect 403."""
+    # Look for existing Submitted/Approved via history first
+    r = requests.get(f"{BASE_URL}/api/timesheets/history?weeks=12", headers=riley_headers, timeout=30)
     assert r.status_code == 200
     submitted_entry = None
     for w in r.json().get("weeks", []):
@@ -129,12 +160,35 @@ def test_riley_cannot_update_submitted(riley_headers):
             if e.get("status") in ("Submitted", "Approved"):
                 submitted_entry = e
                 break
+        if submitted_entry:
+            break
+
     if not submitted_entry:
-        pytest.skip("No Submitted/Approved entry available to test rejection")
+        # Try to flip one of Riley's Draft entries to Submitted via admin PUT
+        draft_entry = None
+        for w in r.json().get("weeks", []):
+            for e in w.get("entries", []):
+                if e.get("status") == "Draft":
+                    draft_entry = e
+                    break
+            if draft_entry:
+                break
+        if not draft_entry:
+            pytest.skip("No entries available")
+        # Admin sets status to Submitted
+        ar = requests.put(f"{BASE_URL}/api/timesheets/{draft_entry['id']}",
+                          json={"status": "Submitted"}, headers=admin_headers, timeout=30)
+        if ar.status_code != 200:
+            pytest.skip(f"admin couldn't flip status: {ar.status_code} {ar.text}")
+        submitted_entry = ar.json()
 
     upd = {"actual_hours": 99}
     r = requests.put(f"{BASE_URL}/api/timesheets/{submitted_entry['id']}", json=upd, headers=riley_headers, timeout=30)
     assert r.status_code in (400, 403), f"expected 403, got {r.status_code} {r.text}"
+
+    # Restore back to Draft so subsequent runs don't fail
+    requests.put(f"{BASE_URL}/api/timesheets/{submitted_entry['id']}",
+                 json={"status": "Draft"}, headers=admin_headers, timeout=30)
 
 
 def test_riley_cannot_update_others_entry(riley_headers, admin_headers):

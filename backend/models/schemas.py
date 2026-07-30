@@ -383,6 +383,7 @@ class TimesheetCreate(BaseModel):
 
 
 class TimesheetUpdate(BaseModel):
+    planned_hours: Optional[float] = None
     actual_hours: Optional[float] = None
     notes: Optional[str] = None
     status: Optional[str] = None

@@ -1,0 +1,30 @@
+{
+  "summary": "Retest of iteration_44 backend fix for PUT /api/timesheets/{id} planned_hours drop. Fix verified: TimesheetUpdate schema now includes planned_hours (schemas.py:385) and variance recalc block now fires on planned OR actual change (timesheets.py:229). All primary scenarios pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_timesheet_update.py",
+    "/app/test_reports/pytest/iteration45.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Enrichment gap for /api/timesheets/history: phase/project resolution ok, but same 'Unknown Project' widget issue documented previously still applies elsewhere — out of scope for this iteration."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_timesheet_update.py"
+  ],
+  "success_rate": {"backend": "100% (3 passed, 1 skipped due to no cross-resource data available via GET /api/timesheets)", "frontend": "not tested (per request)"},
+  "test_credentials": "riley@test.com/riley123, admin@test.com/admin123",
+  "seed_data_creation": "Used project 6a5d4ac2ad5ecf8fe70d55b4 phase 96de4e86-cb8d-4ed3-8229-b97913b40cc5 for Riley's draft entry; tests self-restore entry state.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Fix verified end-to-end via pytest. Tests cover: (1) planned_hours persists after PUT and via GET, (2) variance recalcs to 1.5 when planned=3.5/actual=5, (3) variance = -2 when planned=8/actual=6, (4) variance regression when only actual updated, (5) notes-only update does not mutate planned/actual/variance, (6) 403 when resource tries to edit Submitted entry. Cross-user 403 case skipped (GET /api/timesheets listing not accessible).",
+  "rca of the issue": "PRIOR BUG (iteration_44): Pydantic TimesheetUpdate model omitted planned_hours field, so it was stripped by exclude_unset dict() during PUT. FIX APPLIED: added planned_hours: Optional[float]=None to schema; variance recalc conditional now covers both planned and actual changes. VERIFIED: all data assertions pass."
+}

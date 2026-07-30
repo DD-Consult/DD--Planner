@@ -225,10 +225,10 @@ async def update_timesheet(timesheet_id: str, update: TimesheetUpdate, current_u
     # Update fields
     update_data = update.dict(exclude_unset=True)
     
-    # Recalculate variance if actual_hours changed
-    if "actual_hours" in update_data:
-        planned_hours = timesheet.get("planned_hours", 0)
-        actual_hours = update_data["actual_hours"]
+    # Recalculate variance if planned_hours OR actual_hours changed
+    if "actual_hours" in update_data or "planned_hours" in update_data:
+        planned_hours = update_data.get("planned_hours", timesheet.get("planned_hours", 0)) or 0
+        actual_hours = update_data.get("actual_hours", timesheet.get("actual_hours", 0)) or 0
         variance_hours = actual_hours - planned_hours
         variance_percentage = (variance_hours / planned_hours * 100) if planned_hours > 0 else 0
         
