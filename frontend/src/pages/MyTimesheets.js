@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getMyTimesheetHistory, autoFillTimesheets, submitWeekTimesheets, getAllActiveProjectsSummary, createTimesheet, getMe, getMyAllocations, aiParseTimesheetPhrase } from '../api';
+import { getMyTimesheetHistory, autoFillTimesheets, submitWeekTimesheets, getAllActiveProjectsSummary, createTimesheet, getMe, getMyAllocations, aiParseTimesheetPhrase, updateTimesheet } from '../api';
 import { format, startOfWeek, addDays } from 'date-fns';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
-import { Clock, AlertCircle, ChevronDown, ChevronRight, Zap, Send, CheckCircle, Plus, AlertTriangle, Sparkles, Loader2 } from 'lucide-react';
+import { Clock, AlertCircle, ChevronDown, ChevronRight, Zap, Send, CheckCircle, Plus, AlertTriangle, Sparkles, Loader2, Pencil, X as XIcon, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 const getCurrentWeekStart = () => {
@@ -42,10 +42,41 @@ const STATUS_COLORS = {
   Approved: 'bg-blue-100 text-blue-700 border-blue-200',
 };
 
-const WeekBlock = ({ week, isCurrentWeek, onAutofill, onSubmit, onAddEntry, autofilling, submitting }) => {
+const WeekBlock = ({ week, isCurrentWeek, onAutofill, onSubmit, onAddEntry, onUpdateEntry, autofilling, submitting, updatingId }) => {
   const [expanded, setExpanded] = useState(isCurrentWeek);
+  const [editingId, setEditingId] = useState(null);
+  const [editValues, setEditValues] = useState({ planned_hours: 0, actual_hours: 0, notes: '' });
   const entries = week.entries || [];
   const allSubmitted = entries.length > 0 && entries.every((e) => e.status === 'Submitted');
+
+  const startEdit = (entry) => {
+    setEditingId(entry.id);
+    setEditValues({
+      planned_hours: entry.planned_hours ?? 0,
+      actual_hours: entry.actual_hours ?? 0,
+      notes: entry.notes || '',
+    });
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditValues({ planned_hours: 0, actual_hours: 0, notes: '' });
+  };
+  const saveEdit = () => {
+    onUpdateEntry(editingId, {
+      planned_hours: Number(editValues.planned_hours) || 0,
+      actual_hours: Number(editValues.actual_hours) || 0,
+      notes: editValues.notes || '',
+    });
+  };
+
+  // Close edit mode when a save completes (parent clears updatingId back to null)
+  const prevUpdatingId = useRef(null);
+  useEffect(() => {
+    if (editingId && prevUpdatingId.current === editingId && updatingId === null) {
+      setEditingId(null);
+    }
+    prevUpdatingId.current = updatingId;
+  }, [updatingId, editingId]);
 
   let weekLabel;
   try {
@@ -147,32 +178,109 @@ const WeekBlock = ({ week, isCurrentWeek, onAutofill, onSubmit, onAddEntry, auto
                   <TableHead className="text-xs text-right">Actual h</TableHead>
                   <TableHead className="text-xs text-right">Variance</TableHead>
                   <TableHead className="text-xs">Status</TableHead>
+                  {isCurrentWeek && <TableHead className="text-xs w-20 text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {entries.map((entry, idx) => (
-                  <TableRow key={entry.id || idx}>
-                    <TableCell className="text-xs font-medium">
-                      {entry.project_name || entry.project_id}
-                      {entry.task_name && (
-                        <span className="block text-[10px] text-[#98A2B3] mt-0.5">{entry.task_name}</span>
+                {entries.map((entry, idx) => {
+                  const isEditing = editingId === entry.id;
+                  const isRowSaving = updatingId === entry.id;
+                  // Only Draft rows in the current week can be edited
+                  const canEdit = isCurrentWeek && entry.status === 'Draft' && !!entry.id;
+                  return (
+                    <TableRow key={entry.id || idx} data-testid={`timesheet-row-${entry.id || idx}`}>
+                      <TableCell className="text-xs font-medium">
+                        {entry.project_name || entry.project_id}
+                        {entry.task_name && (
+                          <span className="block text-[10px] text-[#98A2B3] mt-0.5">{entry.task_name}</span>
+                        )}
+                        {isEditing && (
+                          <input
+                            type="text"
+                            value={editValues.notes}
+                            onChange={(e) => setEditValues(v => ({ ...v, notes: e.target.value }))}
+                            placeholder="Notes (optional)"
+                            className="mt-1 w-full text-xs px-2 py-1 border rounded"
+                            data-testid={`edit-notes-${entry.id}`}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs">{entry.phase_name || '-'}</TableCell>
+                      <TableCell className="text-xs text-right">
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            step="0.25"
+                            min="0"
+                            value={editValues.planned_hours}
+                            onChange={(e) => setEditValues(v => ({ ...v, planned_hours: e.target.value }))}
+                            className="w-16 text-xs px-2 py-1 border rounded text-right"
+                            data-testid={`edit-planned-${entry.id}`}
+                          />
+                        ) : entry.planned_hours}
+                      </TableCell>
+                      <TableCell className="text-xs text-right font-medium">
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            step="0.25"
+                            min="0"
+                            value={editValues.actual_hours}
+                            onChange={(e) => setEditValues(v => ({ ...v, actual_hours: e.target.value }))}
+                            className="w-16 text-xs px-2 py-1 border rounded text-right"
+                            data-testid={`edit-actual-${entry.id}`}
+                          />
+                        ) : entry.actual_hours}
+                      </TableCell>
+                      <TableCell className="text-xs text-right">
+                        <span className={entry.variance_hours > 0 ? 'text-red-600' : entry.variance_hours < 0 ? 'text-green-600' : ''}>
+                          {entry.variance_hours > 0 ? '+' : ''}{entry.variance_hours}h
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={`text-[10px] ${STATUS_COLORS[entry.status] || ''}`}>
+                          {entry.status}
+                        </Badge>
+                      </TableCell>
+                      {isCurrentWeek && (
+                        <TableCell className="text-right">
+                          {canEdit && !isEditing && (
+                            <button
+                              onClick={() => startEdit(entry)}
+                              className="p-1 rounded hover:bg-[#F2F3F5] text-[#1570EF]"
+                              title="Edit entry"
+                              data-testid={`edit-entry-${entry.id}`}
+                            >
+                              <Pencil size={13} />
+                            </button>
+                          )}
+                          {isEditing && (
+                            <div className="flex items-center gap-1 justify-end">
+                              <button
+                                onClick={saveEdit}
+                                disabled={isRowSaving}
+                                className="p-1 rounded hover:bg-emerald-50 text-emerald-600 disabled:opacity-50"
+                                title="Save"
+                                data-testid={`save-entry-${entry.id}`}
+                              >
+                                {isRowSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                disabled={isRowSaving}
+                                className="p-1 rounded hover:bg-red-50 text-red-600 disabled:opacity-50"
+                                title="Cancel"
+                                data-testid={`cancel-edit-${entry.id}`}
+                              >
+                                <XIcon size={13} />
+                              </button>
+                            </div>
+                          )}
+                        </TableCell>
                       )}
-                    </TableCell>
-                    <TableCell className="text-xs">{entry.phase_name || '-'}</TableCell>
-                    <TableCell className="text-xs text-right">{entry.planned_hours}</TableCell>
-                    <TableCell className="text-xs text-right font-medium">{entry.actual_hours}</TableCell>
-                    <TableCell className="text-xs text-right">
-                      <span className={entry.variance_hours > 0 ? 'text-red-600' : entry.variance_hours < 0 ? 'text-green-600' : ''}>
-                        {entry.variance_hours > 0 ? '+' : ''}{entry.variance_hours}h
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`text-[10px] ${STATUS_COLORS[entry.status] || ''}`}>
-                        {entry.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
@@ -257,6 +365,22 @@ const MyTimesheets = () => {
       setAddForm({ project_id: '', phase_id: '', planned_hours: 0, actual_hours: 0, notes: '' });
     },
     onError: (err) => toast.error(err.response?.data?.detail || 'Failed to create entry'),
+  });
+
+  const [updatingRowId, setUpdatingRowId] = useState(null);
+  const updateEntryMutation = useMutation({
+    mutationFn: ({ id, data }) => updateTimesheet(id, data),
+    onMutate: ({ id }) => setUpdatingRowId(id),
+    onSuccess: () => {
+      toast.success('Entry updated');
+      queryClient.invalidateQueries(['myTimesheetHistory']);
+      refetch();
+      setUpdatingRowId(null);
+    },
+    onError: (err) => {
+      setUpdatingRowId(null);
+      toast.error(err?.response?.data?.detail || 'Failed to update entry');
+    },
   });
 
   const aiParseMutation = useMutation({
@@ -377,9 +501,9 @@ const MyTimesheets = () => {
       <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200" data-testid="readonly-banner">
         <AlertCircle size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
         <div>
-          <p className="text-sm font-semibold text-amber-800">Timesheet history is read-only</p>
+          <p className="text-sm font-semibold text-amber-800">Only current week is editable</p>
           <p className="text-xs text-amber-700 mt-0.5">
-            To correct or edit past entries, please contact your admin. You can autofill, add entries, and submit the <strong>current week</strong> below.
+            You can autofill, add, and <strong>edit</strong> entries for the current week. Past weeks are read-only — contact your admin to correct submitted entries.
           </p>
         </div>
       </div>
@@ -467,8 +591,10 @@ const MyTimesheets = () => {
               onAutofill={() => autofillMutation.mutate()}
               onSubmit={() => submitMutation.mutate()}
               onAddEntry={() => setShowAddDialog(true)}
+              onUpdateEntry={(id, data) => updateEntryMutation.mutate({ id, data })}
               autofilling={autofillMutation.isPending}
               submitting={submitMutation.isPending}
+              updatingId={updatingRowId}
             />
           )}
           {weeks.map((week) => (
@@ -479,8 +605,10 @@ const MyTimesheets = () => {
               onAutofill={() => autofillMutation.mutate()}
               onSubmit={() => submitMutation.mutate()}
               onAddEntry={() => setShowAddDialog(true)}
+              onUpdateEntry={(id, data) => updateEntryMutation.mutate({ id, data })}
               autofilling={autofillMutation.isPending}
               submitting={submitMutation.isPending}
+              updatingId={updatingRowId}
             />
           ))}
 

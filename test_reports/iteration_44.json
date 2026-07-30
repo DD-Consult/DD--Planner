@@ -1,0 +1,48 @@
+{
+  "summary": "Tested Bug fix #1 (Resource Dashboard 'My Weekly Timesheet' widget) and Bug fix #2 (inline edit of current-week Draft entries on /my-timesheets). Frontend UI works end-to-end: widget renders on dashboard, banner text updated, edit icon appears on Draft rows in current week, inline inputs (planned/actual/notes) show, Save/Cancel work and 'Entry updated' toast fires. Backend PUT /api/timesheets/{id} persists actual_hours and notes correctly. Discovered one backend bug: planned_hours edits are silently dropped because the TimesheetUpdate Pydantic schema is missing the planned_hours field.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "PUT /api/timesheets/{id}",
+        "issue": "planned_hours sent by frontend inline edit is silently dropped. TimesheetUpdate schema (/app/backend/models/schemas.py line 385-390) only declares actual_hours, notes, status, task_id, task_name. Pydantic drops the extra 'planned_hours' field so users can appear to change planned hours but the value never persists. Confirmed via pytest: sent planned=3.5, response still shows 5.0. Fix: add `planned_hours: Optional[float] = None` to TimesheetUpdate and recalc variance when planned_hours changes (variance_hours = actual - planned).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Dashboard 'My Weekly Timesheet' widget row rendering",
+        "issue": "For the test entry we created (Data Migration project, valid project_id + phase_id), the TimesheetWeeklyCheckin widget on the ResourceDashboard displays 'Unknown Project / Unknown Client' in the row even though /api/timesheets/history returns the correct project_name for the same entry. Likely the widget uses a different endpoint (e.g. /api/timesheets/my-week) that isn't enriching project_name for entries whose project the resource isn't allocated to. Not caused by the current fix — pre-existing behavior of TimesheetWeeklyCheckin — but user-visible on the new dashboard widget.",
+        "affected_selectors": ["dashboard-weekly-timesheet-card"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_timesheet_update.py",
+    "/app/test_reports/pytest/ts_update.xml"
+  ],
+  "action_items": [
+    "Add `planned_hours: Optional[float] = None` to TimesheetUpdate schema in /app/backend/models/schemas.py (line 385). Also update /app/backend/routes/timesheets.py update_timesheet handler so that when planned_hours changes, variance_hours/variance_percentage are recalculated using the new planned value.",
+    "(Optional / pre-existing) Investigate why the ResourceDashboard 'My Weekly Timesheet' widget shows 'Unknown Project' for a valid timesheet entry — likely enrichment gap in the endpoint feeding TimesheetWeeklyCheckin."
+  ],
+  "critical_code_review_comments": [
+    "Bug fix #2 UI code correctly restricts edit icon to isCurrentWeek && status === 'Draft' — good.",
+    "MyTimesheets.js WeekBlock uses useEffect+useRef to auto-close edit mode once updatingId returns to null — clean pattern.",
+    "TimesheetUpdate schema (schemas.py:385) is missing planned_hours — root cause of the failing update. This is a mismatch between the new frontend contract (sends 3 fields) and the existing backend Pydantic model.",
+    "Backend update_timesheet only recalculates variance when actual_hours changes; even after adding planned_hours to the schema, the variance recalculation branch must be extended to trigger when planned_hours changes too (otherwise variance goes stale)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_timesheet_update.py (new)"
+  ],
+  "success_rate": {"backend": "66% (2/3 executable tests pass; 1 fails due to real planned_hours bug; 1 skipped because no cross-resource test data available)", "frontend": "100% (all bug-fix flows verified: dashboard widget, banner, edit icon, inline inputs, save, toast, cancel)"},
+  "test_credentials": "riley@test.com / riley123 (resource), admin@test.com / admin123 (super_admin) — both work.",
+  "seed_data_creation": "Created one Draft timesheet entry for Riley on Data Migration / Execution Phase for current week (id 6a6adb4dfc57b5673c9aed0c). This entry currently exists in the DB with actual_hours=7.5 (edited via UI test). Safe to leave; can be deleted by admin.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Riley's only allocation (Website Redesign) is in July 2026 — outside current week (2026-07-27..31) so autofill returns 0. To create a Draft entry via API, use project_id=6a5d4ac2ad5ecf8fe70d55b4 (Data Migration) with phase_id=96de4e86-cb8d-4ed3-8229-b97913b40cc5 which is one of the few seeded projects with phases. Timesheet auto-fill endpoint is POST /api/timesheets/auto-fill (with hyphen), history is GET /api/timesheets/history?weeks=N, my-allocations is GET /api/my-allocations?period=month. Login uses form-encoded OAuth2 (data={'username','password'}), returns access_token.",
+  "rca_of_the_issue": "TimesheetUpdate Pydantic model in /app/backend/models/schemas.py:385-390 does not declare planned_hours. FastAPI/Pydantic default config drops unknown fields silently. When the new MyTimesheets inline-edit UI PUTs {planned_hours, actual_hours, notes}, only actual_hours and notes are extracted by `update.dict(exclude_unset=True)`. Backend then only updates those two fields in Mongo. UI shows 'Entry updated' toast (backend returned 200) so the user believes the change persisted; on refresh planned_hours reverts to old value. Reproduction: login as riley, /my-timesheets, edit a Draft entry, change planned_hours only, click Save — refresh page — planned_hours is unchanged. Mitigation: add `planned_hours: Optional[float] = None` to TimesheetUpdate and in update_timesheet route recalc variance whenever planned_hours OR actual_hours is in update_data."
+}

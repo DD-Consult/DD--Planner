@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Progress } from '../components/ui/progress';
+import TimesheetWeeklyCheckin from '../components/TimesheetWeeklyCheckin';
 import {
   Clock, Briefcase, Calendar, CheckCircle2, AlertTriangle,
   ChevronRight, TrendingUp, Bell, X, ChevronDown, ChevronUp,
@@ -95,6 +96,7 @@ export default function ResourceDashboard({ userData }) {
   const navigate = useNavigate();
   const [actionsDismissed, setActionsDismissed] = useState(false);
   const [actionsExpanded, setActionsExpanded] = useState(false);
+  const [timesheetExpanded, setTimesheetExpanded] = useState(true); // open by default on dashboard
 
   const { data: myAllocsData } = useQuery({
     queryKey: ['myAllocations', 'month'],
@@ -227,6 +229,28 @@ export default function ResourceDashboard({ userData }) {
           </CardContent>
         </Card>
       )}
+
+      {/* ── My Weekly Timesheet — full autofill + inline edit widget ── */}
+      <Card data-testid="dashboard-weekly-timesheet-card">
+        <CardHeader
+          className="cursor-pointer hover:bg-gray-50 transition-colors"
+          onClick={() => setTimesheetExpanded(v => !v)}
+          data-testid="dashboard-weekly-timesheet-header"
+        >
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Clock size={18} className="text-[#1570EF]" />
+              My Weekly Timesheet
+            </CardTitle>
+            {timesheetExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+          </div>
+        </CardHeader>
+        {timesheetExpanded && (
+          <CardContent>
+            <TimesheetWeeklyCheckin />
+          </CardContent>
+        )}
+      </Card>
 
       {/* ── Action Items Banner ── */}
       {actionItemsData?.summary?.total > 0 && !actionsDismissed && (
