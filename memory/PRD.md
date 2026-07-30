@@ -652,3 +652,33 @@ Over Phases 1-5, added 14 new AI-powered capabilities:
 - Nav item added to Layout with Sparkles icon
 - Retrospective detail dialog with grade badge, KPI chips, and 5 collapsible sections
 - Testing: 10/10 backend tests pass (iter 38)
+
+
+## Session: WBS Ordering + Client Report Non-Interactive Fix (Jul 2026)
+
+### Bug Fix: WBS Ordering Inconsistency Between Views
+- **Root cause**: List view used raw API order (no explicit sort), Plan view sorted ALL tasks (flat, including sub-tasks mixed with parents) purely by start_date — completely different orderings confused users
+- **Fix**: Both List and Plan views now sort by **phase order first** (matching project phase sequence), then:
+  - List view: sorts within phase by `order` field (creation/manual order)
+  - Plan view: sorts within phase by `start_date`, then `order` as tiebreaker
+  - Plan view now shows parent → children grouping (sub-tasks appear right after their parent, indented with ↳)
+  - Board view: already grouped by phase, now also sorts within phase by `order` field
+- Phase order map computed once via `phaseOrderMap` useMemo
+
+### Bug Fix: Client Report WBS Was Interactive
+- **Root cause**: `readOnly` prop was only gating the view switcher, Add/Generate buttons, and bulk selection — but Cascade buttons, Edit/Delete hover buttons, and Milestone checkbox toggles were NOT gated
+- **Fix**: All interactive elements now gated by `readOnly`:
+  - Plan view: Cascade button + Edit/Delete hidden when readOnly
+  - Plan view: Actions column header hidden when readOnly
+  - List view: Edit/Delete column hidden when readOnly
+  - List view: Milestone checkbox replaced with static "Complete"/"Pending" text when readOnly
+  - Board view: TaskCard receives readOnly prop; Edit/Delete hidden when readOnly
+- Client report (`ProjectReport.js`) renders `WBSView readOnly={true}` — all interactive elements now correctly hidden
+
+### Testing
+- 7/7 frontend tests pass (iteration_47)
+- Verified: List order, Plan order with parent-child grouping, Board phase grouping, readOnly hides all interactive elements, admin view still shows all interactive elements, sub-task expand/collapse works
+
+### Deferred (testing agent recommendations)
+- WBSView.js now 1312 lines — splitting into sub-files recommended (P3)
+- Milestone checkbox uses raw `fetch()` instead of shared api.js client — inconsistent auth/error handling (P3)
