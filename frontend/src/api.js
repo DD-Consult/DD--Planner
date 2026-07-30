@@ -430,6 +430,10 @@ export const getWBSTasksForTimesheet = (projectId, phaseId = null) =>
 export const syncProjectDatesFromWBS = (projectId) =>
   api.post(`/projects/${projectId}/sync-dates-from-wbs`);
 
+export const recalculateWBSDates = (projectId) =>
+  api.post(`/projects/${projectId}/wbs/recalculate-dates`);
+
+
 // Timesheet Range Reports (admin only)
 export const getTimesheetRangeReport = (params) =>
   api.get('/reports/timesheets/range', { params });

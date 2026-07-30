@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 48: Full backend + frontend testing of WBS topological ordering and auto end-date recalculation. Backend pytest suite (9 tests) all PASS. Frontend Playwright verification confirms List view and Plan view both render tasks in topological (dependency-respecting) order with start_date tiebreaker and parent-child grouping. Recalc Dates button calls the endpoint successfully (200, updated=0 because dates already in sync from prior recalc). Milestone tasks preserve their milestone_date as end_date.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration48_wbs_topo_recalc.py",
+    "/app/test_reports/pytest/iter48_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/wbs.py is 1500+ lines — consider splitting into wbs_crud.py, wbs_ai.py, wbs_summary.py, wbs_sync.py for maintainability.",
+    "In routes/wbs.py update_wbs_task (line 356): 'assigned_to' change triggers end_date recompute — correct, but note that changing ONLY assigned_to (with no hours change) would then modify end_date silently, which may surprise users. Acceptable given the feature intent but worth documenting.",
+    "recalculate_wbs_dates endpoint requires admin — good. But it silently skips tasks with no start_date or est<=0; consider returning skipped_count for observability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration48_wbs_topo_recalc.py (new)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (topological order verified in List + Plan views)"},
+  "test_credentials": "admin@test.com / admin123 (form-encoded login at /api/auth/login)",
+  "seed_data_creation": "None persisted. Created + deleted 3 TEST_iter48_* WBS tasks during backend tests (cleaned up).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Mobile App project 6a5d4ac2ad5ecf8fe70d55b3 has 8 WBS tasks (6 root + 2 sub-tasks REST Endpoints & WebSocket Integration). Auth uses OAuth2PasswordRequestForm — form-encoded, token key = 'access_token'. Frontend WBSView.js implements Kahn's topo sort with start_date tiebreaker, then groups children after parent — this is why Backend API Dev (with 2 children) appears first even though DB Schema shares the same start_date.",
+  "rca of the issue": "N/A — all features work as specified. Feature verification confirmed: (1) End-date formula ceil(est/hrs_per_day) with allocation-based hrs_per_day (60% alloc → 4.8h/day) verified on 'Frontend UI Framework Setup' (20h, 60% alloc → 5 biz days). (2) Milestones (Sprint 1 Complete) not touched by recalc. (3) POST /wbs/tasks and PUT /wbs/tasks/{id} both auto-compute end_date. (4) List + Plan views show topological ordering."
+}

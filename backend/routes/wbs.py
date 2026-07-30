@@ -17,6 +17,7 @@ from models.schemas import (
 )
 from auth.dependencies import get_current_user, require_admin
 from utils import serialize_doc
+from utils import compute_task_end_date
 from services.ai_providers import (
     get_ai_config, call_openai_api, call_gemini_api, call_emergent_fallback,
 )
@@ -204,6 +205,34 @@ async def get_wbs_budget_status(project_id: str, current_user: dict = Depends(ge
     return budget_status
 
 
+
+@router.post("/api/projects/{project_id}/wbs/recalculate-dates")
+async def recalculate_wbs_dates(project_id: str, current_user: dict = Depends(require_admin)):
+    """Retroactively recalculate end_date for all non-milestone tasks in a project
+    based on estimated_hours + resource allocation."""
+    cursor = wbs_tasks_collection.find({"project_id": project_id})
+    tasks = await cursor.to_list(length=10000)
+    updated_count = 0
+    for task in tasks:
+        if task.get("is_milestone"):
+            continue
+        est = task.get("estimated_hours") or 0
+        start = task.get("start_date")
+        if not start or est <= 0:
+            continue
+        computed = await compute_task_end_date(
+            start, est, task.get("assigned_to"), project_id,
+        )
+        if computed and str(computed)[:10] != str(task.get("end_date") or "")[:10]:
+            await wbs_tasks_collection.update_one(
+                {"_id": task["_id"]},
+                {"$set": {"end_date": computed, "updated_at": datetime.now(timezone.utc).isoformat()}}
+            )
+            updated_count += 1
+    return {"message": f"Recalculated {updated_count} task end dates", "updated": updated_count}
+
+
+
 @router.post("/api/projects/{project_id}/wbs/tasks", response_model=WBSTaskResponse)
 async def create_wbs_task(
     project_id: str,
@@ -233,6 +262,20 @@ async def create_wbs_task(
         if task_doc.get("milestone_date"):
             task_doc["start_date"] = task_doc["milestone_date"]
             task_doc["end_date"] = task_doc["milestone_date"]
+
+    # Auto-compute end_date from estimated_hours + allocation (if not manually set or is auto)
+    if (not task_doc.get("is_milestone")
+        and task_doc.get("start_date")
+        and task_doc.get("estimated_hours")
+        and task_doc["estimated_hours"] > 0):
+        computed_end = await compute_task_end_date(
+            task_doc["start_date"],
+            task_doc["estimated_hours"],
+            task_doc.get("assigned_to"),
+            project_id,
+        )
+        if computed_end:
+            task_doc["end_date"] = computed_end
 
     result = await wbs_tasks_collection.insert_one(task_doc)
     task_doc["_id"] = result.inserted_id
@@ -307,6 +350,21 @@ async def update_wbs_task(
 
     update_data = update.dict(exclude_unset=True)
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Auto-recompute end_date when estimated_hours, assigned_to, or start_date changes
+    if not task.get("is_milestone"):
+        should_recompute = any(k in update_data for k in ("estimated_hours", "assigned_to", "start_date"))
+        # Only if end_date is NOT explicitly being set in this same update
+        if should_recompute and "end_date" not in update_data:
+            merged_start = update_data.get("start_date") or task.get("start_date")
+            merged_hours = update_data.get("estimated_hours") if "estimated_hours" in update_data else task.get("estimated_hours")
+            merged_assignee = update_data.get("assigned_to") if "assigned_to" in update_data else task.get("assigned_to")
+            if merged_start and merged_hours and merged_hours > 0:
+                computed_end = await compute_task_end_date(
+                    merged_start, merged_hours, merged_assignee, task.get("project_id"),
+                )
+                if computed_end:
+                    update_data["end_date"] = computed_end
 
     await wbs_tasks_collection.update_one(
         {"_id": task["_id"]},

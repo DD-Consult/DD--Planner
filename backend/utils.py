@@ -289,6 +289,20 @@ def snap_to_weekday(d):
     return d
 
 
+def add_business_days(start, num_days):
+    """Add `num_days` business days (Mon-Fri) to a date. Returns a date."""
+    if isinstance(start, datetime):
+        start = start.date()
+    start = snap_to_weekday(start)
+    current = start
+    added = 0
+    while added < num_days:
+        current += timedelta(days=1)
+        if current.weekday() < 5:
+            added += 1
+    return current
+
+
 # ============================================================
 # CANONICAL HOUR CALCULATIONS — single source of truth
 # Standard work week: 40 hours (8h/day × Mon-Fri)
@@ -391,3 +405,48 @@ def leaf_estimated_hours(tasks: list) -> float:
         for t in tasks
         if is_leaf_task(t, parent_ids)
     )
+
+
+
+async def compute_task_end_date(start_date_str, estimated_hours, resource_id, project_id):
+    """Auto-compute a task's end_date from start_date + estimated_hours + resource allocation.
+    
+    Formula:
+      hours_per_day = (alloc_% / 100) * (std_cap / 100) * 8
+      business_days = ceil(estimated_hours / hours_per_day)
+      end_date = start_date + business_days (Mon-Fri only)
+    
+    Falls back to 8h/day (100% allocation) if no allocation found.
+    Returns ISO date string or None.
+    """
+    import math
+    from database import allocations_collection
+
+    if not start_date_str or not estimated_hours or estimated_hours <= 0:
+        return None
+
+    start = coerce_date(start_date_str)
+    if not start:
+        return None
+    start = snap_to_weekday(start)
+
+    hours_per_day = HOURS_PER_DAY  # default: 8h/day
+
+    if resource_id and project_id:
+        # Look up the resource's allocation on this project
+        alloc = await allocations_collection.find_one({
+            "resource_id": resource_id,
+            "project_id": project_id,
+        })
+        if alloc:
+            pct = alloc.get("percentage", 100) or 100
+            # Look up resource standard_capacity
+            resource = await resources_collection.find_one({"_id": ObjectId(resource_id)})
+            std_cap = (resource.get("standard_capacity", 100) or 100) if resource else 100
+            hours_per_day = (pct / 100.0) * (std_cap / 100.0) * HOURS_PER_DAY
+            if hours_per_day <= 0:
+                hours_per_day = HOURS_PER_DAY
+
+    biz_days = max(1, math.ceil(estimated_hours / hours_per_day))
+    end = add_business_days(start, biz_days - 1)  # -1 because start day counts as day 1
+    return end.isoformat()

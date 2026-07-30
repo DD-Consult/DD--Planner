@@ -5,6 +5,7 @@ import {
   getProjectWBS, createWBSTask, updateWBSTask, deleteWBSTask,
   getWBSActuals, cascadeTaskDates, syncProjectDatesFromWBS,
   setProjectWBSBaseline, setWBSTaskBaseline, getProjectCommentCounts,
+  recalculateWBSDates,
 } from '../api';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -326,7 +327,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
     return map;
   }, [wbsActuals]);
 
-  // Phase order map — used by List/Plan/Board for consistent ordering
+  // Phase order map — used by Board for consistent ordering
   const phaseOrderMap = useMemo(() => {
     const map = {};
     (phases || []).forEach((p, idx) => {
@@ -335,9 +336,6 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
     });
     return map;
   }, [phases]);
-
-  const getPhaseOrder = (phaseName) =>
-    phaseName && phaseOrderMap[phaseName] !== undefined ? phaseOrderMap[phaseName] : 9999;
 
   // Tasks grouped by phase (for Board view) — MUST be at component level
   const tasksByPhase = useMemo(() => {
@@ -360,34 +358,89 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
     return grouped;
   }, [tasks, phases]);
 
-  // Consistently-sorted tasks for Plan view — phase order first, then order within phase
-  // Parents appear before their children to maintain hierarchy
-  const sortedTasksByDate = useMemo(() => {
-    const rootTasks = tasks.filter(t => !t.parent_id);
-    // Sort roots: phase order → then start_date → then order field
-    rootTasks.sort((a, b) => {
-      const phaseA = getPhaseOrder(a.phase_name);
-      const phaseB = getPhaseOrder(b.phase_name);
-      if (phaseA !== phaseB) return phaseA - phaseB;
-      // Within same phase, sort by start_date then order
+  // ── Topological sort (dependency-based execution sequence) ──
+  // Used by BOTH List and Plan views so tasks appear in the order
+  // they should be executed, respecting dependency chains.
+  // Parents appear before their children; children grouped after parent.
+  const topoSortedTasks = useMemo(() => {
+    const taskMap = {};
+    const inDegree = {};
+    const adj = {}; // depId → [taskIds that depend on it]
+
+    tasks.forEach(t => {
+      taskMap[t.id] = t;
+      inDegree[t.id] = 0;
+      adj[t.id] = [];
+    });
+
+    // Build dependency graph
+    tasks.forEach(t => {
+      (t.dependencies || []).forEach(depId => {
+        if (adj[depId] !== undefined) {
+          adj[depId].push(t.id);
+          inDegree[t.id]++;
+        }
+      });
+    });
+
+    // Start date tiebreaker comparator
+    const cmpDate = (a, b) => {
       if (a.start_date && b.start_date) {
-        const dateDiff = new Date(a.start_date) - new Date(b.start_date);
-        if (dateDiff !== 0) return dateDiff;
+        const diff = new Date(a.start_date) - new Date(b.start_date);
+        if (diff !== 0) return diff;
       }
       if (!a.start_date && b.start_date) return 1;
       if (a.start_date && !b.start_date) return -1;
       return (a.order || 0) - (b.order || 0);
+    };
+
+    // Kahn's algorithm with sorted queue (start_date tiebreaker)
+    let queue = tasks
+      .filter(t => inDegree[t.id] === 0)
+      .sort(cmpDate);
+
+    const flatSorted = [];
+    while (queue.length > 0) {
+      const task = queue.shift();
+      flatSorted.push(task);
+      for (const nextId of (adj[task.id] || [])) {
+        inDegree[nextId]--;
+        if (inDegree[nextId] === 0) {
+          queue.push(taskMap[nextId]);
+          queue.sort(cmpDate);
+        }
+      }
+    }
+    // Add any remaining tasks (cycles / orphans)
+    tasks.forEach(t => {
+      if (!flatSorted.find(s => s.id === t.id)) flatSorted.push(t);
     });
-    // Flatten: parent then its children (sorted by order)
+
+    // Group parent → children: root first, then its children in their topo order
+    const childrenOf = {};
+    const isChild = new Set();
+    flatSorted.forEach(t => {
+      if (t.parent_id) {
+        isChild.add(t.id);
+        if (!childrenOf[t.parent_id]) childrenOf[t.parent_id] = [];
+        childrenOf[t.parent_id].push(t);
+      }
+    });
+
     const result = [];
-    rootTasks.forEach(root => {
-      result.push(root);
-      const children = tasks.filter(t => t.parent_id === root.id);
-      children.sort((a, b) => (a.order || 0) - (b.order || 0));
-      result.push(...children);
+    flatSorted.forEach(t => {
+      if (!isChild.has(t.id)) {
+        result.push(t);
+        if (childrenOf[t.id]) {
+          result.push(...childrenOf[t.id]);
+        }
+      }
     });
     return result;
-  }, [tasks, phases]);
+  }, [tasks]);
+
+  // Alias used by Plan view
+  const sortedTasksByDate = topoSortedTasks;
 
   // Delay metrics calculation — MUST be at component level
   const delayMetrics = useMemo(() => {
@@ -512,6 +565,16 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
       toast.success(data.data?.message || 'Baseline set for all tasks', { duration: 4000 });
     },
     onError: (err) => toast.error(err.response?.data?.detail || 'Failed to set baseline'),
+  });
+
+  const recalcDatesMutation = useMutation({
+    mutationFn: () => recalculateWBSDates(projectId),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['wbs', projectId] });
+      const count = data.data?.updated || 0;
+      toast.success(`Recalculated ${count} task end date${count !== 1 ? 's' : ''} from allocations`, { duration: 4000 });
+    },
+    onError: (err) => toast.error(err.response?.data?.detail || 'Failed to recalculate dates'),
   });
 
   const handleSetBaselineAll = () => {
@@ -798,12 +861,8 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
   };
 
   const renderListView = () => {
-    const rootTasks = [...tasks.filter(t => !t.parent_id)].sort((a, b) => {
-      const phaseA = getPhaseOrder(a.phase_name);
-      const phaseB = getPhaseOrder(b.phase_name);
-      if (phaseA !== phaseB) return phaseA - phaseB;
-      return (a.order || 0) - (b.order || 0);
-    });
+    // Use topoSortedTasks but filter to root-only (children rendered via expand)
+    const rootTasks = topoSortedTasks.filter(t => !t.parent_id);
     return (
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <table className="w-full text-left">
@@ -1186,6 +1245,25 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
               <RefreshCw size={14} className="mr-1.5" />
             )}
             Sync Dates from WBS
+          </Button>
+          )}
+
+          {!readOnly && tasks.length > 0 && (
+          <Button
+            onClick={() => recalcDatesMutation.mutate()}
+            size="sm"
+            variant="outline"
+            disabled={recalcDatesMutation.isPending}
+            className="text-sm"
+            data-testid="recalculate-dates-btn"
+            title="Recalculate task end dates from estimated hours and resource allocations"
+          >
+            {recalcDatesMutation.isPending ? (
+              <Loader2 size={14} className="mr-1.5 animate-spin" />
+            ) : (
+              <Clock size={14} className="mr-1.5" />
+            )}
+            Recalc Dates
           </Button>
           )}
 
