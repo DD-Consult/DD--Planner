@@ -1,0 +1,18 @@
+{
+  "summary": "Verified WBS ordering + readOnly client-report gating changes end-to-end via Playwright against the deployed preview. All 7 requested behaviors passed. LIST view sorts root tasks by phase then order (Backend API Dev → Database Schema → User Auth → Frontend UI → Sprint 1 Complete → API Testing). PLAN view places 'Backend API Development' first, then its children 'REST Endpoints' and 'WebSocket Integration' immediately after with ↳ prefix; remaining roots follow in the correct start-date order. BOARD view shows Execution Phase=6 root cards, Unassigned=0. Admin project detail page still exposes view switcher, cascade buttons (2), plan checkboxes (9), milestone checkbox, Sync Dates, Set Baseline, Add Task, and Generate with AI. Expanding parent in LIST view reveals REST Endpoints & WebSocket Integration nested under Backend API Development. Client report (readOnly, defaultView='plan') correctly hides ALL interactive elements: no view switcher/board/list/plan buttons, 0 cascade buttons, no Add Task/AI/Sync Dates/Set Baseline buttons, 0 checkboxes in WBS section, only plan view rendered.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "WBSView.js is 1312 lines — well beyond the 700-line guideline. Consider splitting Board/List/Plan renderers, TaskCard, and bulk-action controls into separate files.",
+    "Milestone checkbox onChange uses raw fetch() instead of the shared api client — inconsistent auth/error handling; move to api.js."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "admin@test.com / admin123",
+  "seed_data_creation": "None — used the 8 pre-seeded WBS tasks on Mobile App project 6a5d4ac2ad5ecf8fe70d55b3.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 47 fixes fully verified. Key selectors: [data-testid='wbs-list-view'], [data-testid='wbs-plan-view'], [data-testid='wbs-board-view'], [data-testid='view-switcher'], [data-testid='view-mode-{board|list|plan}']. Client report URL: /projects/{id}/report?period=whole-project — verifies readOnly mode. Mobile App project id 6a5d4ac2ad5ecf8fe70d55b3 has 6 root + 2 sub tasks."
+}

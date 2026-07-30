@@ -153,6 +153,7 @@ const TaskCard = ({
   getSubTasks,
   getTaskDependencies,
   commentCount = 0,
+  readOnly = false,
 }) => {
   const subTasks = getSubTasks(task.id);
   const deps = getTaskDependencies(task);
@@ -247,6 +248,7 @@ const TaskCard = ({
             <span className="text-xs text-gray-400">{subTasks.length} sub</span>
           )}
           {/* Edit/Delete (shown on hover) */}
+          {!readOnly && (
           <div className="opacity-0 group-hover:opacity-100 flex gap-1">
             <button
               onClick={() => onEdit(task)}
@@ -261,6 +263,7 @@ const TaskCard = ({
               <Trash2 size={12} />
             </button>
           </div>
+          )}
         </div>
       </div>
     </div>
@@ -323,6 +326,19 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
     return map;
   }, [wbsActuals]);
 
+  // Phase order map — used by List/Plan/Board for consistent ordering
+  const phaseOrderMap = useMemo(() => {
+    const map = {};
+    (phases || []).forEach((p, idx) => {
+      const name = typeof p === 'string' ? p : p.name;
+      map[name] = idx;
+    });
+    return map;
+  }, [phases]);
+
+  const getPhaseOrder = (phaseName) =>
+    phaseName && phaseOrderMap[phaseName] !== undefined ? phaseOrderMap[phaseName] : 9999;
+
   // Tasks grouped by phase (for Board view) — MUST be at component level
   const tasksByPhase = useMemo(() => {
     const phaseNames = [
@@ -337,18 +353,41 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(task);
     });
+    // Sort within each phase by order field
+    Object.keys(grouped).forEach(key => {
+      grouped[key].sort((a, b) => (a.order || 0) - (b.order || 0));
+    });
     return grouped;
   }, [tasks, phases]);
 
-  // Date-sorted tasks (for Plan view) — MUST be at component level
+  // Consistently-sorted tasks for Plan view — phase order first, then order within phase
+  // Parents appear before their children to maintain hierarchy
   const sortedTasksByDate = useMemo(() => {
-    return [...tasks].sort((a, b) => {
-      if (!a.start_date && !b.start_date) return (a.order || 0) - (b.order || 0);
-      if (!a.start_date) return 1;
-      if (!b.start_date) return -1;
-      return new Date(a.start_date) - new Date(b.start_date);
+    const rootTasks = tasks.filter(t => !t.parent_id);
+    // Sort roots: phase order → then start_date → then order field
+    rootTasks.sort((a, b) => {
+      const phaseA = getPhaseOrder(a.phase_name);
+      const phaseB = getPhaseOrder(b.phase_name);
+      if (phaseA !== phaseB) return phaseA - phaseB;
+      // Within same phase, sort by start_date then order
+      if (a.start_date && b.start_date) {
+        const dateDiff = new Date(a.start_date) - new Date(b.start_date);
+        if (dateDiff !== 0) return dateDiff;
+      }
+      if (!a.start_date && b.start_date) return 1;
+      if (a.start_date && !b.start_date) return -1;
+      return (a.order || 0) - (b.order || 0);
     });
-  }, [tasks]);
+    // Flatten: parent then its children (sorted by order)
+    const result = [];
+    rootTasks.forEach(root => {
+      result.push(root);
+      const children = tasks.filter(t => t.parent_id === root.id);
+      children.sort((a, b) => (a.order || 0) - (b.order || 0));
+      result.push(...children);
+    });
+    return result;
+  }, [tasks, phases]);
 
   // Delay metrics calculation — MUST be at component level
   const delayMetrics = useMemo(() => {
@@ -598,6 +637,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
                     getSubTasks={getSubTasks}
                     getTaskDependencies={getTaskDependencies}
                     commentCount={commentCounts[task.id] || 0}
+                    readOnly={readOnly}
                   />
                 ))}
                 {colTasks.length === 0 && (
@@ -684,30 +724,36 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
             </td>
             <td className="py-2.5 px-3">
               {isMilestone ? (
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={task.milestone_completed || false}
-                    onChange={async () => {
-                      try {
-                        await fetch(`/api/wbs/tasks/${task.id}/complete-milestone?completed=${!task.milestone_completed}`, {
-                          method: 'PATCH',
-                          headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                          }
-                        });
-                        queryClient.invalidateQueries(['wbs', projectId]);
-                        toast.success(task.milestone_completed ? 'Milestone reopened' : 'Milestone completed!');
-                      } catch (err) {
-                        toast.error('Failed to update milestone');
-                      }
-                    }}
-                    className="w-4 h-4 text-purple-600 rounded border-purple-300 focus:ring-purple-500"
-                  />
+                readOnly ? (
                   <span className="text-xs text-gray-600">
                     {task.milestone_completed ? 'Complete' : 'Pending'}
                   </span>
-                </label>
+                ) : (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={task.milestone_completed || false}
+                      onChange={async () => {
+                        try {
+                          await fetch(`/api/wbs/tasks/${task.id}/complete-milestone?completed=${!task.milestone_completed}`, {
+                            method: 'PATCH',
+                            headers: {
+                              'Authorization': `Bearer ${localStorage.getItem('token')}`
+                            }
+                          });
+                          queryClient.invalidateQueries(['wbs', projectId]);
+                          toast.success(task.milestone_completed ? 'Milestone reopened' : 'Milestone completed!');
+                        } catch (err) {
+                          toast.error('Failed to update milestone');
+                        }
+                      }}
+                      className="w-4 h-4 text-purple-600 rounded border-purple-300 focus:ring-purple-500"
+                    />
+                    <span className="text-xs text-gray-600">
+                      {task.milestone_completed ? 'Complete' : 'Pending'}
+                    </span>
+                  </label>
+                )
               ) : (
                 <Badge className={`text-xs border ${statusCfg.className}`}>{statusCfg.label}</Badge>
               )}
@@ -726,6 +772,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
                 '—'
               )}
             </td>
+            {!readOnly && (
             <td className="py-2.5 px-3">
               <div className="opacity-0 group-hover:opacity-100 flex gap-1.5">
                 <button
@@ -742,6 +789,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
                 </button>
               </div>
             </td>
+            )}
           </tr>
           {hasChildren && isExpanded && renderTaskRows(subTasks, level + 1)}
         </React.Fragment>
@@ -750,7 +798,12 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
   };
 
   const renderListView = () => {
-    const rootTasks = tasks.filter(t => !t.parent_id);
+    const rootTasks = [...tasks.filter(t => !t.parent_id)].sort((a, b) => {
+      const phaseA = getPhaseOrder(a.phase_name);
+      const phaseB = getPhaseOrder(b.phase_name);
+      if (phaseA !== phaseB) return phaseA - phaseB;
+      return (a.order || 0) - (b.order || 0);
+    });
     return (
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <table className="w-full text-left">
@@ -762,13 +815,13 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Priority</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide text-right">Est. Hours</th>
-              <th className="py-2.5 px-3 w-20"></th>
+              {!readOnly && <th className="py-2.5 px-3 w-20"></th>}
             </tr>
           </thead>
           <tbody>
             {rootTasks.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-12 text-center text-gray-400 text-sm">
+                <td colSpan={readOnly ? 6 : 7} className="py-12 text-center text-gray-400 text-sm">
                   No tasks yet
                 </td>
               </tr>
@@ -809,7 +862,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide min-w-40">Actuals vs Est.</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Deps</th>
-              <th className="py-2.5 px-3 w-24"></th>
+              {!readOnly && <th className="py-2.5 px-3 w-24"></th>}
             </tr>
           </thead>
           <tbody>
@@ -957,6 +1010,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
                         </div>
                       ) : <span className="text-xs text-gray-300">—</span>}
                     </td>
+                    {!readOnly && (
                     <td className="py-2.5 px-3">
                       <div className="flex items-center gap-1">
                         {hasDependents && task.end_date && (
@@ -980,6 +1034,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
                         </div>
                       </div>
                     </td>
+                    )}
                   </tr>
                 );
               })
