@@ -713,3 +713,20 @@ Over Phases 1-5, added 14 new AI-powered capabilities:
 - routes/wbs.py 1500+ lines — candidate for splitting (P3)
 - Changing only assigned_to (not hours) triggers end_date recompute — correct but could surprise users (P3 doc)
 - recalculate endpoint could return skipped_count for better observability (P3)
+
+## Bug Fix: Allocations Page White Page Crash on Update (Jul 2026)
+
+### Root Cause
+Two-pronged failure:
+1. **Frontend sent `hours: ""`** (empty string) when allocation_type was "percentage" → Pydantic rejected with 422 validation error (detail = array of `{type, loc, msg, input, url}` objects)
+2. **`toast.error()` received the error array** of objects instead of a string → React crashed: "Objects are not valid as a React child"
+
+### Fix
+- `handleSubmit` now strips empty/null `hours` from form data before sending (`delete cleanData.hours`)
+- All three mutation `onError` handlers (create, update, delete) now safely extract `.msg` from Pydantic error detail arrays: `Array.isArray(detail) ? detail.map(d => d.msg).join('; ') : detail`
+- Files: `Allocations.js`
+
+### Testing
+- 4/4 CRUD operations pass (iteration_49): update-no-change, update-percentage, create, delete
+- 0 console errors, 0 React child errors
+
