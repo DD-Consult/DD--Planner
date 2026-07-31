@@ -396,7 +396,11 @@ const Allocations = () => {
       setIsDialogOpen(false);
       resetForm();
     },
-    onError: (err) => toast.error(err.response?.data?.detail || 'Failed to create'),
+    onError: (err) => {
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map(d => d.msg || JSON.stringify(d)).join('; ') : 'Failed to create';
+      toast.error(msg);
+    },
   });
 
   const updateMutation = useMutation({
@@ -410,7 +414,11 @@ const Allocations = () => {
       setIsDialogOpen(false);
       resetForm();
     },
-    onError: (err) => toast.error(err.response?.data?.detail || 'Failed to update'),
+    onError: (err) => {
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map(d => d.msg || JSON.stringify(d)).join('; ') : 'Failed to update';
+      toast.error(msg);
+    },
   });
 
   const deleteMutation = useMutation({
@@ -422,7 +430,11 @@ const Allocations = () => {
       queryClient.invalidateQueries(['portfolioHealthScores']); // Cross-page
       toast.success('Allocation deleted');
     },
-    onError: (err) => toast.error(err.response?.data?.detail || 'Failed to delete'),
+    onError: (err) => {
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map(d => d.msg || JSON.stringify(d)).join('; ') : 'Failed to delete';
+      toast.error(msg);
+    },
   });
 
   const resetForm = () => {
@@ -451,10 +463,15 @@ const Allocations = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    // Clean form data: convert empty strings to null for optional numeric fields
+    const cleanData = { ...formData };
+    if (cleanData.hours === '' || cleanData.hours === null || cleanData.hours === undefined) {
+      delete cleanData.hours;
+    }
     if (editingAllocation) {
-      updateMutation.mutate({ id: editingAllocation.id, data: formData });
+      updateMutation.mutate({ id: editingAllocation.id, data: cleanData });
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate(cleanData);
     }
   };
 

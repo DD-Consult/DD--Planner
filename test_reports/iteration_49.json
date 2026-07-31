@@ -1,0 +1,31 @@
+{
+  "summary": "Verified fix for Allocations page white-page-of-doom bug. Tested Update (no changes), Update (percentage change 70→80), Create new allocation, and Delete allocation as super admin (admin@test.com). All operations completed without crashing; correct toasts shown; page state preserved with all allocation rows visible.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix in Allocations.js is correct: handleSubmit strips empty hours; all mutation onError handlers safely extract .msg from Pydantic error arrays. No regressions observed.",
+    "Minor: leftover TEST_AF_* seed allocations from previous iterations remain in DB (visible as TEST_AF_089aee, TEST_AF_09a956). Consider cleanup fixture."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (not tested)", "frontend": "100%"},
+  "test_credentials": "admin@test.com / admin123",
+  "seed_data_creation": "One new allocation was created during Create test (test3) and one allocation was deleted during Delete test (test4). Percentage on Alice Johnson/Website Redesign changed from 70% to 80%.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Allocations CRUD as super admin is stable. Bug fixed: empty hours no longer sent as '' causing 422; error toast no longer receives Pydantic error object array. Verified 0 console errors, 0 page errors, no 'Objects are not valid as a React child' warnings.",
+  "test_results": {
+    "test1_update_no_change_no_crash": "PASS - toast 'Allocation updated' shown, page intact",
+    "test2_update_percentage_70_to_80": "PASS - 80% reflected in list",
+    "test3_create_allocation": "PASS - toast 'Allocation created' shown",
+    "test4_delete_allocation": "PASS - toast 'Allocation deleted' shown",
+    "console_errors": 0,
+    "page_errors": 0,
+    "react_child_error": false
+  }
+}
