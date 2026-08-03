@@ -17,13 +17,20 @@ from models.schemas import (
 )
 from auth.dependencies import get_current_user, require_admin
 from utils import serialize_doc
-from utils import compute_task_end_date
+from utils import compute_task_end_date, user_leads_project
 from services.ai_providers import (
     get_ai_config, call_openai_api, call_gemini_api, call_emergent_fallback,
 )
 from services.ai_instructions import get_instructions_for_prompt
 
 router = APIRouter()
+
+
+async def _require_admin_or_project_lead(current_user: dict, project_id: str):
+    """Raise 403 unless user is admin/super_admin OR leads the given project."""
+    if await user_leads_project(current_user, project_id):
+        return
+    raise HTTPException(status_code=403, detail="Admin or project lead access required")
 
 
 # ============================================================
@@ -207,9 +214,10 @@ async def get_wbs_budget_status(project_id: str, current_user: dict = Depends(ge
 
 
 @router.post("/api/projects/{project_id}/wbs/recalculate-dates")
-async def recalculate_wbs_dates(project_id: str, current_user: dict = Depends(require_admin)):
+async def recalculate_wbs_dates(project_id: str, current_user: dict = Depends(get_current_user)):
     """Retroactively recalculate end_date for all non-milestone tasks in a project
     based on estimated_hours + resource allocation."""
+    await _require_admin_or_project_lead(current_user, project_id)
     cursor = wbs_tasks_collection.find({"project_id": project_id})
     tasks = await cursor.to_list(length=10000)
     updated_count = 0
@@ -238,7 +246,7 @@ async def create_wbs_task(
     project_id: str,
     task: WBSTaskCreate,
     response: Response,
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
 ):
     """Create a new WBS task or milestone with budget validation.
     
@@ -246,6 +254,7 @@ async def create_wbs_task(
     - estimated_hours is forced to 0
     - start_date and end_date are set to milestone_date
     """
+    await _require_admin_or_project_lead(current_user, project_id)
     task_doc = task.dict()
     task_doc["project_id"] = project_id
     task_doc["id"] = str(uuid_module.uuid4())
@@ -324,7 +333,7 @@ async def update_wbs_task(
     task_id: str,
     update: WBSTaskUpdate,
     response: Response,
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
 ):
     """Update a WBS task.
 
@@ -345,6 +354,8 @@ async def update_wbs_task(
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    await _require_admin_or_project_lead(current_user, task.get("project_id", ""))
 
     before = dict(task)  # shallow copy for diff
 
@@ -497,7 +508,7 @@ async def _auto_cascade_dependencies(task_id_str: str, end_date_str: str) -> int
 
 
 @router.delete("/api/wbs/tasks/{task_id}")
-async def delete_wbs_task(task_id: str, current_user: dict = Depends(require_admin)):
+async def delete_wbs_task(task_id: str, current_user: dict = Depends(get_current_user)):
     """Delete a WBS task and all recursive children."""
     task = None
     try:
@@ -510,6 +521,8 @@ async def delete_wbs_task(task_id: str, current_user: dict = Depends(require_adm
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    await _require_admin_or_project_lead(current_user, task.get("project_id", ""))
 
     task_obj_id_str = str(task["_id"])
     project_id_for_log = str(task.get("project_id") or "")
@@ -553,7 +566,7 @@ async def delete_wbs_task(task_id: str, current_user: dict = Depends(require_adm
 async def complete_milestone(
     task_id: str,
     completed: bool = True,
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
 ):
     """Mark a milestone as completed or uncompleted.
     
@@ -571,6 +584,8 @@ async def complete_milestone(
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    await _require_admin_or_project_lead(current_user, task.get("project_id", ""))
     
     if not task.get("is_milestone"):
         raise HTTPException(status_code=400, detail="This task is not a milestone")
@@ -609,7 +624,7 @@ async def complete_milestone(
 async def cascade_task_dates(
     task_id: str,
     new_end_date: Optional[str] = Query(None),
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
 ):
     """Cascade end dates to dependent tasks."""
     task = None
@@ -620,6 +635,8 @@ async def cascade_task_dates(
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    await _require_admin_or_project_lead(current_user, task.get("project_id", ""))
 
     end_date_str = new_end_date or task.get("end_date")
     if not end_date_str:
@@ -708,7 +725,7 @@ async def _find_wbs_task(task_id: str):
 @router.post("/api/wbs/tasks/{task_id}/set-baseline")
 async def set_wbs_task_baseline(
     task_id: str,
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
 ):
     """Snapshot the task's CURRENT start/end dates as its baseline (planned)
     schedule. Used both to set an initial baseline and to re-baseline after a
@@ -716,6 +733,8 @@ async def set_wbs_task_baseline(
     task = await _find_wbs_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    await _require_admin_or_project_lead(current_user, task.get("project_id", ""))
 
     new_baseline_start = task.get("start_date")
     new_baseline_end = task.get("end_date")
@@ -753,10 +772,11 @@ async def set_wbs_task_baseline(
 @router.post("/api/projects/{project_id}/wbs/set-baseline")
 async def set_project_wbs_baseline(
     project_id: str,
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
 ):
     """Snapshot ALL tasks' current start/end dates as their baseline in one
     action. Convenient after initial planning. Audit-logged at project level."""
+    await _require_admin_or_project_lead(current_user, project_id)
     cursor = wbs_tasks_collection.find({"project_id": project_id})
     tasks = await cursor.to_list(length=10000)
 
@@ -955,9 +975,10 @@ async def get_wbs_tasks_for_timesheet(
 @router.post("/api/ai/generate-wbs")
 async def generate_wbs(
     request: AIGenerateWBSRequest,
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
 ):
     """AI-generate a WBS for a project. Returns preview (does NOT save to DB)."""
+    await _require_admin_or_project_lead(current_user, request.project_id)
     # Load project
     project = await projects_collection.find_one({"_id": ObjectId(request.project_id)})
     if not project:
@@ -1140,10 +1161,11 @@ JSON FORMAT:
 @router.post("/api/ai/generate-wbs/save")
 async def save_generated_wbs(
     request: SaveGeneratedWBSRequest,
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
 ):
     """Save AI-generated WBS tasks to the database."""
     project_id = request.project_id
+    await _require_admin_or_project_lead(current_user, project_id)
     tasks_input = request.tasks
     plan_start_date = request.start_date
 
@@ -1391,7 +1413,7 @@ async def get_project_wbs_summary(
 @router.post("/api/projects/{project_id}/sync-dates-from-wbs")
 async def sync_project_dates_from_wbs(
     project_id: str,
-    current_user: dict = Depends(require_admin)
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Manually sync project and phase end dates based on WBS task end dates.
@@ -1400,6 +1422,7 @@ async def sync_project_dates_from_wbs(
     - Last phase end_date
     Returns a summary of changes made.
     """
+    await _require_admin_or_project_lead(current_user, project_id)
     # Get project
     project = await projects_collection.find_one({"_id": ObjectId(project_id)})
     if not project:
