@@ -447,7 +447,16 @@ async def update_wbs_task(
 
 async def _auto_cascade_dependencies(task_id_str: str, end_date_str: str) -> int:
     """Internal helper used by update_wbs_task to auto-push dependent task
-    start dates forward. Same recursive logic as the manual cascade endpoint."""
+    start dates forward when a predecessor's end date changes.
+    
+    For each dependent task:
+    - new start = predecessor end + 1 business day (skips weekends)
+    - new end = recomputed from estimated_hours + allocation if available,
+      otherwise preserves original business-day duration
+    - Recursively cascades to further dependents
+    """
+    from utils import snap_to_weekday, count_business_days, add_business_days
+
     visited: set = set()
     updated_count = 0
 
@@ -463,38 +472,48 @@ async def _auto_cascade_dependencies(task_id_str: str, end_date_str: str) -> int
 
         for dep_task in dependents:
             try:
-                end_d = datetime.strptime(from_end_date, "%Y-%m-%d").date()
-                new_start = (end_d + timedelta(days=1)).isoformat()
-                
-                # Calculate and preserve task duration
-                old_start = dep_task.get("start_date")
-                old_end = dep_task.get("end_date")
+                end_d = datetime.strptime(from_end_date[:10], "%Y-%m-%d").date()
+                # Next business day after predecessor ends
+                new_start_d = snap_to_weekday(end_d + timedelta(days=1))
+                new_start = new_start_d.isoformat()
+
+                # Recompute end date from estimated hours + allocation
+                est_hours = dep_task.get("estimated_hours") or 0
                 new_end = None
-                
-                if old_start and old_end:
-                    try:
-                        old_start_d = datetime.strptime(old_start, "%Y-%m-%d").date()
-                        old_end_d = datetime.strptime(old_end, "%Y-%m-%d").date()
-                        duration_days = (old_end_d - old_start_d).days
-                        
-                        # Calculate new end date preserving duration
-                        new_start_d = datetime.strptime(new_start, "%Y-%m-%d").date()
-                        new_end = (new_start_d + timedelta(days=duration_days)).isoformat()
-                    except Exception:
-                        pass
+                if est_hours > 0:
+                    new_end = await compute_task_end_date(
+                        new_start, est_hours,
+                        dep_task.get("assigned_to"),
+                        dep_task.get("project_id"),
+                    )
+
+                # Fallback: preserve original business-day duration
+                if not new_end:
+                    old_start = dep_task.get("start_date")
+                    old_end = dep_task.get("end_date")
+                    if old_start and old_end:
+                        try:
+                            old_start_d = datetime.strptime(str(old_start)[:10], "%Y-%m-%d").date()
+                            old_end_d = datetime.strptime(str(old_end)[:10], "%Y-%m-%d").date()
+                            biz_duration = count_business_days(old_start_d, old_end_d)
+                            if biz_duration > 1:
+                                new_end = add_business_days(new_start_d, biz_duration - 1).isoformat()
+                            else:
+                                new_end = new_start
+                        except Exception:
+                            pass
             except Exception:
                 continue
 
             dep_id_str = str(dep_task["_id"])
-            
-            # Update both start and end dates to preserve duration
+
             update_fields = {
                 "start_date": new_start,
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
             if new_end:
                 update_fields["end_date"] = new_end
-            
+
             await wbs_tasks_collection.update_one(
                 {"_id": dep_task["_id"]},
                 {"$set": update_fields}
@@ -643,65 +662,9 @@ async def cascade_task_dates(
         raise HTTPException(status_code=400, detail="No end date specified")
 
     task_id_str = str(task["_id"])
-    updated_count = 0
-    visited: set = set()
 
-    async def _cascade(from_task_id_str: str, from_end_date: str):
-        nonlocal updated_count
-        if from_task_id_str in visited:
-            return
-        visited.add(from_task_id_str)
-
-        # Find tasks that list from_task_id_str in their dependencies
-        dependents = await wbs_tasks_collection.find(
-            {"dependencies": from_task_id_str}
-        ).to_list(length=1000)
-
-        for dep_task in dependents:
-            try:
-                end_d = datetime.strptime(from_end_date, "%Y-%m-%d").date()
-                new_start = (end_d + timedelta(days=1)).isoformat()
-                
-                # Calculate and preserve task duration
-                old_start = dep_task.get("start_date")
-                old_end = dep_task.get("end_date")
-                new_end = None
-                
-                if old_start and old_end:
-                    try:
-                        old_start_d = datetime.strptime(old_start, "%Y-%m-%d").date()
-                        old_end_d = datetime.strptime(old_end, "%Y-%m-%d").date()
-                        duration_days = (old_end_d - old_start_d).days
-                        
-                        # Calculate new end date preserving duration
-                        new_start_d = datetime.strptime(new_start, "%Y-%m-%d").date()
-                        new_end = (new_start_d + timedelta(days=duration_days)).isoformat()
-                    except Exception:
-                        pass
-            except Exception:
-                continue
-
-            dep_id_str = str(dep_task["_id"])
-            
-            # Update both start and end dates to preserve duration
-            update_fields = {
-                "start_date": new_start,
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }
-            if new_end:
-                update_fields["end_date"] = new_end
-            
-            await wbs_tasks_collection.update_one(
-                {"_id": dep_task["_id"]},
-                {"$set": update_fields}
-            )
-            updated_count += 1
-
-            # Recurse with this dependent's new end_date
-            dep_end = new_end if new_end else dep_task.get("end_date", from_end_date)
-            await _cascade(dep_id_str, dep_end)
-
-    await _cascade(task_id_str, end_date_str)
+    # Reuse the same improved cascade logic
+    updated_count = await _auto_cascade_dependencies(task_id_str, str(end_date_str)[:10])
 
     return {"message": f"Cascaded dates to {updated_count} tasks", "updated_count": updated_count}
 
