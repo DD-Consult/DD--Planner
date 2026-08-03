@@ -751,6 +751,26 @@ Three issues compounding:
 - Amrit (50% std_cap): 60% capacity (was showing 120%)
 - Bhavika (100% std_cap): 83% with hours-type allocation correctly showing 22h/wk
 
+
+## Bug Fix: Project Lead WBS Permissions (Aug 2026)
+
+### Root Cause
+Frontend set `readOnly={!isAdmin && !isLead}` on WBSView — leads SAW the full edit UI — but all 11 WBS write endpoints used `require_admin`, so every action returned 403.
+
+### Fix
+- Created `_require_admin_or_project_lead(current_user, project_id)` helper in `routes/wbs.py`
+- Changed all 11 WBS write endpoints from `require_admin` to `get_current_user` + the helper:
+  - `create_wbs_task`, `update_wbs_task`, `delete_wbs_task`
+  - `complete_milestone`, `cascade_task_dates`
+  - `set_wbs_task_baseline`, `set_project_wbs_baseline`
+  - `generate_wbs`, `save_generated_wbs`
+  - `sync_project_dates_from_wbs`, `recalculate_wbs_dates`
+- Non-lead resources still get 403; admins unaffected
+- Files: `routes/wbs.py`
+
+### Testing
+- 12/12 backend tests pass (iteration_51): lead create/update/delete tasks, lead set-baseline, lead sync-dates, non-lead 403, admin full access
+
 ### Testing
 - 5/5 backend pytest + 100% frontend verification pass (iteration_50)
 

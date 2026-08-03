@@ -4,9 +4,9 @@
 - Email: `don@ddconsult.tech`
 - Password: `@Ddplanner2026`
 
-## Legacy Test Accounts (from seed, may not work after prod data migration)
-- Email: `admin@test.com` / Password: `admin123`
-- Email: `riley@test.com` / Password: `riley123`
+## Resource Accounts (set by testing agent for lead testing)
+- Email: `dhruti@ddconsult.tech` / Password: `Test@2026` (leads ServAI project)
+- Email: `akshaya@ddconsult.tech` / Password: `Test@2026` (non-lead resource)
 
 ## Notes
 - Production data has been migrated from MongoDB Atlas to this preview environment
