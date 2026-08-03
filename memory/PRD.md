@@ -728,5 +728,31 @@ Two-pronged failure:
 
 ### Testing
 - 4/4 CRUD operations pass (iteration_49): update-no-change, update-percentage, create, delete
+
+## Bug Fix: Allocation Capacity Calculation Incorrect (Aug 2026)
+
+### Data Migration
+- Migrated production data from MongoDB Atlas (resource_planner) to preview environment
+- 9 resources, 134 allocations, 32 projects, 120 WBS tasks, 535 timesheets
+
+### Root Cause
+Three issues compounding:
+1. **`GET /api/allocations` never computed `weekly_hours`** — returned `None` for every allocation. The frontend had no server-computed hours to work with.
+2. **Frontend used raw `alloc.percentage` for hours-type allocations** — but the stored `percentage` for hours-type allocations was a stale back-computed value (e.g., 65% stored for 15 total hours over 8 weeks, which is really ~1.8h/wk = ~4.5%)
+3. **Capacity formula double-counted `standard_capacity`**: `(rawPctSum / stdCap) * 100` — e.g., Amrit (50% std_cap) with 60% raw allocation showed 120% capacity instead of 60%
+
+### Fix
+- **Backend**: `GET /api/allocations` now computes `weekly_hours` for every allocation using the canonical `allocation_weekly_hours(alloc, std_cap)` function. Added `weekly_hours: Optional[float]` to `AllocationResponse` schema.
+- **Frontend**: `getCapacityPct()` now uses `sum(weekly_hours) / maxWeeklyHours * 100` instead of `(rawPct / stdCap) * 100`. Same fix applied to timeline heatmap.
+- Files: `routes/allocations.py`, `models/schemas.py`, `Allocations.js`
+
+### Verified Results (production data)
+- Akshaya (60% std_cap): 80% capacity (was wrong before)
+- Amrit (50% std_cap): 60% capacity (was showing 120%)
+- Bhavika (100% std_cap): 83% with hours-type allocation correctly showing 22h/wk
+
+### Testing
+- 5/5 backend pytest + 100% frontend verification pass (iteration_50)
+
 - 0 console errors, 0 React child errors
 
