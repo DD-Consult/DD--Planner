@@ -769,6 +769,26 @@ Frontend set `readOnly={!isAdmin && !isLead}` on WBSView — leads SAW the full 
 - Files: `routes/wbs.py`
 
 ### Testing
+
+## Feature: Improved WBS Dependency Date Cascade (Aug 2026)
+
+### What Changed
+The auto-cascade logic (triggered when a predecessor's end_date changes) had three bugs:
+1. **Calendar days**: Duration was preserved using calendar days, so weekends counted
+2. **No weekday snapping**: New start could land on Saturday/Sunday
+3. **No allocation-aware end_date**: Preserved raw calendar duration instead of recomputing from estimated_hours
+
+### Fix
+- **New start** = predecessor end + 1 business day (snaps weekends to Monday via `snap_to_weekday`)
+- **New end** = recomputed via `compute_task_end_date(start, est_hours, resource, project)` if estimated_hours > 0
+- **Fallback**: If no estimated_hours, preserves original business-day duration via `count_business_days`
+- **Transitive**: Cascades through entire A→B→C→... chains
+- **Manual cascade endpoint** now delegates to same logic (no duplicate code)
+- Files: `routes/wbs.py` (_auto_cascade_dependencies rewritten, cascade_task_dates simplified)
+
+### Testing
+- 6/6 backend tests pass (iteration_52): Friday→Monday snap, transitive A→B→C, biz-day duration preservation, manual endpoint parity, X-Cascade-Updated header, no-cascade on non-end-date updates
+
 - 12/12 backend tests pass (iteration_51): lead create/update/delete tasks, lead set-baseline, lead sync-dates, non-lead 403, admin full access
 
 ### Testing
