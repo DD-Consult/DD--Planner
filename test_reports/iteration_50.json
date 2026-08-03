@@ -1,0 +1,38 @@
+{
+  "summary": "Verified allocation capacity calculation fix. Backend GET /api/allocations now returns weekly_hours for every allocation. Frontend correctly computes capacity as sum(weekly_hours)/max_weekly_hours. Akshaya=80%, Amrit=60% (not 120%), Bhavika=83% with Website Migration hours-type correctly showing 22h/wk. Summary stats: 5 Available / 2 At Capacity / 0 Over. No white-page crash on edit modal.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Allocations page", "issues": ["For hours-type allocations, the row still shows the stored raw 'percentage' label (e.g., 55%) next to the correct '(22.0h/wk)' — the percentage label is misleading for hours-type allocations. Consider hiding the % or showing 'Fixed hours' badge instead when allocation_type='hours'."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration50_allocation_weekly_hours.py",
+    "/app/test_reports/pytest/iteration50.xml"
+  ],
+  "action_items": [
+    "(Optional/minor) For hours-type allocations on Allocations page, hide or clarify the raw stored percentage label since it's not meaningful once weekly_hours are correctly derived."
+  ],
+  "critical_code_review_comments": [
+    "Backend fix in routes/allocations.py line 84-86 correctly calls allocation_weekly_hours(alloc, std_cap) using the canonical util. Rounded to 2 decimals.",
+    "Frontend Allocations.js getCapacityPct (lines 355-361) correctly uses sum(weekly_hours)/maxWeeklyHours. Timeline heatmap (line 291-294) also uses weekly_hours. Fix applied consistently.",
+    "allocation_weekly_hours() in utils.py handles both percentage and hours types canonically; percentage scales by standard_capacity, hours divides total_hours by weeks."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (5/5 pytest)", "frontend": "100%"},
+  "test_credentials": "don@ddconsult.tech / @Ddplanner2026",
+  "seed_data_creation": "None (read-only tests)",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Allocation capacity fix verified end-to-end. Backend returns weekly_hours; frontend uses it. Amrit no longer shows 120%, Akshaya shows 80%, Bhavika hours-type correctly reflected in weekly hours. All 5 pytest tests passed. UI verified via Playwright with visual confirmation. Only minor cosmetic note: hours-type allocations still display the back-computed percentage next to weekly hours which can be confusing.",
+  "test_results": {
+    "backend_weekly_hours_present": "PASS",
+    "akshaya_80pct": "PASS (19.2h / 24h)",
+    "amrit_60pct_no_double_count": "PASS (12h / 20h, was showing 120% before fix)",
+    "bhavika_hours_type_weekly_hours": "PASS (Website Migration 22h/wk from 22 total hours)",
+    "summary_stats": "5 Available / 2 At Capacity / 0 Over",
+    "allocation_edit_modal_no_crash": "PASS"
+  }
+}

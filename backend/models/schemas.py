@@ -243,6 +243,7 @@ class AllocationResponse(BaseModel):
     end_date: str
     percentage: int
     hours: Optional[int] = None
+    weekly_hours: Optional[float] = None
     allocation_type: Optional[str] = "percentage"
     role: Optional[str] = None
     actual_percentage: Optional[int] = None

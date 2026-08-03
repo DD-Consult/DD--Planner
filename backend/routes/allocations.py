@@ -14,7 +14,7 @@ from models.schemas import (
     RiskResponse, UserRole, AllocationValidateRequest,
 )
 from auth.dependencies import get_current_user, require_admin
-from utils import serialize_doc, is_timesheet_update_allowed, get_next_allowed_timesheet_day, HOURS_PER_WEEK
+from utils import serialize_doc, is_timesheet_update_allowed, get_next_allowed_timesheet_day, HOURS_PER_WEEK, allocation_weekly_hours
 
 router = APIRouter()
 
@@ -53,9 +53,9 @@ async def get_allocations(current_user: dict = Depends(get_current_user)):
             except Exception:
                 pass
         if obj_ids:
-            res_cursor = resources_collection.find({"_id": {"$in": obj_ids}}, {"name": 1, "role": 1})
+            res_cursor = resources_collection.find({"_id": {"$in": obj_ids}}, {"name": 1, "role": 1, "standard_capacity": 1})
             async for r in res_cursor:
-                resource_map[str(r["_id"])] = {"name": r.get("name", ""), "role": r.get("role", "")}
+                resource_map[str(r["_id"])] = {"name": r.get("name", ""), "role": r.get("role", ""), "standard_capacity": r.get("standard_capacity", 100)}
 
     project_map = {}
     if project_ids:
@@ -81,6 +81,9 @@ async def get_allocations(current_user: dict = Depends(get_current_user)):
         doc["resource_role"] = r_info.get("role", "")
         doc["project_name"] = p_info.get("name", "Unknown")
         doc["client_name"] = p_info.get("client_name", "")
+        # Compute weekly_hours using canonical formula
+        std_cap = r_info.get("standard_capacity", 100) or 100
+        doc["weekly_hours"] = round(allocation_weekly_hours(alloc, std_cap), 2)
         result.append(doc)
     return result
 

@@ -288,9 +288,10 @@ const Allocations = () => {
           if (!allocStart || !allocEnd) return false;
           return !(isAfter(allocStart, week.end) || isBefore(allocEnd, week.start));
         });
-        const rawPct = activeAllocs.reduce((sum, a) => sum + (a.percentage || 0), 0);
+        const usedHours = activeAllocs.reduce((sum, a) => sum + (a.weekly_hours || 0), 0);
         const cap = resource.standard_capacity && resource.standard_capacity > 0 ? resource.standard_capacity : 100;
-        const totalPct = Math.round((rawPct / cap) * 100);
+        const maxHours = (cap / 100) * 40;
+        const totalPct = maxHours > 0 ? Math.round((usedHours / maxHours) * 100) : 0;
         return { allocations: activeAllocs, totalPct };
       });
       return { ...resource, weeklyAllocations };
@@ -344,14 +345,19 @@ const Allocations = () => {
   const getProjectName = (alloc) => alloc.project_name || 'Unknown';
   const getProjectClient = (alloc) => alloc.client_name || '';
 
+  // Sum weekly hours from API-computed values (handles hours-type allocations correctly)
+  const getTotalWeeklyHours = (allocs) =>
+    allocs.reduce((sum, a) => sum + (a.weekly_hours || 0), 0);
+
   const getTotalPercentage = (allocs) =>
     allocs.reduce((sum, a) => sum + (a.percentage || 0), 0);
 
-  // Capacity relative to resource's standard_capacity
+  // Capacity relative to resource's standard_capacity, using weekly_hours for accuracy
   const getCapacityPct = (resource) => {
-    const rawPct = getTotalPercentage(resource.allocations);
     const cap = resource.standard_capacity && resource.standard_capacity > 0 ? resource.standard_capacity : 100;
-    return Math.round((rawPct / cap) * 100);
+    const maxWeeklyHours = (cap / 100) * 40;
+    const usedHours = getTotalWeeklyHours(resource.allocations);
+    return maxWeeklyHours > 0 ? Math.round((usedHours / maxWeeklyHours) * 100) : 0;
   };
 
   const getUtilColor = (total) => {
@@ -515,8 +521,9 @@ const Allocations = () => {
             {' - '}
             {alloc.end_date && format(new Date(alloc.end_date), 'MMM d, yyyy')}
           </div>
-          <div className="w-16 text-right">
-            <span className="font-semibold text-sm">{formatAllocation(alloc.percentage, resourceCapacity)}</span>
+          <div className="w-20 text-right">
+            <span className="font-semibold text-sm">{alloc.percentage}%</span>
+            <div className="text-xs text-[#667085]">({(alloc.weekly_hours || 0).toFixed(1)}h/wk)</div>
           </div>
           {isAdmin && (
             <div className="flex items-center gap-1">
