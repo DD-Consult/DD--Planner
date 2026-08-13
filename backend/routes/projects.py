@@ -27,9 +27,16 @@ router = APIRouter()
 @router.get("/api/projects/all-active-summary")
 async def get_all_active_projects_summary(current_user: dict = Depends(get_current_user)):
     """Return minimal project list (id, name, client, phases) for timesheet entry.
-    Any authenticated user can see active projects — needed for manual timesheet entries."""
+    Scoped to user's allowed projects for resource/contractor roles."""
+    from utils import get_user_allowed_project_ids
+    allowed_pids = await get_user_allowed_project_ids(current_user)
+
+    query = {"status": {"$in": ["Active", "Pipeline"]}}
+    if allowed_pids is not None:
+        query["_id"] = {"$in": [ObjectId(pid) for pid in allowed_pids]}
+
     cursor = projects_collection.find(
-        {"status": {"$in": ["Active", "Pipeline"]}},
+        query,
         {"_id": 1, "name": 1, "client_name": 1, "phases": 1, "status": 1}
     ).sort("name", 1)
     projects = await cursor.to_list(length=500)

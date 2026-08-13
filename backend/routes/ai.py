@@ -274,13 +274,18 @@ async def ai_command(command: AICommandRequest, current_user: dict = Depends(get
     import json
     import httpx
     
-    # Fetch context: active resources and projects
+    # Fetch context: active resources and projects (scoped by role)
+    from utils import get_user_allowed_project_ids
+    allowed_pids = await get_user_allowed_project_ids(current_user)
+
     resources_cursor = resources_collection.find({"active": {"$ne": False}})
     resources = await resources_cursor.to_list(length=1000)
     resource_names = [r["name"] for r in resources]
     
     projects_cursor = projects_collection.find({"status": {"$in": ["Active", "Pipeline"]}})
     projects = await projects_cursor.to_list(length=100)
+    if allowed_pids is not None:
+        projects = [p for p in projects if str(p["_id"]) in allowed_pids]
     project_info = [f"{p['name']} (Client: {p.get('client_name', 'Unknown')})" for p in projects]
     
     # System prompt for intent parsing - EXPANDED with more capabilities

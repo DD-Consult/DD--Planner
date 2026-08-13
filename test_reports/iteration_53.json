@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 53: Verified project-scoping fixes across 4 previously-leaking endpoints + /api/projects + AI command + project-detail 403. All 9 backend tests pass. Dhruti (resource) correctly sees 5 projects; admin still sees 24 active / 32 total.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration53_project_scoping.py",
+    "/app/test_reports/pytest/iteration53.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "get_user_allowed_project_ids() in utils.py is well-designed: returns None for admin (unrestricted) and set[str] for others — clean sentinel pattern. Reused across 4 endpoints (projects, insights, reports, ai).",
+    "AI /api/ai/command currently falls back to 'emergent_fallback' provider returning intent JSON rather than a real project list. This masks true content-leak testing — recommend adding a unit-level assertion that the AI context payload (before LLM) contains only allowed_pids. The scoping code at ai.py:278-288 is in place, but end-to-end verification is limited when primary LLM is unavailable.",
+    "portfolio/health-scores returns {projects, total_count, summary} — total_count correctly reflects scoped count (5 for Dhruti vs 24 for admin), confirming filter applied before aggregation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration53_project_scoping.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "N/A"},
+  "test_credentials": "don@ddconsult.tech / @Ddplanner2026 (admin); dhruti@ddconsult.tech / Test@2026 (resource, 5 projects); akshaya@ddconsult.tech / Test@2026 (resource non-lead). Login is form-encoded at POST /api/auth/login.",
+  "seed_data_creation": "None - used existing production-migrated data (32 projects / 24 active / 9 resources).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iteration53_project_scoping.py verifies all 4 scoped endpoints. Numbers observed: admin=24 active/32 total projects, Dhruti=5 allocated+led. Non-allocated project 69ccce9bcb339343050d1d6d (QRIDA AWS POC) returns 403 for Dhruti. AI /api/ai/command payload key is 'query' (not 'message'). Health-scores response shape: {projects: [...], total_count, summary}. PvA overview response: {projects: [...]}. Run: export $(grep -v '^#' /app/frontend/.env | xargs) && pytest backend/tests/test_iteration53_project_scoping.py -v -s",
+  "rca of the issue": "N/A — verification-only iteration; all scoping fixes working as intended."
+}

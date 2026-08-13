@@ -174,6 +174,32 @@ async def user_leads_project(current_user: dict, project_id: str) -> bool:
     return bool(project and str(project.get("project_lead_id") or "") == str(resource["_id"]))
 
 
+async def get_user_allowed_project_ids(current_user: dict):
+    """Return the set of project ID strings a user is allowed to see, or None if unrestricted (admin).
+    
+    - admin/super_admin → None (all projects)
+    - client → allowed_project_ids from user record
+    - resource/contractor → allocated projects + led projects
+    """
+    from database import allocations_collection, projects_collection
+    role = (current_user.get("role") or "").lower()
+    if role in ("admin", "super_admin"):
+        return None  # unrestricted
+    if role == "client":
+        return set(str(pid) for pid in current_user.get("allowed_project_ids", []))
+    # resource / contractor
+    resource = await find_user_resource(current_user)
+    if not resource:
+        return set()  # no resource link → no projects
+    rid = str(resource["_id"])
+    allocs = await allocations_collection.find({"resource_id": rid}).to_list(length=1000)
+    pids = {a["project_id"] for a in allocs}
+    lead_projects = await projects_collection.find({"project_lead_id": rid}).to_list(length=500)
+    pids |= {str(p["_id"]) for p in lead_projects}
+    return pids
+
+
+
 def calculate_weekly_hours(percentage: int, allocation_start: date, allocation_end: date, week_start: date, week_end: date) -> float:
     """Calculate planned hours for a specific week based on allocation percentage.
     Uses 5-day business week (Mon-Fri) for all calculations."""

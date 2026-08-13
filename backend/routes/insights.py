@@ -44,11 +44,16 @@ async def get_portfolio_health(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Get health scores for ALL active projects.
+    Get health scores for active projects (scoped by user role).
     Returns list of health scores sorted by risk (lowest scores first).
     """
     try:
+        from utils import get_user_allowed_project_ids
+        allowed_pids = await get_user_allowed_project_ids(current_user)
+
         health_scores = await get_portfolio_health_scores()
+        if allowed_pids is not None:
+            health_scores = [h for h in health_scores if h.get("project_id") in allowed_pids]
         return {
             "projects": health_scores,
             "total_count": len(health_scores),

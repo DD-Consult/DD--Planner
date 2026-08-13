@@ -787,6 +787,32 @@ The auto-cascade logic (triggered when a predecessor's end_date changes) had thr
 - Files: `routes/wbs.py` (_auto_cascade_dependencies rewritten, cascade_task_dates simplified)
 
 ### Testing
+
+## Security Fix: Resource/Contractor Project Data Scoping (Aug 2026)
+
+### Audit Findings
+4 endpoints leaked all-project data to resource/contractor users:
+1. `POST /api/ai/command` — AI context included ALL active projects
+2. `GET /api/projects/all-active-summary` — returned ALL active projects (for timesheet entry)
+3. `GET /api/insights/portfolio/health-scores` — ALL projects' health scores
+4. `GET /api/reports/planned-vs-actual/overview` — ALL projects' budget data
+
+### Fix
+- Created shared `get_user_allowed_project_ids(current_user)` in `utils.py`:
+  - admin/super_admin → `None` (unrestricted)
+  - client → `allowed_project_ids` from user record
+  - resource/contractor → allocated projects + led projects
+- Applied scoping to all 4 endpoints
+- Files: `utils.py`, `routes/ai.py`, `routes/projects.py`, `routes/insights.py`, `routes/reports.py`
+
+### Verified Results (production data)
+- Admin: 24 active projects across all endpoints
+- Dhruti (resource): 5 projects (only allocated + led)
+- Project detail 403 for non-allocated project confirmed
+
+### Testing
+- 9/9 backend tests pass (iteration_53)
+
 - 6/6 backend tests pass (iteration_52): Friday→Monday snap, transitive A→B→C, biz-day duration preservation, manual endpoint parity, X-Cascade-Updated header, no-cascade on non-end-date updates
 
 - 12/12 backend tests pass (iteration_51): lead create/update/delete tasks, lead set-baseline, lead sync-dates, non-lead 403, admin full access

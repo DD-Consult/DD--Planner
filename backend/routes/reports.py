@@ -251,10 +251,17 @@ async def get_time_tracking_summary(current_user: dict = Depends(get_current_use
 @router.get("/api/reports/planned-vs-actual/overview")
 async def get_planned_vs_actual_overview(current_user: dict = Depends(get_current_user)):
     """
-    Cross-project planned vs actual overview. Aggregates budget health across all active projects.
-    Reuses per-project calculation logic.
+    Cross-project planned vs actual overview. Aggregates budget health across active projects.
+    Scoped by user role.
     """
-    cursor = projects_collection.find({"status": {"$in": ["Active", "Pipeline"]}})
+    from utils import get_user_allowed_project_ids
+    allowed_pids = await get_user_allowed_project_ids(current_user)
+
+    query = {"status": {"$in": ["Active", "Pipeline"]}}
+    if allowed_pids is not None:
+        query["_id"] = {"$in": [ObjectId(pid) for pid in allowed_pids]}
+
+    cursor = projects_collection.find(query)
     projects = await cursor.to_list(length=500)
 
     all_timesheets = await timesheets_collection.find().to_list(length=50000)
