@@ -158,7 +158,7 @@ Each tenant can enable/disable these independently (respecting dependencies):
 
 ---
 
-### ⏳ Step 5 — Platform Auth & JWT Extension
+### ✅ Step 5 — Platform Auth & JWT Extension (COMPLETED)
 **Goal:** JWT carries tenant context; login resolves user → tenant.
 - Extend JWT payload: `{sub, tenant_id, tenant_slug, membership_role}`
 - New `POST /api/platform/auth/login` for platform admin portal
@@ -354,6 +354,39 @@ Each tenant can enable/disable these independently (respecting dependencies):
     - Background health monitor uses default DB — needs multi-tenant iteration in Step 5+
     - In-memory tenant cache (60s TTL) has no cross-instance invalidation — need Redis pub/sub for horizontal scale
   - **Files modified in review:** `services/knowledge_base.py` (import fix)
+
+- **[Step 5 - ✅ COMPLETED]** Platform Auth & JWT Extension
+  - **Extended JWT payload** with tenant claims:
+    - Tenant tokens: `{sub, tenant_id, tenant_slug, token_type: "tenant", role, exp}` (only when flag=ON)
+    - Platform tokens: `{sub, token_type: "platform", role: "platform_admin", platform_user_id, exp}`
+    - Legacy tokens (`{sub, exp}` only) still accepted for backward compat when flag=OFF
+  - **`auth/dependencies.py` rewritten** to be tenant-aware:
+    - `create_access_token` accepts extended dict payloads
+    - `get_current_user` enforces (in flag=ON mode): platform tokens rejected on tenant routes; tenant tokens' `tenant_slug` must match resolved request tenant (prevents cross-tenant JWT replay)
+    - **NEW** `get_current_platform_admin` dependency: validates platform tokens, looks up in `platform_users`, requires `role=platform_admin`
+    - Backward-compat clause: with flag=OFF, `get_current_platform_admin` also accepts super_admin JWTs (for testing/introspection before Step 7 lands the full portal)
+  - **`routes/auth.py`**: tenant login now includes tenant claims in JWT when request has a resolved tenant (via middleware's `request.state.tenant`); backward-compat when no tenant resolved (only `sub`)
+  - **NEW `routes/platform_auth.py`**: separate platform admin auth endpoints
+    - `POST /api/platform/auth/login` — email/password against `platform_users` collection, returns platform-type JWT
+    - `GET /api/platform/auth/me` — verifies platform JWT + returns platform admin profile
+    - `POST /api/platform/auth/logout` — stateless 204 (client discards token)
+  - **`routes/platform.py` locked down**: all endpoints (`/tenants`, `/modules`, `/tenants/{slug}/modules`) now use `get_current_platform_admin` instead of the earlier soft `super_admin` check
+  - **Verified security enforcement in flag=ON mode:**
+    - Tenant login on `ddconsult.*` issues JWT with correct tenant claims
+    - **Cross-tenant JWT replay blocked**: DD's JWT used against `acme.*` → 401 "Token issued for tenant 'ddconsult' cannot be used on tenant 'acme'"
+    - **Platform token rejected on tenant endpoints**: 403 "Platform tokens cannot be used on tenant endpoints"
+    - **Tenant token rejected on platform endpoints**: 403 "Platform admin access requires a platform token"
+    - **Platform token works on platform endpoints**: 200, returns tenant list
+  - **Testing agent verification (flag=OFF regression + new endpoints): 32/32 tests PASSED**
+    - All 13 backward-compat tests pass (existing app identical to Step 4)
+    - All 7 platform auth endpoint tests pass
+    - All 3 platform admin access tests pass
+    - All 5 access boundary tests pass (missing/wrong/tenant tokens correctly rejected)
+    - All 3 public endpoint tests pass
+    - Backend logs: NO AttributeError, TypeError, JWTError, or 500s
+  - Flag restored to OFF after verification. Test acme tenant cleaned up.
+  - **Files created:** `routes/platform_auth.py`
+  - **Files modified:** `auth/dependencies.py` (rewrite), `routes/auth.py` (extended login payload), `routes/platform.py` (locked-down guards), `server.py` (imports + router registration)
 
 ---
 

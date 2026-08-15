@@ -1,12 +1,9 @@
 """
-Platform-level read endpoints for the multi-tenant transformation.
+Platform-level endpoints for the multi-tenant transformation.
 
-STEP 1: Debug/introspection endpoints only. Auth is deliberately lightweight —
-Step 5 will add proper platform_admin JWT-based auth on these.
-
-These endpoints are all under /api/platform/* and are OFF unless the
-MULTI_TENANT_ENABLED flag is true (except /status which is always available
-for observability).
+STEP 5 update: Now protected by `get_current_platform_admin` dependency.
+When MULTI_TENANT_ENABLED=true, requires a JWT issued by /api/platform/auth/login.
+When MULTI_TENANT_ENABLED=false (backward compat), also accepts super_admin JWTs.
 """
 from fastapi import APIRouter, HTTPException, Depends, Request
 import os
@@ -23,7 +20,7 @@ from middleware.tenant_resolver import (
     get_tenant_enabled_modules,
     extract_subdomain,
 )
-from auth.dependencies import get_current_user
+from auth.dependencies import get_current_user, get_current_platform_admin
 
 router = APIRouter(prefix="/api/platform", tags=["platform"])
 
@@ -66,35 +63,28 @@ async def platform_status():
 
 
 @router.get("/tenants")
-async def list_tenants(current_user: dict = Depends(get_current_user)):
-    """List all tenants. Requires authenticated user for now (locked down in Step 5).
+async def list_tenants(admin: dict = Depends(get_current_platform_admin)):
+    """List all tenants. Platform admin only.
     
-    Note: In Step 5, this becomes platform_admin-only. Today, super_admins of DD
-    can also see it since they're effectively the platform owner.
+    In multi-tenant mode: requires JWT from /api/platform/auth/login.
+    In backward-compat mode: also accepts super_admin JWTs (see get_current_platform_admin).
     """
-    # For Step 1: only super_admin can list tenants (soft check).
-    if current_user.get("role") != "super_admin":
-        raise HTTPException(status_code=403, detail="Platform access requires super_admin (will require platform_admin in Step 5)")
     cursor = tenants_collection.find({}).sort("created_at", 1)
     docs = await cursor.to_list(length=1000)
     return [_serialize(d) for d in docs]
 
 
 @router.get("/modules")
-async def list_modules_catalog(current_user: dict = Depends(get_current_user)):
-    """List all modules in the catalog (17 modules)."""
-    if current_user.get("role") not in ["super_admin", "admin"]:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def list_modules_catalog(admin: dict = Depends(get_current_platform_admin)):
+    """List all modules in the catalog (17 modules). Platform admin only."""
     cursor = modules_catalog_collection.find({}).sort("category", 1)
     docs = await cursor.to_list(length=100)
     return [_serialize(d) for d in docs]
 
 
 @router.get("/tenants/{slug}/modules")
-async def get_tenant_modules(slug: str, current_user: dict = Depends(get_current_user)):
-    """Get the enabled/disabled status of all modules for a given tenant."""
-    if current_user.get("role") != "super_admin":
-        raise HTTPException(status_code=403, detail="Platform access required")
+async def get_tenant_modules(slug: str, admin: dict = Depends(get_current_platform_admin)):
+    """Get the enabled/disabled status of all modules for a given tenant. Platform admin only."""
     tenant = await tenants_collection.find_one({"slug": slug})
     if not tenant:
         raise HTTPException(status_code=404, detail=f"Tenant '{slug}' not found")

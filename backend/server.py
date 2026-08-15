@@ -45,6 +45,7 @@ from routes.ai_productivity import router as ai_productivity_router
 from routes.ai_resource import router as ai_resource_router
 from routes.search import router as search_router
 from routes.platform import router as platform_router
+from routes.platform_auth import router as platform_auth_router
 
 # Multi-tenant platform layer (Step 1 of MULTITENANT_PLAN.md)
 from platform_db import seed_platform_if_empty, create_platform_indexes, MULTI_TENANT_ENABLED
@@ -143,6 +144,7 @@ app.include_router(ai_productivity_router)
 app.include_router(ai_resource_router)
 app.include_router(search_router)
 app.include_router(platform_router)
+app.include_router(platform_auth_router)
 
 
 @app.on_event("startup")

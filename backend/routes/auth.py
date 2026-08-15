@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from bson import ObjectId
 
@@ -31,7 +31,13 @@ async def register(user_data: UserCreate, admin: dict = Depends(require_admin)):
 
 
 @router.post("/api/auth/login", response_model=TokenWithUser)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
+    """Tenant login endpoint.
+    
+    In multi-tenant mode, the request's Host header determines which tenant's
+    users collection is consulted (via LazyCollection + tenant_context_middleware).
+    JWT is issued with tenant claims so it can only be replayed on the same tenant.
+    """
     user = await users_collection.find_one({"email": form_data.username})
     if not user or not verify_password(form_data.password, user["password_hash"]):
         raise HTTPException(
@@ -45,7 +51,18 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             detail="Account is disabled. Contact an administrator.",
         )
     
-    access_token = create_access_token(data={"sub": user["email"]})
+    # Build JWT payload with tenant context (Step 5 of MULTITENANT_PLAN).
+    # Backward compatible: when flag=off or no tenant resolved, only 'sub' is set.
+    jwt_payload = {"sub": user["email"]}
+    tenant = getattr(request.state, "tenant", None)
+    if tenant:
+        jwt_payload.update({
+            "tenant_id": tenant.get("id"),
+            "tenant_slug": tenant.get("slug"),
+            "token_type": "tenant",
+            "role": user.get("role"),  # snapshot for downstream authorization checks
+        })
+    access_token = create_access_token(data=jwt_payload)
     user_data = serialize_doc(user)
     return {
         "access_token": access_token,
