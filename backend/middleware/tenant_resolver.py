@@ -114,6 +114,30 @@ async def _lookup_default_tenant() -> Optional[Dict[str, Any]]:
     return doc
 
 
+def _resolve_incoming_host(request) -> str:
+    """Return the effective client-facing host for tenant resolution.
+
+    Handles cases where the request has passed through a proxy or load balancer
+    that rewrote the Host header. Priority order:
+
+      1. X-Forwarded-Host (set by Google Cloud Load Balancer, Cloudflare, most CDNs)
+      2. Host (the immediate hop's host header — usually correct in Cloud Run,
+         local dev, and Kubernetes ingress)
+
+    We take the first non-empty value in that order because when X-Forwarded-Host
+    is present, it's the client's ORIGINAL host and Host has been overwritten by
+    the intermediate. When there's no proxy, only Host exists.
+
+    Note: X-Forwarded-Host can be a comma-separated list if there are multiple
+    hops (RFC7239). We take the first (client-nearest) value.
+    """
+    xfh = request.headers.get("x-forwarded-host", "").strip()
+    if xfh:
+        # Take the first element if comma-separated
+        return xfh.split(",")[0].strip()
+    return request.headers.get("host", "").strip()
+
+
 def extract_subdomain(host_header: str) -> Optional[str]:
     """Extract the subdomain portion of a Host header.
 
@@ -180,7 +204,7 @@ async def resolve_tenant_from_request(request: Request) -> Dict[str, Any]:
           * no subdomain -> default tenant (marketing / dev)
           * subdomain doesn't match -> 404
     """
-    host = request.headers.get("host", "")
+    host = _resolve_incoming_host(request)
     subdomain = extract_subdomain(host)
 
     # --- Backward-compat mode (feature flag OFF) ---

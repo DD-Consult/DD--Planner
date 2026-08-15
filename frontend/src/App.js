@@ -8,6 +8,7 @@ import { Toaster } from './components/ui/sonner';
 import { SandboxProvider } from './contexts/SandboxContext';
 
 import Login from './pages/Login';
+import Signup from './pages/Signup';
 import ChangePassword from './pages/ChangePassword';
 import Dashboard from './pages/Dashboard';
 import Resources from './pages/Resources';
@@ -112,6 +113,9 @@ function App() {
           <Routes>
             {/* Platform Admin Portal - INDEPENDENT from tenant auth */}
             <Route path="/platform/*" element={<PlatformApp />} />
+
+            {/* Public tenant sign-up — no auth required */}
+            <Route path="/signup" element={<Signup />} />
 
             {/* Print/Export routes — UNPROTECTED. Token is passed via ?_t=JWT and
                 bootstrapped by PrintReport into localStorage before rendering.

@@ -64,7 +64,7 @@ steps:
       - "300"
       - "--allow-unauthenticated"
       - "--set-env-vars"
-      - "DB_NAME=resource_planner"
+      - "DB_NAME=resource_planner,MULTI_TENANT_ENABLED=false,PLATFORM_DB_NAME=platform_db,TENANT_DB_PREFIX=tenant_"
       - "--update-secrets"
       - "MONGO_URL=MONGO_URL:latest,SECRET_KEY=SECRET_KEY:latest,EMERGENT_LLM_KEY=EMERGENT_LLM_KEY:latest,EXPORT_API_KEY=EXPORT_API_KEY:latest"
 

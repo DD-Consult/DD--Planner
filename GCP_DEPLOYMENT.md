@@ -208,3 +208,71 @@ jobs:
 - **MongoDB connection fails**: Verify Atlas Network Access allows `0.0.0.0/0`
 - **502 errors**: Increase `--timeout` or `--memory` in Cloud Run settings
 - **Slow cold starts**: Set `--min-instances 1` to keep one instance warm (~$15/month extra)
+
+---
+
+## Multi-Tenant SaaS Deployment (Added July 2025)
+
+DD Planner supports multi-tenant SaaS mode where multiple consulting firms each get an isolated workspace. Deployment steps below.
+
+### 1. Environment Variables (already in cloudbuild.yaml)
+
+The following env vars control multi-tenant behaviour. Defaults are safe for backward-compat (single-tenant DD mode):
+
+| Variable | Default | Description |
+|---|---|---|
+| `MULTI_TENANT_ENABLED` | `false` | Master switch. When `false`, app behaves as legacy single-tenant. Flip to `true` only after tenant data migration and DNS setup. |
+| `PLATFORM_DB_NAME` | `platform_db` | MongoDB database for cross-tenant metadata (tenants registry, memberships, audit log) |
+| `TENANT_DB_PREFIX` | `tenant_` | Each tenant gets its own DB named `<prefix><slug>` (e.g. `tenant_ddconsult`) |
+
+### 2. Custom Domain Mapping in Cloud Run
+
+For subdomain routing (`{tenant}.ddplanner.io`, `admin.ddplanner.io`), map custom domains:
+
+```bash
+gcloud run domain-mappings create --service dd-planner --domain ddplanner.io --region australia-southeast1
+gcloud run domain-mappings create --service dd-planner --domain '*.ddplanner.io' --region australia-southeast1
+```
+
+Add the CNAME records shown in the output to your DNS provider. Cloud Run auto-provisions managed SSL certs (may take up to 24 hours).
+
+### 3. Host Header Handling
+
+Cloud Run preserves the original `Host` header end-to-end. The tenant resolver also honors `X-Forwarded-Host` for deployments behind Google Cloud Load Balancer.
+
+### 4. Data Migration to Multi-Tenant
+
+Before flipping `MULTI_TENANT_ENABLED=true`:
+
+1. **Backup** production Atlas cluster: `mongodump --uri "$MONGO_URL" --archive=pre_multitenant.archive --gzip`
+2. **Run migration** to copy DD data into `tenant_ddconsult` DB:
+   ```bash
+   python3 scripts/migrate_to_multitenant.py \
+     --tenant-slug ddconsult \
+     --source-db resource_planner \
+     --commit --with-indexes --yes
+   ```
+3. **Verify** with `python3 scripts/migrate_to_multitenant.py --verify-only` — must show `source == target` for all collections
+4. **Update env** `MULTI_TENANT_ENABLED=true` in cloudbuild.yaml and redeploy
+5. **Test** at `ddconsult.ddplanner.io` (should behave identically to previous `ddplanner.io`)
+
+### 5. Platform Admin Portal
+
+Once deployed, the platform admin portal is available at `admin.ddplanner.io/platform/login`.
+Default credentials: `don@ddconsult.tech` / `Welcome123!` (change on first login).
+
+The platform admin can:
+- Create/suspend/delete tenants
+- Toggle per-tenant feature modules (17 available)
+- View cross-tenant audit log
+- Impersonate any tenant for support (15-min scoped JWT, logged)
+
+### 6. Rollback
+
+If anything breaks after enabling multi-tenant mode:
+```bash
+gcloud run services update dd-planner --region=australia-southeast1 \
+  --update-env-vars MULTI_TENANT_ENABLED=false
+```
+Effect: instant revert to single-tenant behavior. The `tenant_ddconsult` DB and `platform_db` remain but are unused; source `resource_planner` DB continues serving all traffic.
+

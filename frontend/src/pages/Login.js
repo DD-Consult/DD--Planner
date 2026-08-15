@@ -108,6 +108,17 @@ const Login = ({ onLogin }) => {
             <p>Admin: admin@test.com / admin123</p>
             <p>Client: client@test.com / client123</p>
           </div>
+
+          <div className="mt-4 text-center text-sm text-[#475467]">
+            New to DD Planner?{' '}
+            <a
+              href="/signup"
+              className="text-[#0B1120] font-medium hover:underline"
+              data-testid="login-signup-link"
+            >
+              Create a workspace
+            </a>
+          </div>
         </div>
       </div>
     </div>

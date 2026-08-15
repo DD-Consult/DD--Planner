@@ -289,6 +289,8 @@ async def whoami_tenant(request: Request):
     only reveals metadata about the current request's own tenant.
     """
     host = request.headers.get("host", "")
+    xfh = request.headers.get("x-forwarded-host", "")
+    resolved_host = xfh.split(",")[0].strip() if xfh else host
     result = await resolve_tenant_from_request(request)
 
     tenant = result.get("tenant")
@@ -309,6 +311,8 @@ async def whoami_tenant(request: Request):
 
     return {
         "host": host,
+        "x_forwarded_host": xfh or None,
+        "resolved_host": resolved_host,
         "subdomain": result.get("subdomain"),
         "resolution_mode": result.get("resolution_mode"),
         "is_platform": result.get("is_platform"),

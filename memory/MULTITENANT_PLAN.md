@@ -196,7 +196,7 @@ Each tenant can enable/disable these independently (respecting dependencies):
 
 ---
 
-### ⏳ Step 8 — Tenant Onboarding Flow
+### ✅ Step 8 — Tenant Onboarding Flow + GCP Production Hardening (COMPLETED)
 **Goal:** Self-serve tenant sign-up.
 - `POST /api/platform/tenants` — creates tenant doc + `tenant_{slug}` DB + owner user + default modules + welcome project
 - Sign-up page on `ddplanner.io/signup`
@@ -446,6 +446,47 @@ Each tenant can enable/disable these independently (respecting dependencies):
   - **Existing tenant app 100% unaffected** — verified visually + programmatically
   - **Files created:** `routes/platform_ops.py`, `frontend/src/platform/*` (8 files)
   - **Files modified:** `server.py` (router registration), `routes/platform.py` (enriched list_tenants + cleanup), `frontend/src/App.js` (platform route)
+
+- **[Step 8 - ✅ COMPLETED]** Tenant Onboarding Flow + GCP Production Hardening
+  - **GCP Production Hardening (pre-Step-8 pass, per user's request to verify prod):**
+    - Added `_resolve_incoming_host()` helper in `middleware/tenant_resolver.py` that reads `X-Forwarded-Host` header first (used by Google Cloud Load Balancer, Cloudflare, most CDNs), falling back to `Host`. Handles comma-separated X-Forwarded-Host lists (RFC7239) by taking the first (client-nearest) value.
+    - Updated `cloudbuild.yaml` to include multi-tenant env vars: `MULTI_TENANT_ENABLED=false`, `PLATFORM_DB_NAME=platform_db`, `TENANT_DB_PREFIX=tenant_` (safe defaults so existing deploys continue working)
+    - Added comprehensive "Multi-Tenant SaaS Deployment" section to `GCP_DEPLOYMENT.md` covering: env vars, custom domain mapping in Cloud Run, host header handling, data migration procedure, platform admin portal access, rollback command
+    - Verified nginx.conf already passes `Host` header to backend uvicorn (`proxy_set_header Host $host`) — no changes needed
+    - Enhanced `/api/platform/whoami-tenant` to expose `x_forwarded_host` and `resolved_host` for observability
+  - **Backend — Public Sign-Up (`routes/tenant_signup.py`):**
+    - `GET /api/signup/check-slug?slug=X` — public, strict validation: rejects uppercase, reserved slugs, invalid format, taken slugs. Returns `{slug, available, reason}`.
+    - `POST /api/signup` — public, creates: tenant record → 17 modules enabled → owner user in new tenant DB → membership record → welcome project (with 🎉 emoji) → audit-log entry (`tenant.self_signup`)
+    - Reserved slugs blocked: `admin, www, api, app, docs, status, help, static, cdn, mail, smtp, support, billing, root, system, platform, public, private, test, demo, sample, example, auth, login, signup, logout, register` (25 reserved)
+    - Password validation: min 8 chars, must contain letter AND digit
+    - Slug format: strict `^[a-z0-9][a-z0-9_-]{1,30}[a-z0-9]$` (starts+ends alphanumeric, lowercase only)
+    - `_login_url_for(request, slug)` builds tenant-specific login URL respecting `X-Forwarded-Proto` / `X-Forwarded-Host`
+    - IP-based signup source recorded in tenant doc + audit
+  - **Frontend — Sign-Up Page (`pages/Signup.js`):**
+    - Public route `/signup` (no auth, added BEFORE tenant token check in App.js)
+    - Live slug availability check (400ms debounce) with green ✓ / red ✗ indicators
+    - Client-side validation matching backend (min password length, letter+number, email format)
+    - Success screen with tenant name, admin email, "Go to Workspace" button pointing to computed login URL
+    - Slug input auto-strips uppercase and disallowed chars as user types (UX polish)
+    - "Sign up" link added to `pages/Login.js` for cross-navigation
+  - **Bug fixed during testing (per system reminder):**
+    - Initial `SignupRequest.validate_slug` auto-normalized uppercase to lowercase, contradicting the API spec which said "must be lowercase"
+    - Fixed by comparing `v_stripped != v_stripped.lower()` and raising `ValueError` (Pydantic → 422)
+    - Also updated `check_slug_availability` to reject uppercase with clear reason instead of silently normalizing
+    - Testing agent re-verified: 8/8 bug-fix tests PASS + 11/11 regression tests PASS
+  - **Verified end-to-end (screenshots):**
+    - Empty signup form loads clean
+    - Live slug check: `testconsult` shows green ✓ Available, `ddconsult` shows red ✗ Already taken (submit button greyed out)
+    - Full signup flow: form → 201 response with tenant_id, login_url → tenant DB seeded (1 user, 1 welcome project, 17 modules enabled, membership + audit log)
+    - Login as new tenant user works when flag=ON: JWT contains `tenant_slug: acme, role: super_admin`, projects endpoint returns only the welcome project
+    - DD Consulting still works (4 projects) both with flag=OFF and flag=ON
+  - **Testing agent final verdict: 19/19 substantive tests PASS**
+    - 8/8 slug validation fix tests (uppercase rejection working in both endpoints)
+    - 11/11 regression tests (all previous features intact)
+    - 1 GCP X-Forwarded-Host test was env-limited (preview may strip the header) but code verified correct via `resolve-subdomain` endpoint
+    - No AttributeError, TypeError, or 500s in backend logs
+  - **Files created:** `routes/tenant_signup.py`, `frontend/src/pages/Signup.js`
+  - **Files modified:** `server.py` (router registration), `middleware/tenant_resolver.py` (X-Forwarded-Host support), `routes/platform.py` (whoami-tenant enrichment), `cloudbuild.yaml` (multi-tenant env vars), `GCP_DEPLOYMENT.md` (multi-tenant section), `frontend/src/App.js` (signup route), `frontend/src/pages/Login.js` (signup link)
 
 ---
 
