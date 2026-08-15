@@ -55,34 +55,9 @@ export function useEnabledModules() {
 }
 
 /**
- * Module → route path mapping (for sidebar & route-guard filtering).
- * Keep in sync with backend `MODULES_CATALOG` in /app/backend/platform_db.py.
- */
-export const MODULE_TO_ROUTES = {
-  projects: ['/projects', '/projects/:id'],
-  resources: ['/resources'],
-  allocations: ['/allocations', '/my-allocations'],
-  timesheets: ['/my-timesheets', '/manage-timesheets', '/timesheets/reports'],
-  wbs: [],  // Nested inside ProjectDetail tab — gated at tab level, not route
-  milestones: [],  // Nested inside WBS
-  risks: [],  // Nested inside ProjectDetail
-  status_updates: [],  // Nested inside ProjectDetail
-  baselines: [],  // Nested inside ProjectDetail
-  reports: ['/reports', '/projects/:id/report'],
-  client_portal: ['/portal', '/portal/:token'],
-  ai_copilot: [],  // Floating chat panel — gated at component level
-  ai_intelligence: ['/ai-intelligence'],
-  ai_productivity: [],  // Nested (Kickoff wizard button on Projects page)
-  knowledge_base: [],  // Nested (AI Chat KB integration)
-  hubspot_integration: [],  // Settings integrations tab
-  mcp_server: [],  // Settings integrations tab
-  portfolio: ['/portfolio'],  // Portfolio is a top-level view — mapped to projects module
-};
-
-/**
  * Sidebar item → module key mapping.
  * Used by Layout.js to filter navigation items.
- * Keep in sync with the modules catalog.
+ * Keep in sync with the modules catalog in /app/backend/platform_db.py.
  *
  * `null` module means "always visible" (e.g. Dashboard, Help, Users management).
  */

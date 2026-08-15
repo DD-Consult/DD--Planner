@@ -23,23 +23,15 @@ Behaviour:
   - If the tenant has NO tenant_modules rows at all (legacy tenant), defaults
     to "all enabled" — safer failure mode.
 """
-from fastapi import Depends, HTTPException, status, Request
-from typing import Dict, Optional
+from fastapi import HTTPException, status, Request
+from typing import Dict
 import os
 
-from platform_db import tenant_modules_collection
+from middleware.tenant_resolver import get_tenant_enabled_modules
 
 
 def _multi_tenant_enabled() -> bool:
     return os.environ.get('MULTI_TENANT_ENABLED', 'false').lower() == 'true'
-
-
-async def _load_tenant_modules(tenant_id: str) -> Dict[str, bool]:
-    """Load {module_key: enabled} for a tenant from platform_db."""
-    result: Dict[str, bool] = {}
-    async for doc in tenant_modules_collection.find({"tenant_id": tenant_id}):
-        result[doc["module_key"]] = bool(doc.get("enabled", False))
-    return result
 
 
 async def get_current_tenant_modules(request: Request) -> Dict[str, bool]:
@@ -63,7 +55,7 @@ async def get_current_tenant_modules(request: Request) -> Dict[str, bool]:
         request.state.tenant_modules_cache = {}
         return {}
 
-    modules = await _load_tenant_modules(tenant.get("id") or tenant.get("_id"))
+    modules = await get_tenant_enabled_modules(tenant.get("id") or tenant.get("_id"))
     request.state.tenant_modules_cache = modules
     return modules
 

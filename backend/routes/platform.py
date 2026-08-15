@@ -6,7 +6,6 @@ When MULTI_TENANT_ENABLED=true, requires a JWT issued by /api/platform/auth/logi
 When MULTI_TENANT_ENABLED=false (backward compat), also accepts super_admin JWTs.
 """
 from fastapi import APIRouter, HTTPException, Depends, Request
-import os
 
 from platform_db import (
     tenants_collection,
@@ -20,7 +19,7 @@ from middleware.tenant_resolver import (
     get_tenant_enabled_modules,
     extract_subdomain,
 )
-from auth.dependencies import get_current_user, get_current_platform_admin
+from auth.dependencies import get_current_platform_admin
 
 router = APIRouter(prefix="/api/platform", tags=["platform"])
 
@@ -66,12 +65,22 @@ async def platform_status():
 async def list_tenants(admin: dict = Depends(get_current_platform_admin)):
     """List all tenants. Platform admin only.
     
+    Enriches each tenant with `enabled_modules_count` for the dashboard/list UI.
     In multi-tenant mode: requires JWT from /api/platform/auth/login.
     In backward-compat mode: also accepts super_admin JWTs (see get_current_platform_admin).
     """
     cursor = tenants_collection.find({}).sort("created_at", 1)
     docs = await cursor.to_list(length=1000)
-    return [_serialize(d) for d in docs]
+    result = []
+    for d in docs:
+        s = _serialize(d)
+        # Enrich with enabled module count so the tenants-list UI can render it
+        # without a per-row round-trip.
+        s["enabled_modules_count"] = await tenant_modules_collection.count_documents(
+            {"tenant_id": s["id"], "enabled": True}
+        )
+        result.append(s)
+    return result
 
 
 @router.get("/modules")
@@ -260,7 +269,7 @@ async def bulk_update_modules(
 
 
 # ============================================================================
-# STEP 2: Tenant Resolution Endpoints
+# Tenant Resolution & Debug Endpoints
 # ============================================================================
 
 @router.get("/whoami-tenant")

@@ -24,7 +24,6 @@ Behaviour (both flag states):
 from fastapi import APIRouter, Depends, Request
 
 from auth.dependencies import get_current_user
-from middleware.module_guard import get_current_tenant_modules
 from platform_db import (
     modules_catalog_collection,
     tenants_collection,

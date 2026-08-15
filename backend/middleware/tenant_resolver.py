@@ -22,7 +22,7 @@ The resolved tenant is cached in-memory for 60 seconds to keep hot-path lookups
 fast. Cache is invalidated automatically when tenant records change (via the
 `invalidate_tenant_cache` helper called from platform routes in Step 5+).
 """
-from fastapi import Request, HTTPException, Depends
+from fastapi import Request, HTTPException
 from typing import Optional, Dict, Any
 import time
 import logging

@@ -33,6 +33,7 @@ import AIIntelligence from './pages/AIIntelligence';
 import Layout from './components/Layout';
 import ModuleRoute from './components/ModuleRoute';
 import { getMe, setAuthToken } from './api';
+import PlatformApp from './platform/PlatformApp';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -109,6 +110,9 @@ function App() {
       <SandboxProvider>
         <Router>
           <Routes>
+            {/* Platform Admin Portal - INDEPENDENT from tenant auth */}
+            <Route path="/platform/*" element={<PlatformApp />} />
+
             {/* Print/Export routes — UNPROTECTED. Token is passed via ?_t=JWT and
                 bootstrapped by PrintReport into localStorage before rendering.
                 Used by backend Playwright to render PDF/PPT exports. */}

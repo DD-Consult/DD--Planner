@@ -46,6 +46,7 @@ from routes.ai_resource import router as ai_resource_router
 from routes.search import router as search_router
 from routes.platform import router as platform_router
 from routes.platform_auth import router as platform_auth_router
+from routes.platform_ops import router as platform_ops_router
 from routes.tenant import router as tenant_router
 
 # Multi-tenant platform layer (Step 1 of MULTITENANT_PLAN.md)
@@ -146,6 +147,7 @@ app.include_router(ai_resource_router)
 app.include_router(search_router)
 app.include_router(platform_router)
 app.include_router(platform_auth_router)
+app.include_router(platform_ops_router)
 app.include_router(tenant_router)
 
 

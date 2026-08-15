@@ -183,7 +183,7 @@ Each tenant can enable/disable these independently (respecting dependencies):
 
 ---
 
-### ⏳ Step 7 — Platform Admin Portal (`admin.ddplanner.io`)
+### ✅ Step 7 — Platform Admin Portal (COMPLETED)
 **Goal:** Standalone UI to manage tenants.
 - New React section `frontend/src/platform/*` — separate layout
 - Hostname-based routing: `admin.*` → `<PlatformApp>`, else `<TenantApp>`
@@ -408,6 +408,44 @@ Each tenant can enable/disable these independently (respecting dependencies):
   - **Testing agent verified fix: 10/10 tests PASS** including the critical T3 (bug fix verification) and 4 regression sanity checks (projects=4, resources=5, allocations=10, health OK).
   - **Files created:** `middleware/module_guard.py`, `routes/tenant.py`, `frontend/src/hooks/useEnabledModules.js`, `frontend/src/components/ModuleRoute.js`
   - **Files modified:** `routes/platform.py` (toggle endpoints), `server.py` (tenant router registration), `middleware/tenant_resolver.py` (expanded dev host suffixes), `frontend/src/api.js` (getMyTenantModules), `frontend/src/App.js` (ModuleRoute wrappers on 12 routes), `frontend/src/components/Layout.js` (module-filtered sidebar)
+
+- **[Step 7 - ✅ COMPLETED]** Platform Admin Portal (backend ops endpoints + frontend portal + bloat cleanup + testing verified)
+  - **Bloat/cleanup pass (per user request):**
+    - Removed 6 unused imports across platform.py, platform_auth.py, tenant.py, tenant_resolver.py, module_guard.py
+    - Deleted dead `MODULE_TO_ROUTES` const (27 lines) from `hooks/useEnabledModules.js`
+    - Consolidated duplicate `_load_tenant_modules` (module_guard.py) into shared `get_tenant_enabled_modules` (tenant_resolver.py)
+    - Removed stale "STEP 2:" comment header in platform.py
+    - Net change: -29 lines across cleanup, no functional impact
+  - **Backend (new endpoints in `routes/platform_ops.py`):**
+    - `GET /api/platform/dashboard/stats` — aggregated counts of tenants/users/memberships/modules + recent audit
+    - `POST /api/platform/tenants` — creates tenant + own DB + admin user + membership + audit
+    - `PATCH /api/platform/tenants/{slug}` — update status/branding/settings (400 on default tenant status change)
+    - `DELETE /api/platform/tenants/{slug}` — soft-delete (400 on default tenant)
+    - `POST /api/platform/tenants/{slug}/impersonate` — issues 15-min tenant JWT with `impersonator` claim
+    - `GET /api/platform/audit-log` — cross-tenant audit trail with optional tenant/action filters
+    - `GET /api/platform/tenants/{slug}/users` — list tenant users (redacted)
+    - `_record_audit()` helper — writes to `platform_audit_log` on every mutating action (non-blocking; failures don't break the operation)
+  - **Backend enhancement:** `GET /api/platform/tenants` now enriches each row with `enabled_modules_count` for the list UI
+  - **Frontend (new files under `frontend/src/platform/`):**
+    - `PlatformApp.js` — top-level entry with independent routing + auth
+    - `PlatformLayout.js` — dark-themed sidebar (slate-900 + indigo-600), shield icon branding
+    - `api.js` — separate axios client with `platform_token` in localStorage, 401 → login redirect
+    - Pages: `PlatformLogin.js`, `PlatformDashboard.js` (KPIs + module usage grid + recent audit), `PlatformTenants.js` (search, create modal, per-row actions), `PlatformTenantDetail.js` (4 tabs: Overview/Modules/Users/Impersonate), `PlatformAuditLog.js` (filterable table)
+  - **App.js integration:** added `<Route path="/platform/*" element={<PlatformApp />} />` at the very top of the tree — completely independent from tenant auth state, does NOT break existing tenant app
+  - **Verified via screenshots:** login page (dark themed, distinct visual identity), dashboard (all KPI/module cards render), tenants list, audit log (colored action badges, all 4 tenant lifecycle actions logged from testing)
+  - **Testing agent verification: 30/30 tests PASSED**
+    - 11 regression tests (existing tenant app 100% intact)
+    - 1 dashboard stats test
+    - 1 tenants list enrichment test
+    - 8 tenant CRUD tests (create/list/patch/get modules/get users/impersonate/delete/default-delete-blocked)
+    - 1 duplicate slug prevention (409)
+    - 3 audit log tests (list + tenant filter + action filter)
+    - 3 authorization boundary tests (tenant JWT rejected on platform endpoints)
+    - 1 cleanup test (test tenant DB dropped successfully)
+    - 1 backend log clean check
+  - **Existing tenant app 100% unaffected** — verified visually + programmatically
+  - **Files created:** `routes/platform_ops.py`, `frontend/src/platform/*` (8 files)
+  - **Files modified:** `server.py` (router registration), `routes/platform.py` (enriched list_tenants + cleanup), `frontend/src/App.js` (platform route)
 
 ---
 
