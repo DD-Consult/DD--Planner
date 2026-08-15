@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta
 
 class WBSAPITester:
-    def __init__(self, base_url="https://calc-audit-review.preview.emergentagent.com/api"):
+    def __init__(self, base_url="https://modular-suite-5.preview.emergentagent.com/api"):
         self.base_url = base_url
         self.admin_token = None
         self.tests_run = 0

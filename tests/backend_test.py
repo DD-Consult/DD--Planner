@@ -3,7 +3,7 @@ import sys
 from datetime import datetime
 
 class ResourcePlannerAPITester:
-    def __init__(self, base_url="https://calc-audit-review.preview.emergentagent.com"):
+    def __init__(self, base_url="https://modular-suite-5.preview.emergentagent.com"):
         self.base_url = base_url
         self.token = None
         self.tests_run = 0

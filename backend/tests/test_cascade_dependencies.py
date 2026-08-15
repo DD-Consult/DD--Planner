@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://team-capacity-ai-5.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://modular-suite-5.preview.emergentagent.com").rstrip("/")
 ADMIN_EMAIL = "don@ddconsult.tech"
 ADMIN_PASSWORD = "@Ddplanner2026"
 

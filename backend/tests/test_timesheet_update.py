@@ -4,7 +4,7 @@ import pytest
 import requests
 from datetime import datetime, timedelta
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://allocation-tracker-5.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://modular-suite-5.preview.emergentagent.com').rstrip('/')
 
 RILEY = {"email": "riley@test.com", "password": "riley123"}
 ADMIN = {"email": "admin@test.com", "password": "admin123"}

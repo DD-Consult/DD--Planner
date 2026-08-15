@@ -40,6 +40,10 @@ from routes.ai_intelligence import router as ai_intelligence_router
 from routes.ai_productivity import router as ai_productivity_router
 from routes.ai_resource import router as ai_resource_router
 from routes.search import router as search_router
+from routes.platform import router as platform_router
+
+# Multi-tenant platform layer (Step 1 of MULTITENANT_PLAN.md)
+from platform_db import seed_platform_if_empty, create_platform_indexes, MULTI_TENANT_ENABLED
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -79,6 +83,7 @@ app.include_router(ai_intelligence_router)
 app.include_router(ai_productivity_router)
 app.include_router(ai_resource_router)
 app.include_router(search_router)
+app.include_router(platform_router)
 
 
 @app.on_event("startup")
@@ -97,6 +102,23 @@ async def startup_event():
         except Exception as _e:
             print(f"[STARTUP] pending_actions index skipped: {_e}")
         print("[STARTUP] Database indexes created successfully")
+
+        # --- MULTI-TENANT PLATFORM LAYER (Step 1 of MULTITENANT_PLAN.md) ---
+        # This creates the platform_db (tenants registry, modules catalog, memberships).
+        # Non-destructive: MULTI_TENANT_ENABLED=false by default, so this only adds
+        # data \u2014 it does NOT change how existing routes behave. The tenant DB layer
+        # activates in Step 2 (tenant resolver middleware).
+        try:
+            await create_platform_indexes()
+            platform_seed_result = await seed_platform_if_empty()
+            if platform_seed_result.get("already_initialized"):
+                print("[STARTUP] Platform DB already initialized")
+            else:
+                print(f"[STARTUP] Platform DB seeded: {platform_seed_result}")
+            print(f"[STARTUP] MULTI_TENANT_ENABLED = {MULTI_TENANT_ENABLED} (feature flag)")
+        except Exception as pe:
+            print(f"[STARTUP] Platform DB seeding skipped due to error: {pe}")
+        # --- END MULTI-TENANT LAYER ---
 
         # MIGRATION: Add default phase to existing projects without phases
         projects_without_phases = await projects_collection.count_documents({"phases": {"$exists": False}})
