@@ -8,7 +8,7 @@ These endpoints are all under /api/platform/* and are OFF unless the
 MULTI_TENANT_ENABLED flag is true (except /status which is always available
 for observability).
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 import os
 
 from platform_db import (
@@ -17,6 +17,11 @@ from platform_db import (
     modules_catalog_collection,
     tenant_modules_collection,
     MULTI_TENANT_ENABLED,
+)
+from middleware.tenant_resolver import (
+    resolve_tenant_from_request,
+    get_tenant_enabled_modules,
+    extract_subdomain,
 )
 from auth.dependencies import get_current_user
 
@@ -117,3 +122,67 @@ async def get_tenant_modules(slug: str, current_user: dict = Depends(get_current
         "tenant_name": tenant.get("name"),
         "modules": enriched
     }
+
+
+# ============================================================================
+# STEP 2: Tenant Resolution Endpoints
+# ============================================================================
+
+@router.get("/whoami-tenant")
+async def whoami_tenant(request: Request):
+    """Debug endpoint: shows how the tenant resolver interprets this request.
+
+    Returns:
+      - host: the raw Host header
+      - subdomain: extracted subdomain (or null)
+      - resolution_mode: 'flag_off' | 'subdomain' | 'default_fallback' | 'platform' | 'reserved'
+      - is_platform: true if this is the admin.* subdomain
+      - tenant: the resolved tenant record (redacted; no password hashes anywhere)
+      - enabled_modules: {module_key: bool} for the resolved tenant (empty if platform)
+
+    No auth required — this is a purely diagnostic endpoint for verifying that
+    subdomain-based routing is working correctly. Safe to expose because it
+    only reveals metadata about the current request's own tenant.
+    """
+    host = request.headers.get("host", "")
+    result = await resolve_tenant_from_request(request)
+
+    tenant = result.get("tenant")
+    enabled_modules: dict = {}
+    tenant_summary = None
+    if tenant:
+        tenant_summary = {
+            "id": tenant.get("id"),
+            "slug": tenant.get("slug"),
+            "name": tenant.get("name"),
+            "db_name": tenant.get("db_name"),
+            "status": tenant.get("status"),
+            "is_default": tenant.get("is_default", False),
+            "branding": tenant.get("branding", {}),
+            "settings": tenant.get("settings", {}),
+        }
+        enabled_modules = await get_tenant_enabled_modules(tenant["id"])
+
+    return {
+        "host": host,
+        "subdomain": result.get("subdomain"),
+        "resolution_mode": result.get("resolution_mode"),
+        "is_platform": result.get("is_platform"),
+        "multi_tenant_enabled": MULTI_TENANT_ENABLED,
+        "tenant": tenant_summary,
+        "enabled_modules": enabled_modules,
+    }
+
+
+@router.get("/resolve-subdomain")
+async def resolve_subdomain_debug(host: str):
+    """Standalone subdomain-parser test endpoint.
+
+    Useful for verifying edge cases without actually sending requests with
+    different Host headers:
+        GET /api/platform/resolve-subdomain?host=ddconsult.ddplanner.io
+        GET /api/platform/resolve-subdomain?host=admin.ddplanner.io
+        GET /api/platform/resolve-subdomain?host=localhost:8001
+    """
+    sub = extract_subdomain(host)
+    return {"host": host, "subdomain": sub}

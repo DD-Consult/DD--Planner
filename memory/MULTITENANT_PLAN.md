@@ -118,7 +118,7 @@ Each tenant can enable/disable these independently (respecting dependencies):
 
 ---
 
-### ⏳ Step 2 — Tenant Resolution Middleware
+### ✅ Step 2 — Tenant Resolution Middleware (COMPLETED)
 **Goal:** Backend can resolve "which tenant is this request for?" from subdomain.
 - New `middleware/tenant_resolver.py` — reads `Host` header → extracts subdomain → looks up tenant
 - Fallback: if flag off OR no match → default to DD tenant (backward compat)
@@ -269,6 +269,22 @@ Each tenant can enable/disable these independently (respecting dependencies):
   - **Verified:** existing app 100% unaffected. `admin@test.com` login works, projects endpoint returns all 4 projects, no regressions
   - **Files created:** `platform_db.py`, `routes/platform.py`, `.env` files, `backups/.gitignore`
   - **Files modified:** `server.py` (added seeding + router registration), `requirements.txt` (pinned greenlet==3.1.1, pyee==12.0.0)
+
+- **[Step 2 - ✅ COMPLETED]** Tenant Resolution Middleware
+  - New `middleware/tenant_resolver.py` — parses `Host` header, extracts subdomain, resolves tenant from `platform_db`
+  - Handles all edge cases: normal subdomains, `admin.*` (platform portal), `www.*`, reserved subdomains, no-subdomain (root domain), localhost dev variants, preview URLs, bare IPs
+  - In-memory tenant cache with 60s TTL for performance
+  - FastAPI dependency `get_current_tenant(request)` — attaches tenant to `request.state.tenant`
+  - Helper `get_tenant_enabled_modules(tenant_id)` — returns `{module_key: enabled}` map for Step 6
+  - Two new debug endpoints:
+    - `GET /api/platform/whoami-tenant` — shows how resolver interprets current request (host, subdomain, resolution_mode, tenant, enabled_modules)
+    - `GET /api/platform/resolve-subdomain?host=X` — standalone subdomain parser tester
+  - **Backward compatibility guaranteed:** with `MULTI_TENANT_ENABLED=false` (default), always returns the default tenant regardless of host. Existing routes unchanged.
+  - **Verified in flag=OFF mode:** all existing endpoints work identically
+  - **Verified in flag=ON mode:** `ddconsult.ddplanner.io` → DD tenant, `admin.ddplanner.io` → platform mode, unknown subdomain → 404, no subdomain → default fallback, preview URL → default fallback, existing login/projects still work
+  - Flag restored to `false` after testing
+  - **Files created:** `middleware/__init__.py`, `middleware/tenant_resolver.py`
+  - **Files modified:** `routes/platform.py` (added whoami-tenant + resolve-subdomain endpoints)
 
 ---
 
