@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Optional
 
-from database import db
+from database import ai_knowledge_base_collection
 
 # Registered docs → their friendly source label
 DOC_FILES: Dict[str, str] = {
@@ -64,7 +64,7 @@ INLINE_KB: List[Dict] = [
     },
 ]
 
-_kb_collection = db.ai_knowledge_base  # sections + metadata
+_kb_collection = ai_knowledge_base_collection  # sections + metadata (tenant-aware LazyCollection)
 
 # Stopwords for lightweight scoring
 _STOP = {

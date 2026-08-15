@@ -329,6 +329,32 @@ Each tenant can enable/disable these independently (respecting dependencies):
   - Flag restored to `false` for safety. Test acme tenant cleaned up.
   - **Files modified:** `database.py` (full rewrite), `server.py` (added middleware + imports)
 
+- **[Step 4 Review - ✅ COMPLETED]** Post-implementation deep review + testing agent verification
+  - **Comprehensive code review completed:**
+    - Grepped for all Motor usage patterns (aggregate, bulk_write, watch, with_options, .database, create_index, asyncio.create_task, db.command, direct db import)
+    - Verified LazyCollection interactively: method delegation, cursor iteration, `.find({}).limit()` chaining, `.aggregate()` pipelines all work
+    - Verified LazyCollection.name, LazyCollection repr, __getattr__ delegation
+    - Confirmed ContextVar propagates correctly through asyncio await boundaries
+    - Confirmed startup background tasks (Playwright pre-warm, health monitor) safely use default DB (no tenant bound)
+    - Confirmed `db.command("ping")` at health check endpoints is safe (low-level MongoDB ping, DB-agnostic)
+  - **Bug found & fixed:** `services/knowledge_base.py` was importing `db` directly (`_kb_collection = db.ai_knowledge_base`), bypassing tenant-aware routing. In multi-tenant mode this would have leaked KB data across all tenants. Fixed by using `from database import ai_knowledge_base_collection` (LazyCollection). Verified fix works in both flag modes.
+  - **Testing agent verification: 30/30 tests PASSED, zero regressions**
+    - All auth flows (login, me, negative tests) ✅
+    - Full project CRUD (create/read/update/delete with correct counts) ✅
+    - Resources, allocations, portfolio, dashboard action items, health, leaves, holidays ✅
+    - WBS and risks endpoints ✅
+    - AI Knowledge Base (verifies our fix) ✅
+    - All platform endpoints (status, whoami-tenant, resolve-subdomain, tenants) ✅
+    - Client role access filtering ✅
+    - Timesheet endpoints ✅
+    - Backend logs: NO LazyCollection errors, NO TypeError, NO tracebacks
+  - **Multi-tenant mode also verified:** With flag ON + ddconsult subdomain, all reads correctly route to `tenant_ddconsult` DB (KB 146 sections, projects 4, etc.)
+  - **Known deferred issues (non-blocking, documented):**
+    - Startup index creation only creates indexes on default DB — new tenants (Step 8) will need index creation as part of provisioning
+    - Background health monitor uses default DB — needs multi-tenant iteration in Step 5+
+    - In-memory tenant cache (60s TTL) has no cross-instance invalidation — need Redis pub/sub for horizontal scale
+  - **Files modified in review:** `services/knowledge_base.py` (import fix)
+
 ---
 
 ## Rollback Procedures
