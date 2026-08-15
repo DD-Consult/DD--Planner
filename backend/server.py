@@ -2,7 +2,8 @@
 DD Planner API — slim entrypoint.
 All route handlers live in /routes/*.py; shared logic in /services/, /models/, /auth/, /utils.py, /database.py.
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 import uuid
@@ -10,10 +11,13 @@ import logging
 
 from database import (
     allocations_collection, projects_collection, users_collection, resources_collection,
+    client as mongo_client,
+    set_current_tenant_db, reset_current_tenant_db, get_db_for_tenant_slug,
 )
 from models.schemas import UserRole, ProjectStatus
 from auth.dependencies import get_password_hash
 from utils import ensure_phase_ids
+from middleware.tenant_resolver import resolve_tenant_from_request
 
 # Route modules
 from routes.auth import router as auth_router
@@ -57,6 +61,61 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============================================================================
+# STEP 4: Tenant-context middleware
+# ----------------------------------------------------------------------------
+# For every incoming request, resolve the tenant from the Host header and bind
+# the tenant's DB into a ContextVar. LazyCollection objects in database.py
+# read this ContextVar at every attribute access, so all downstream code
+# automatically operates on the correct tenant's data.
+#
+# When MULTI_TENANT_ENABLED=false, this middleware is a no-op (the ContextVar
+# is never set, and LazyCollection falls back to the default DB).
+#
+# Paths starting with /api/platform/ are exempted from tenant DB binding —
+# they operate directly on platform_db, not any tenant's DB.
+# ============================================================================
+@app.middleware("http")
+async def tenant_context_middleware(request: Request, call_next):
+    if not MULTI_TENANT_ENABLED:
+        # Backward-compat fast path: never touch ContextVar
+        return await call_next(request)
+
+    # Platform admin portal & platform APIs use platform_db directly.
+    # Do not bind a tenant DB for these — but still expose the tenant on
+    # request.state so introspection endpoints (whoami-tenant) work.
+    path = request.url.path or ""
+    is_platform_path = path.startswith("/api/platform/")
+
+    try:
+        resolution = await resolve_tenant_from_request(request)
+    except HTTPException as he:
+        # Middleware cannot rely on FastAPI's automatic HTTPException handler,
+        # so we surface it as a JSONResponse ourselves.
+        logger.info(f"[TENANT MW] {he.status_code} for {path}: {he.detail}")
+        return JSONResponse(status_code=he.status_code, content={"detail": he.detail})
+    except Exception as e:
+        logger.warning(f"[TENANT MW] Unexpected resolution error for {path}: {e}")
+        return JSONResponse(status_code=500, content={"detail": "Tenant resolution failed"})
+
+    tenant = resolution.get("tenant")
+    request.state.tenant = tenant
+    request.state.tenant_resolution = resolution
+
+    if is_platform_path or not tenant:
+        # No tenant DB binding for platform routes or unresolved requests.
+        return await call_next(request)
+
+    # Bind the tenant DB into the ContextVar for the duration of this request.
+    tenant_db = get_db_for_tenant_slug(tenant.get("slug"))
+    token = set_current_tenant_db(tenant_db)
+    try:
+        response = await call_next(request)
+    finally:
+        reset_current_tenant_db(token)
+    return response
 
 # Include all routers
 app.include_router(auth_router)

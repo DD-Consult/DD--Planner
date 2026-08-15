@@ -130,7 +130,7 @@ Each tenant can enable/disable these independently (respecting dependencies):
 
 ---
 
-### ⏳ Step 3 — Data Migration Script
+### ✅ Step 3 — Data Migration Script (COMPLETED)
 **Goal:** Copy DD's data into `tenant_ddconsult` DB with verification.
 - Full mongodump backup first → `/app/backups/pre_multitenant_YYYYMMDD.archive`
 - Script `scripts/migrate_to_multitenant.py`:
@@ -145,7 +145,7 @@ Each tenant can enable/disable these independently (respecting dependencies):
 
 ---
 
-### ⏳ Step 4 — Refactor DB Layer to Tenant-Aware
+### ✅ Step 4 — Refactor DB Layer to Tenant-Aware (COMPLETED)
 **Goal:** Every collection access goes through tenant DB, not global.
 - Rewrite `database.py`: remove global collection exports, add `get_collections(tenant)` factory
 - Refactor all 25 route files: inject collections via dependency
@@ -285,6 +285,49 @@ Each tenant can enable/disable these independently (respecting dependencies):
   - Flag restored to `false` after testing
   - **Files created:** `middleware/__init__.py`, `middleware/tenant_resolver.py`
   - **Files modified:** `routes/platform.py` (added whoami-tenant + resolve-subdomain endpoints)
+
+- **[Step 3 - ✅ COMPLETED]** Data Migration Script
+  - Full mongodump backup taken: `/app/backups/pre_multitenant_20260815_102833.archive` (43KB, gzipped, dry-run verified)
+  - Migration script `/app/scripts/migrate_to_multitenant.py` — production-grade, ~400 lines:
+    - **Dry-run by default** — no writes unless `--commit` explicitly given
+    - **Idempotent** — uses `bulk_write(UpdateOne, upsert=True)` so re-runs never duplicate
+    - **Preserves `_id`** exactly (both ObjectId and string _ids)
+    - **Batched** at 500 docs per bulk write for memory efficiency
+    - **Auto-discovers collections** in source DB (future-proof; picks up new collections without code changes)
+    - **Automatic verification pass** after commit — aborts with exit code 1 if source count ≠ target count for any collection
+    - **Index copying** via `--with-indexes` flag
+    - **Membership creation** — for every user in source DB, creates a `platform_db.memberships` doc linking them to the target tenant
+    - **Filtering** via `--only` / `--skip` flags for partial migrations
+    - **Interactive confirmation** before `--commit` (bypassed with `--yes` for CI)
+    - **Colored terminal output** for clarity
+    - **Verify-only mode** (`--verify-only`) for post-hoc integrity checks
+    - **Exit codes** documented (0/1/2/3 for success/mismatch/config/runtime)
+  - **DD Consulting data migrated:** 171 docs across 7 collections into `tenant_ddconsult` DB (`ai_knowledge_base` 146, `allocations` 10, `baselines` 4, `pending_actions` 0, `projects` 4, `resources` 5, `users` 2)
+  - 4 non-default indexes copied on `allocations` collection
+  - 2 memberships auto-created in `platform_db.memberships` (admin@test.com → admin, client@test.com → client, both scoped to `ddconsult`)
+  - **Verified end-to-end:**
+    - Source DB (`resource_planner`) UNCHANGED (still 2/4/5/10 docs)
+    - Target DB (`tenant_ddconsult`) has EXACT 171 docs, identical `_id` values (ObjectId preservation)
+    - Migration metadata `_migrated_at`, `_migrated_from`, `_migrated_tenant_id`, `_migrated_tenant_slug` added to every doc (audit trail)
+    - Idempotency test passed: re-run wrote same 171 docs, no duplicates
+    - Existing app still returns 4 projects / 5 resources / 10 allocations (feature flag OFF)
+  - Rollback procedures documented in `/app/scripts/ROLLBACK.md` (4 levels: app-level, tenant DB drop, mongorestore, full nuke)
+  - **Files created:** `/app/scripts/migrate_to_multitenant.py`, `/app/scripts/ROLLBACK.md`, `/app/backups/pre_multitenant_20260815_102833.archive`
+
+- **[Step 4 - ✅ COMPLETED]** Refactor DB Layer to Tenant-Aware
+  - **Design chosen:** ContextVar + LazyCollection proxy pattern (documented in `database.py` module docstring)
+  - **Why this design:** Requires ZERO changes to the 25 route files. All existing `from database import X_collection` imports keep working. Each collection reference is now a proxy that resolves to the current-request tenant's DB at attribute access time.
+  - **Files rewritten:**
+    - `database.py` — introduces `LazyCollection` proxy, `_current_tenant_db` ContextVar, `set_current_tenant_db`/`reset_current_tenant_db`/`get_db_for_tenant_slug` helpers. All 25 collection exports converted to LazyCollection instances. Legacy `db` variable preserved for backward compat.
+    - `server.py` — new `tenant_context_middleware` runs on every request. Resolves tenant from Host header, binds tenant DB into ContextVar for the request duration, resets on exit. Middleware is a no-op when MULTI_TENANT_ENABLED=false (fast path — zero overhead).
+  - **HTTPException handling in middleware:** Because Starlette middleware doesn't auto-convert HTTPException to responses, added try/except in the middleware that converts HTTPException → JSONResponse (fixes 500 → 404 for unknown subdomains)
+  - **Verified end-to-end (both modes):**
+    - Flag OFF: All existing CRUD operations work (login, projects list/create/update/delete, resources, allocations, portfolio, dashboard action items). Confirmed 4 projects / 5 resources / 10 allocations returned. Manual + backend testing agent confirm no regressions (agent's flagged "regressions" traced to test authoring bugs — invalid date format for creates, then invalid IDs for updates).
+    - Flag ON: `ddconsult.ddplanner.io` reads from `tenant_ddconsult` DB, unknown subdomain returns clean 404, DD's JWT rejected on other tenant subdomains (401 — Step 5 will formalize this), writes go to correct tenant DB, tenants have complete data isolation.
+    - Second-tenant test proved isolation: created `acme` tenant, seeded 1 project, verified DD host returns 4 projects and Acme host returns 1 (Acme's), each tenant sees only its own data.
+  - **Frontend verified:** Dashboard loads clean at preview URL, all sidebar items render, KPI cards populate correctly.
+  - Flag restored to `false` for safety. Test acme tenant cleaned up.
+  - **Files modified:** `database.py` (full rewrite), `server.py` (added middleware + imports)
 
 ---
 
