@@ -31,6 +31,7 @@ import PrintReport from './pages/PrintReport';
 import Help from './pages/Help';
 import AIIntelligence from './pages/AIIntelligence';
 import Layout from './components/Layout';
+import ModuleRoute from './components/ModuleRoute';
 import { getMe, setAuthToken } from './api';
 
 const queryClient = new QueryClient({
@@ -156,7 +157,7 @@ function App() {
                       path="/resources" 
                       element={
                         <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                          <Resources token={token} />
+                          <ModuleRoute module="resources"><Resources token={token} /></ModuleRoute>
                         </ProtectedRoute>
                       } 
                     />
@@ -164,7 +165,7 @@ function App() {
                       path="/projects" 
                       element={
                         <ProtectedRoute allowedRoles={['admin', 'super_admin', 'resource']}>
-                          <Projects token={token} />
+                          <ModuleRoute module="projects"><Projects token={token} /></ModuleRoute>
                         </ProtectedRoute>
                       } 
                     />
@@ -172,7 +173,7 @@ function App() {
                       path="/portfolio" 
                       element={
                         <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                          <Portfolio />
+                          <ModuleRoute module="projects"><Portfolio /></ModuleRoute>
                         </ProtectedRoute>
                       } 
                     />
@@ -180,7 +181,7 @@ function App() {
                       path="/projects/:id" 
                       element={
                         <ProtectedRoute allowedRoles={['admin', 'super_admin', 'resource', 'contractor', 'client']}>
-                          <ProjectDetail token={token} />
+                          <ModuleRoute module="projects"><ProjectDetail token={token} /></ModuleRoute>
                         </ProtectedRoute>
                       } 
                     />
@@ -188,7 +189,7 @@ function App() {
                       path="/projects/:id/report" 
                       element={
                         <ProtectedRoute allowedRoles={['admin', 'super_admin', 'resource', 'client']}>
-                          <ProjectReport token={token} />
+                          <ModuleRoute module="reports"><ProjectReport token={token} /></ModuleRoute>
                         </ProtectedRoute>
                       } 
                     />
@@ -196,7 +197,7 @@ function App() {
                       path="/my-allocations" 
                       element={
                         <ProtectedRoute allowedRoles={['resource', 'contractor', 'admin', 'super_admin']}>
-                          <MyAllocations token={token} />
+                          <ModuleRoute module="allocations"><MyAllocations token={token} /></ModuleRoute>
                         </ProtectedRoute>
                       } 
                     />
@@ -204,7 +205,7 @@ function App() {
                       path="/allocations" 
                       element={
                         <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                          <Allocations token={token} />
+                          <ModuleRoute module="allocations"><Allocations token={token} /></ModuleRoute>
                         </ProtectedRoute>
                       } 
                     />
@@ -229,7 +230,7 @@ function App() {
                       path="/manage-timesheets" 
                       element={
                         <ProtectedRoute allowedRoles={['super_admin']}>
-                          <ManageTimesheets token={token} />
+                          <ModuleRoute module="timesheets"><ManageTimesheets token={token} /></ModuleRoute>
                         </ProtectedRoute>
                       } 
                     />
@@ -238,7 +239,7 @@ function App() {
                       path="/my-timesheets"
                       element={
                         <ProtectedRoute allowedRoles={['resource', 'contractor', 'admin', 'super_admin']}>
-                          <MyTimesheets token={token} />
+                          <ModuleRoute module="timesheets"><MyTimesheets token={token} /></ModuleRoute>
                         </ProtectedRoute>
                       }
                     />
@@ -247,7 +248,7 @@ function App() {
                       path="/reports" 
                       element={
                         <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                          <Reports token={token} />
+                          <ModuleRoute module="reports"><Reports token={token} /></ModuleRoute>
                         </ProtectedRoute>
                       } 
                     />
@@ -256,7 +257,7 @@ function App() {
                       path="/timesheets/reports" 
                       element={
                         <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                          <TimesheetReports token={token} />
+                          <ModuleRoute module="timesheets"><TimesheetReports token={token} /></ModuleRoute>
                         </ProtectedRoute>
                       } 
                     />
@@ -289,7 +290,7 @@ function App() {
                       path="/ai-intelligence"
                       element={
                         <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                          <AIIntelligence />
+                          <ModuleRoute module="ai_intelligence"><AIIntelligence /></ModuleRoute>
                         </ProtectedRoute>
                       }
                     />

@@ -114,6 +114,151 @@ async def get_tenant_modules(slug: str, admin: dict = Depends(get_current_platfo
     }
 
 
+# ---- Module toggle endpoints (Step 6) ----
+
+
+@router.put("/tenants/{slug}/modules/{module_key}")
+async def toggle_single_module(
+    slug: str,
+    module_key: str,
+    enabled: bool,
+    admin: dict = Depends(get_current_platform_admin),
+):
+    """Toggle a single module for a tenant. Platform admin only.
+    
+    Query param: `enabled=true|false`. Uses upsert so the module row is
+    created if it doesn't yet exist.
+    
+    Dependency validation: if enabling `X` and X depends on `Y`, Y must
+    already be enabled (or a 400 is raised with the missing prereq).
+    Disabling is always permitted (dependent modules keep their state but
+    become effectively unusable — the UI is expected to render an empty
+    state).
+    """
+    from datetime import datetime, timezone
+    tenant = await tenants_collection.find_one({"slug": slug})
+    if not tenant:
+        raise HTTPException(status_code=404, detail=f"Tenant '{slug}' not found")
+    module = await modules_catalog_collection.find_one({"key": module_key})
+    if not module:
+        raise HTTPException(status_code=404, detail=f"Module '{module_key}' not in catalog")
+
+    # If enabling, verify prerequisites
+    if enabled:
+        depends_on = module.get("depends_on") or []
+        for prereq in depends_on:
+            prereq_row = await tenant_modules_collection.find_one(
+                {"tenant_id": str(tenant["_id"]), "module_key": prereq}
+            )
+            if not prereq_row or not prereq_row.get("enabled"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot enable '{module_key}' — its prerequisite '{prereq}' is not enabled."
+                )
+
+    now = datetime.now(timezone.utc)
+    await tenant_modules_collection.update_one(
+        {"tenant_id": str(tenant["_id"]), "module_key": module_key},
+        {"$set": {
+            "tenant_id": str(tenant["_id"]),
+            "tenant_slug": slug,
+            "module_key": module_key,
+            "enabled": bool(enabled),
+            "updated_at": now,
+            "updated_by": admin.get("email"),
+        }, "$setOnInsert": {"enabled_at": now, "enabled_by": admin.get("email")}},
+        upsert=True,
+    )
+
+    # Invalidate tenant module cache (in-process only; multi-instance needs Redis)
+    return {
+        "tenant_slug": slug,
+        "module_key": module_key,
+        "enabled": bool(enabled),
+        "updated_at": now.isoformat(),
+    }
+
+
+@router.put("/tenants/{slug}/modules")
+async def bulk_update_modules(
+    slug: str,
+    payload: dict,
+    admin: dict = Depends(get_current_platform_admin),
+):
+    """Bulk update modules for a tenant.
+    
+    Payload:
+        {"modules": {"timesheets": false, "risks": true, ...}}
+    
+    Missing keys are left untouched. Dependencies are validated before any
+    write happens; if any dependency check fails the whole request is
+    aborted with 400 (no partial state).
+    """
+    from datetime import datetime, timezone
+    tenant = await tenants_collection.find_one({"slug": slug})
+    if not tenant:
+        raise HTTPException(status_code=404, detail=f"Tenant '{slug}' not found")
+
+    mods = payload.get("modules") or {}
+    if not isinstance(mods, dict):
+        raise HTTPException(status_code=400, detail="`modules` must be an object of {key: bool}")
+
+    # Load current state and catalog for dependency checks
+    tenant_id = str(tenant["_id"])
+    current: dict = {}
+    async for row in tenant_modules_collection.find({"tenant_id": tenant_id}):
+        current[row["module_key"]] = bool(row.get("enabled", False))
+    catalog: dict = {}
+    async for m in modules_catalog_collection.find({}):
+        catalog[m["key"]] = m
+
+    # Compute the intended final state
+    final_state = dict(current)
+    for k, v in mods.items():
+        final_state[k] = bool(v)
+
+    # Validate dependencies against final state
+    errors = []
+    for k, enabled in final_state.items():
+        if not enabled:
+            continue
+        module = catalog.get(k)
+        if not module:
+            errors.append(f"Unknown module '{k}'")
+            continue
+        for prereq in module.get("depends_on", []) or []:
+            if not final_state.get(prereq, False):
+                errors.append(f"Cannot enable '{k}' — requires '{prereq}' to be enabled.")
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+
+    # All good — write in one pass
+    now = datetime.now(timezone.utc)
+    written = 0
+    for k, v in mods.items():
+        if k not in catalog:
+            continue  # silently ignore unknown keys (defensive)
+        await tenant_modules_collection.update_one(
+            {"tenant_id": tenant_id, "module_key": k},
+            {"$set": {
+                "tenant_id": tenant_id,
+                "tenant_slug": slug,
+                "module_key": k,
+                "enabled": bool(v),
+                "updated_at": now,
+                "updated_by": admin.get("email"),
+            }, "$setOnInsert": {"enabled_at": now, "enabled_by": admin.get("email")}},
+            upsert=True,
+        )
+        written += 1
+
+    return {
+        "tenant_slug": slug,
+        "modules_updated": written,
+        "final_state": final_state,
+    }
+
+
 # ============================================================================
 # STEP 2: Tenant Resolution Endpoints
 # ============================================================================

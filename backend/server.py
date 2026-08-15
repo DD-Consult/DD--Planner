@@ -46,6 +46,7 @@ from routes.ai_resource import router as ai_resource_router
 from routes.search import router as search_router
 from routes.platform import router as platform_router
 from routes.platform_auth import router as platform_auth_router
+from routes.tenant import router as tenant_router
 
 # Multi-tenant platform layer (Step 1 of MULTITENANT_PLAN.md)
 from platform_db import seed_platform_if_empty, create_platform_indexes, MULTI_TENANT_ENABLED
@@ -95,7 +96,7 @@ async def tenant_context_middleware(request: Request, call_next):
     except HTTPException as he:
         # Middleware cannot rely on FastAPI's automatic HTTPException handler,
         # so we surface it as a JSONResponse ourselves.
-        logger.info(f"[TENANT MW] {he.status_code} for {path}: {he.detail}")
+        logger.info(f"[TENANT MW] {he.status_code} for {path} host={request.headers.get('host', '')}: {he.detail}")
         return JSONResponse(status_code=he.status_code, content={"detail": he.detail})
     except Exception as e:
         logger.warning(f"[TENANT MW] Unexpected resolution error for {path}: {e}")
@@ -145,6 +146,7 @@ app.include_router(ai_resource_router)
 app.include_router(search_router)
 app.include_router(platform_router)
 app.include_router(platform_auth_router)
+app.include_router(tenant_router)
 
 
 @app.on_event("startup")

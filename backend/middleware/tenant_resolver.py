@@ -51,12 +51,18 @@ RESERVED_SUBDOMAINS = {
 }
 
 # --- Emergent / preview host suffixes to treat as "default tenant" in dev ---
+# These are all treated as "no subdomain" so requests fall back to the default
+# tenant. Extend this list when deploying to a new preview/dev environment.
 _DEV_HOST_SUFFIXES = (
     "localhost",
     "127.0.0.1",
     "0.0.0.0",
-    ".emergentagent.com",
-    ".emergent.host",
+    ".emergentagent.com",     # public preview URL
+    ".emergent.host",          # legacy
+    ".emergentcf.cloud",       # internal cluster/ingress-rewritten host
+    ".cluster.local",          # k8s internal service DNS
+    ".svc.cluster.local",      # k8s services
+    ".preview.emergentcf.cloud",  # preview cluster ingress
 )
 
 # --- Simple in-memory cache: {slug: (tenant_doc, expires_at)} ---

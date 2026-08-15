@@ -103,6 +103,12 @@ export const login = (email, password) => {
 
 export const getMe = () => api.get('/auth/me');
 
+// Multi-tenant modules (Step 6): fetch the enabled/disabled status of all
+// modules for the current tenant. Returns:
+//   { tenant_slug, multi_tenant_enabled, modules: { key: bool, ... } }
+// When multi-tenant flag is off, all modules come back as `true` (backward compat).
+export const getMyTenantModules = () => api.get('/tenant/modules');
+
 export const changePassword = (oldPassword, newPassword) =>
   api.post('/auth/change-password', null, {
     params: { old_password: oldPassword, new_password: newPassword }

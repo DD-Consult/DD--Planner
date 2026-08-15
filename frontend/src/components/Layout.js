@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { setAuthToken, getMe, getResources, getProjects, getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead } from '../api';
+import { useEnabledModules } from '../hooks/useEnabledModules';
 import { LayoutDashboard, Users, Briefcase, Calendar, LogOut, Settings as SettingsIcon, CalendarOff, CalendarDays, FlaskConical, Clock, Sparkles, BarChart3, Bell, Check, X, User, Building2, Menu, ClipboardList, HelpCircle, Search, RefreshCw } from 'lucide-react';
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
@@ -33,6 +34,9 @@ const Layout = ({ children, token, onLogout }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const { showDrafts, setShowDrafts } = useSandbox();
+
+  // Step 6 (multi-tenant): read enabled modules for this tenant so we can filter the sidebar
+  const { isEnabled } = useEnabledModules();
 
   useEffect(() => {
     if (token) {
@@ -451,26 +455,32 @@ const Layout = ({ children, token, onLogout }) => {
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'super_admin', 'resource'], tooltip: 'Command center with portfolio overview' },
     { path: '/portal', label: 'My Projects', icon: Briefcase, roles: ['client'], tooltip: 'View your assigned projects' },
-    { path: '/resources', label: 'Resources', icon: Users, roles: ['admin', 'super_admin'], tooltip: 'Manage team members' },
-    { path: '/projects', label: 'Projects', icon: Briefcase, roles: ['admin', 'super_admin', 'resource'], tooltip: 'View and manage all projects' },
-    { path: '/portfolio', label: 'Portfolio', icon: Building2, roles: ['admin', 'super_admin'], tooltip: 'Company-wide portfolio view with timeline and hours analysis' },
-    { path: '/my-allocations', label: 'My Allocations', icon: User, roles: ['resource', 'contractor'], tooltip: 'View your project allocations and capacity' },
-    { path: '/allocations', label: 'Allocations', icon: Calendar, roles: ['admin', 'super_admin'], tooltip: 'Manage resource assignments' },
-    { path: '/my-timesheets', label: 'My Timesheets', icon: ClipboardList, roles: ['resource', 'contractor'], tooltip: 'View your timesheet history and autofill current week' },
+    { path: '/resources', label: 'Resources', icon: Users, roles: ['admin', 'super_admin'], module: 'resources', tooltip: 'Manage team members' },
+    { path: '/projects', label: 'Projects', icon: Briefcase, roles: ['admin', 'super_admin', 'resource'], module: 'projects', tooltip: 'View and manage all projects' },
+    { path: '/portfolio', label: 'Portfolio', icon: Building2, roles: ['admin', 'super_admin'], module: 'projects', tooltip: 'Company-wide portfolio view with timeline and hours analysis' },
+    { path: '/my-allocations', label: 'My Allocations', icon: User, roles: ['resource', 'contractor'], module: 'allocations', tooltip: 'View your project allocations and capacity' },
+    { path: '/allocations', label: 'Allocations', icon: Calendar, roles: ['admin', 'super_admin'], module: 'allocations', tooltip: 'Manage resource assignments' },
+    { path: '/my-timesheets', label: 'My Timesheets', icon: ClipboardList, roles: ['resource', 'contractor'], module: 'timesheets', tooltip: 'View your timesheet history and autofill current week' },
     { path: '/users', label: 'Users', icon: Users, roles: ['admin', 'super_admin'], tooltip: 'Manage user accounts and roles' },
-    { path: '/manage-timesheets', label: 'Manage Timesheets', icon: Clock, roles: ['super_admin'], tooltip: 'View and edit all user timesheets' },
+    { path: '/manage-timesheets', label: 'Manage Timesheets', icon: Clock, roles: ['super_admin'], module: 'timesheets', tooltip: 'View and edit all user timesheets' },
     { path: '/leaves', label: 'Time Off', icon: CalendarOff, roles: ['admin', 'super_admin', 'resource'], tooltip: 'Track vacations and holidays' },
     { path: '/holidays', label: 'Holidays', icon: CalendarDays, roles: ['admin', 'super_admin', 'resource'], tooltip: 'Manage company holidays' },
-    { path: '/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'super_admin'], tooltip: 'Budget & actuals reporting' },
-    { path: '/timesheets/reports', label: 'Timesheet Reports', icon: BarChart3, roles: ['admin', 'super_admin'], tooltip: 'Aggregated timesheet analysis with date ranges' },
-    { path: '/ai-intelligence', label: 'AI Intelligence', icon: Sparkles, roles: ['admin', 'super_admin'], tooltip: 'Anomaly detection, forecasting, retrospectives' },
+    { path: '/reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'super_admin'], module: 'reports', tooltip: 'Budget & actuals reporting' },
+    { path: '/timesheets/reports', label: 'Timesheet Reports', icon: BarChart3, roles: ['admin', 'super_admin'], module: 'timesheets', tooltip: 'Aggregated timesheet analysis with date ranges' },
+    { path: '/ai-intelligence', label: 'AI Intelligence', icon: Sparkles, roles: ['admin', 'super_admin'], module: 'ai_intelligence', tooltip: 'Anomaly detection, forecasting, retrospectives' },
     { path: '/settings', label: 'Settings', icon: SettingsIcon, roles: ['super_admin'], tooltip: 'Configure AI integrations' },
     { path: '/help', label: 'Help & Guide', icon: HelpCircle, roles: ['admin', 'super_admin', 'resource', 'contractor', 'client'], tooltip: 'How to use DD Planner' },
   ];
 
-  const filteredNavItems = navItems.filter(item => 
-    item.roles.includes(user?.role)
-  );
+  // Filter nav items by BOTH role AND enabled modules (Step 6 of MULTITENANT_PLAN)
+  const filteredNavItems = navItems.filter(item => {
+    if (!item.roles.includes(user?.role)) return false;
+    // If nav item has a `module` key, only show it when that module is enabled
+    // for the current tenant. `isEnabled` defaults to true for unknown keys,
+    // so this is backward-compatible when the endpoint is unavailable.
+    if (item.module && !isEnabled(item.module)) return false;
+    return true;
+  });
 
   return (
     <TooltipProvider>

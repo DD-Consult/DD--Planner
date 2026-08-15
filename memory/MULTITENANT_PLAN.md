@@ -169,7 +169,7 @@ Each tenant can enable/disable these independently (respecting dependencies):
 
 ---
 
-### ⏳ Step 6 — Module Toggle System
+### ✅ Step 6 — Module Toggle System (COMPLETED)
 **Goal:** Backend enforces module gates; frontend hides disabled UI.
 - Backend: `@require_module("timesheets")` decorator on route groups → 403 if disabled
 - Frontend: `useEnabledModules()` hook → cached in React Query
@@ -387,6 +387,27 @@ Each tenant can enable/disable these independently (respecting dependencies):
   - Flag restored to OFF after verification. Test acme tenant cleaned up.
   - **Files created:** `routes/platform_auth.py`
   - **Files modified:** `auth/dependencies.py` (rewrite), `routes/auth.py` (extended login payload), `routes/platform.py` (locked-down guards), `server.py` (imports + router registration)
+
+- **[Step 6 - ✅ COMPLETED]** Module Toggle System (backend + frontend + testing verified)
+  - **Backend:**
+    - `middleware/module_guard.py` — `require_module(key)` FastAPI dependency + `get_current_tenant_modules(request)` helper with request-scoped caching. Flag-off = no-op (backward compat).
+    - `routes/tenant.py` — `GET /api/tenant/modules` returns `{tenant_slug, multi_tenant_enabled, modules: {key: bool}}`. Always reads actual `tenant_modules` state so platform-admin toggles are honored in both flag modes.
+    - `routes/platform.py` — added `PUT /api/platform/tenants/{slug}/modules/{key}?enabled=X` (single toggle) + `PUT /api/platform/tenants/{slug}/modules` (bulk toggle with `{modules: {key: bool}}` body). Both include dependency validation (can't enable `wbs` without `projects`).
+  - **Frontend:**
+    - `hooks/useEnabledModules.js` — React Query hook exposing `{modules, isEnabled(key), tenantSlug, isMultiTenant, isLoading}`. 5-min staleTime.
+    - `components/ModuleRoute.js` — route guard rendering a friendly "Module Not Enabled" page when a route's module is disabled.
+    - `App.js` — wrapped 12 protected routes in `<ModuleRoute module="...">` (resources, projects, portfolio, projectdetail, projectreport, allocations, my-allocations, my-timesheets, manage-timesheets, reports, timesheet reports, ai-intelligence)
+    - `components/Layout.js` — sidebar nav filtered by BOTH role AND `isEnabled(module)`; 12 nav items tagged with module keys
+    - `api.js` — added `getMyTenantModules()`
+  - **Bug fixed during review:**
+    - Original `/api/tenant/modules` hardcoded `true` in flag=off mode, ignoring platform admin toggles. Testing agent caught this. Rewrote endpoint to always read `tenant_modules` collection, default to `true` for legacy tenants without rows.
+    - Preview URL host `xxx.cluster-8.preview.emergentcf.cloud` was being mis-parsed as `xxx` subdomain (404). Fixed by adding `.emergentcf.cloud`, `.cluster.local`, `.preview.emergentcf.cloud` to `_DEV_HOST_SUFFIXES`.
+  - **Verified end-to-end (both flag modes):**
+    - Flag OFF: 30+ regression tests all pass. Platform admin toggle → tenant endpoint reflects change → frontend sidebar hides disabled item → direct URL shows "Module Not Enabled" page.
+    - Flag ON: `require_module('timesheets')` correctly raises 403 for disabled module, allows enabled modules. Cross-tenant isolation still working.
+  - **Testing agent verified fix: 10/10 tests PASS** including the critical T3 (bug fix verification) and 4 regression sanity checks (projects=4, resources=5, allocations=10, health OK).
+  - **Files created:** `middleware/module_guard.py`, `routes/tenant.py`, `frontend/src/hooks/useEnabledModules.js`, `frontend/src/components/ModuleRoute.js`
+  - **Files modified:** `routes/platform.py` (toggle endpoints), `server.py` (tenant router registration), `middleware/tenant_resolver.py` (expanded dev host suffixes), `frontend/src/api.js` (getMyTenantModules), `frontend/src/App.js` (ModuleRoute wrappers on 12 routes), `frontend/src/components/Layout.js` (module-filtered sidebar)
 
 ---
 
