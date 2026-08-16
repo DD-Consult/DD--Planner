@@ -26,11 +26,13 @@ TENANT_DB_PREFIX = os.environ.get('TENANT_DB_PREFIX', 'tenant_')
 MULTI_TENANT_ENABLED = os.environ.get('MULTI_TENANT_ENABLED', 'false').lower() == 'true'
 
 # --- Client & DB ---
+# Timeouts tuned for GCP Cloud Run cold-start behaviour so failed Atlas
+# connections don't hang the startup event past the readiness window.
 try:
     _platform_client = AsyncIOMotorClient(
         MONGO_URL,
-        serverSelectionTimeoutMS=5000,
-        connectTimeoutMS=10000,
+        serverSelectionTimeoutMS=3000,
+        connectTimeoutMS=5000,
         socketTimeoutMS=30000,
         maxPoolSize=25,
         minPoolSize=0,

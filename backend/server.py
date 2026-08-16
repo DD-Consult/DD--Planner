@@ -153,9 +153,21 @@ app.include_router(tenant_router)
 app.include_router(tenant_signup_router)
 
 
+# ============================================================================
+# Readiness flag — set to True after startup_event completes.
+# /health returns 503 if not yet ready, so Cloud Run/K8s treat the instance as
+# unhealthy during boot and route traffic to warm instances instead. This
+# prevents 502s from requests that arrive during the startup window.
+# ============================================================================
+_app_ready = False
+
+
 @app.on_event("startup")
 async def startup_event():
-    """Startup: create indexes, run migrations, seed if empty."""
+    """Startup: create critical indexes, then schedule non-critical work as
+    background tasks so we don't block Cloud Run from routing traffic.
+    """
+    global _app_ready
     try:
         await allocations_collection.create_index("resource_id")
         await allocations_collection.create_index("project_id")
@@ -171,20 +183,25 @@ async def startup_event():
         print("[STARTUP] Database indexes created successfully")
 
         # --- MULTI-TENANT PLATFORM LAYER (Step 1 of MULTITENANT_PLAN.md) ---
-        # This creates the platform_db (tenants registry, modules catalog, memberships).
-        # Non-destructive: MULTI_TENANT_ENABLED=false by default, so this only adds
-        # data \u2014 it does NOT change how existing routes behave. The tenant DB layer
-        # activates in Step 2 (tenant resolver middleware).
-        try:
-            await create_platform_indexes()
-            platform_seed_result = await seed_platform_if_empty()
-            if platform_seed_result.get("already_initialized"):
-                print("[STARTUP] Platform DB already initialized")
-            else:
-                print(f"[STARTUP] Platform DB seeded: {platform_seed_result}")
-            print(f"[STARTUP] MULTI_TENANT_ENABLED = {MULTI_TENANT_ENABLED} (feature flag)")
-        except Exception as pe:
-            print(f"[STARTUP] Platform DB seeding skipped due to error: {pe}")
+        # Deferred to a background task so Cloud Run can start routing traffic
+        # to this instance immediately. The seeding is idempotent (count-based
+        # guards) and takes ~1-3s against Atlas — but if we did it inline, any
+        # slow-Atlas cold-start would delay readiness and cause 502s.
+        import asyncio as _aio
+
+        async def _platform_layer_init():
+            try:
+                await create_platform_indexes()
+                platform_seed_result = await seed_platform_if_empty()
+                if platform_seed_result.get("already_initialized"):
+                    print("[STARTUP-BG] Platform DB already initialized")
+                else:
+                    print(f"[STARTUP-BG] Platform DB seeded: {platform_seed_result}")
+                print(f"[STARTUP-BG] MULTI_TENANT_ENABLED = {MULTI_TENANT_ENABLED} (feature flag)")
+            except Exception as pe:
+                print(f"[STARTUP-BG] Platform DB seeding skipped due to error: {pe}")
+
+        _aio.create_task(_platform_layer_init())
         # --- END MULTI-TENANT LAYER ---
 
         # MIGRATION: Add default phase to existing projects without phases
@@ -340,27 +357,49 @@ async def startup_event():
         except Exception as e:
             print(f"[STARTUP] Health monitor scheduling skipped: {e}")
 
-        # AI KNOWLEDGE BASE — index GUIDE/README/INTEGRATIONS so the AI copilot
+        # AI KNOWLEDGE BASE — indexes GUIDE/README/INTEGRATIONS so the AI copilot
         # can answer "how do I…" and troubleshoot with citations. Best-effort.
-        try:
-            from services.knowledge_base import reindex as _kb_reindex, status as _kb_status
-            existing = await _kb_status()
-            if not existing.get("total_sections"):
-                result = await _kb_reindex()
-                print(f"[STARTUP] AI knowledge base indexed: {result.get('indexed_sections')} sections")
-            else:
-                print(f"[STARTUP] AI knowledge base already has {existing.get('total_sections')} sections")
-        except Exception as e:
-            print(f"[STARTUP] Knowledge base indexing skipped: {e}")
+        # Deferred to background so it doesn't block readiness — first request can
+        # arrive before KB is fully indexed; the KB endpoints handle empty state.
+        async def _kb_init():
+            try:
+                from services.knowledge_base import reindex as _kb_reindex, status as _kb_status
+                existing = await _kb_status()
+                if not existing.get("total_sections"):
+                    result = await _kb_reindex()
+                    print(f"[STARTUP-BG] AI knowledge base indexed: {result.get('indexed_sections')} sections")
+                else:
+                    print(f"[STARTUP-BG] AI knowledge base already has {existing.get('total_sections')} sections")
+            except Exception as e:
+                print(f"[STARTUP-BG] Knowledge base indexing skipped: {e}")
+
+        asyncio.create_task(_kb_init())
     except Exception as e:
         print(f"[STARTUP ERROR] Failed to complete startup tasks: {str(e)}")
         print("[STARTUP] Application will continue to run, but database may not be fully initialized")
+    finally:
+        # Mark app as ready so /health returns 200. This flips even if some
+        # non-critical startup task above failed (defensive: better to serve
+        # traffic with degraded features than 502 forever).
+        _app_ready = True
+        print("[STARTUP] Application marked READY — /health will now return 200")
 
 
 @app.get("/health")
 async def health_check():
-    """Basic health check"""
+    """Basic health check.
+    
+    Returns 503 during startup (before startup_event finishes) so that Cloud Run
+    and Kubernetes load balancers correctly wait for the instance to be ready
+    before routing traffic to it. This prevents 502s from arriving-too-early
+    requests.
+    """
     from database import db
+    if not _app_ready:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "starting", "message": "Application is initialising, please retry shortly"},
+        )
     try:
         await db.command("ping")
         return {"status": "healthy", "database": "connected"}
@@ -370,8 +409,15 @@ async def health_check():
 
 @app.get("/api/health")
 async def api_health_check():
-    """API health check"""
+    """API health check — mirrors /health so both the Cloud Run health probe
+    (/health) and the frontend/monitoring pings (/api/health) get the readiness
+    signal during startup."""
     from database import db
+    if not _app_ready:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "starting", "api": "not_ready"},
+        )
     try:
         await db.command("ping")
         return {"status": "healthy", "database": "connected", "api": "operational"}

@@ -57,11 +57,15 @@ MONGO_DB_NAME = os.environ.get('DB_NAME') or os.environ.get('MONGO_DB_NAME', 're
 MULTI_TENANT_ENABLED = os.environ.get('MULTI_TENANT_ENABLED', 'false').lower() == 'true'
 
 # --- MongoDB Client (shared across default DB + all tenant DBs) ---
+# Timeouts tuned for GCP Cloud Run cold-start:
+#   - serverSelectionTimeoutMS=3000 fails fast if Atlas is unreachable at boot,
+#     preventing the startup event from hanging past Cloud Run's readiness window.
+#   - connectTimeoutMS=5000 mirrors the same intent for the initial TCP handshake.
 try:
     client = AsyncIOMotorClient(
         MONGO_URL,
-        serverSelectionTimeoutMS=5000,
-        connectTimeoutMS=10000,
+        serverSelectionTimeoutMS=3000,
+        connectTimeoutMS=5000,
         socketTimeoutMS=30000,
         maxPoolSize=50,
         minPoolSize=0,

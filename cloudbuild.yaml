@@ -62,6 +62,7 @@ steps:
       - "3"
       - "--timeout"
       - "300"
+      - "--cpu-boost"           # Give container extra CPU during startup — reduces cold-start time (Cloud Run 2nd-gen feature)
       - "--allow-unauthenticated"
       - "--set-env-vars"
       - "DB_NAME=resource_planner,MULTI_TENANT_ENABLED=false,PLATFORM_DB_NAME=platform_db,TENANT_DB_PREFIX=tenant_"
