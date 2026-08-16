@@ -19,7 +19,7 @@ Response includes a login URL suggesting the tenant's subdomain workspace.
 """
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timezone, timedelta
 import uuid
 import re

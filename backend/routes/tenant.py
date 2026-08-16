@@ -22,6 +22,9 @@ Behaviour (both flag states):
     master enforcement switch).
 """
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime, timezone
 
 from auth.dependencies import get_current_user
 from platform_db import (
@@ -105,3 +108,194 @@ async def get_my_tenant_modules(
         "multi_tenant_enabled": MULTI_TENANT_ENABLED,
         "modules": modules,
     }
+
+
+# ============================================================================
+# STEP 9 — Per-tenant branding & settings endpoints
+# ============================================================================
+
+# Default fallback branding + settings — used when no tenant record exists
+# (edge case: legacy tenants pre-Step-1, or DB corruption). Matches the
+# original DD Consulting palette so exports still look correct.
+_DEFAULT_BRANDING = {
+    "logo_url": None,
+    "primary_color": "#1B2A47",
+    "accent_color": "#C9A84C",
+}
+_DEFAULT_SETTINGS = {
+    "work_week_hours": 40,
+    "timezone": "UTC",
+    "work_days": [0, 1, 2, 3, 4],  # Mon-Fri
+}
+
+# Guard: reject huge base64 logos before they even hit the DB
+_MAX_LOGO_BYTES = 500_000  # ~500KB after base64 encoding
+
+
+class TenantBrandingUpdate(BaseModel):
+    """Payload for PATCH /api/tenant/branding.
+
+    All fields optional; only supplied fields are updated (partial updates).
+    """
+    name: Optional[str] = None
+    logo_url: Optional[str] = None  # data:image/png;base64,... or https URL
+    primary_color: Optional[str] = None  # 7-char hex (e.g. "#1B2A47")
+    accent_color: Optional[str] = None
+
+
+class TenantSettingsUpdate(BaseModel):
+    """Payload for PATCH /api/tenant/settings.
+    
+    All fields optional; only supplied fields are updated.
+    """
+    work_week_hours: Optional[int] = None  # 1..168
+    timezone: Optional[str] = None  # IANA tz string, e.g. 'Australia/Sydney'
+
+
+def _valid_hex_color(v: str) -> bool:
+    """Validate a #RRGGBB hex color."""
+    if not v or not isinstance(v, str):
+        return False
+    if not v.startswith("#") or len(v) != 7:
+        return False
+    try:
+        int(v[1:], 16)
+        return True
+    except ValueError:
+        return False
+
+
+async def _get_or_default_tenant(request: Request) -> dict:
+    """Return the current tenant record with fallback to a synthesized default.
+
+    Never raises: guarantees a dict with slug/name/branding/settings keys so
+    downstream code (e.g. exports) can rely on the shape.
+    """
+    slug = await _resolve_effective_tenant_slug(request)
+    doc = await tenants_collection.find_one({"slug": slug})
+    if not doc:
+        return {
+            "slug": slug or "ddconsult",
+            "name": "Workspace",
+            "branding": dict(_DEFAULT_BRANDING),
+            "settings": dict(_DEFAULT_SETTINGS),
+        }
+    # Merge with defaults so exports always have every key
+    merged_branding = {**_DEFAULT_BRANDING, **(doc.get("branding") or {})}
+    merged_settings = {**_DEFAULT_SETTINGS, **(doc.get("settings") or {})}
+    return {
+        "id": str(doc.get("_id")),
+        "slug": doc.get("slug"),
+        "name": doc.get("name") or "Workspace",
+        "branding": merged_branding,
+        "settings": merged_settings,
+        "status": doc.get("status"),
+    }
+
+
+@router.get("/branding")
+async def get_tenant_branding(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Return name + branding + settings for the current tenant.
+    
+    Any authenticated tenant user can read this. Used by:
+      - Frontend header (logo, primary color styling)
+      - Export services (cover slide branding — DD Navy default preserved)
+    """
+    return await _get_or_default_tenant(request)
+
+
+@router.patch("/branding")
+async def update_tenant_branding(
+    request: Request,
+    payload: TenantBrandingUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """Update tenant branding. Super-admin only.
+    
+    Validates hex colors (`#RRGGBB` only) and enforces logo size cap.
+    Writes go to platform_db.tenants for the current tenant.
+    """
+    from fastapi import HTTPException, status
+    if current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super admin access required")
+
+    slug = await _resolve_effective_tenant_slug(request)
+    tenant = await tenants_collection.find_one({"slug": slug})
+    if not tenant:
+        raise HTTPException(status_code=404, detail=f"Tenant '{slug}' not found")
+
+    update_ops: dict = {"updated_at": datetime.now(timezone.utc)}
+    if payload.name is not None:
+        name = payload.name.strip()
+        if len(name) < 1 or len(name) > 100:
+            raise HTTPException(status_code=400, detail="Name must be 1-100 characters")
+        update_ops["name"] = name
+    if payload.primary_color is not None:
+        if not _valid_hex_color(payload.primary_color):
+            raise HTTPException(status_code=400, detail="primary_color must be '#RRGGBB' hex")
+        update_ops["branding.primary_color"] = payload.primary_color
+    if payload.accent_color is not None:
+        if not _valid_hex_color(payload.accent_color):
+            raise HTTPException(status_code=400, detail="accent_color must be '#RRGGBB' hex")
+        update_ops["branding.accent_color"] = payload.accent_color
+    if payload.logo_url is not None:
+        # Basic size guard for base64 data URLs
+        if payload.logo_url and len(payload.logo_url) > _MAX_LOGO_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"logo_url exceeds max size ({_MAX_LOGO_BYTES} bytes). "
+                       "Please upload a smaller image (recommended: <300KB)."
+            )
+        update_ops["branding.logo_url"] = payload.logo_url or None
+
+    await tenants_collection.update_one({"slug": slug}, {"$set": update_ops})
+    # Invalidate the tenant cache so the next read picks up the change
+    from middleware.tenant_resolver import invalidate_tenant_cache
+    invalidate_tenant_cache(slug)
+    return await _get_or_default_tenant(request)
+
+
+@router.patch("/settings")
+async def update_tenant_settings(
+    request: Request,
+    payload: TenantSettingsUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """Update tenant work-policy settings. Super-admin only.
+    
+    - work_week_hours: 1..168 (168 = full week, 40 = standard)
+    - timezone: any IANA tz string
+    """
+    from fastapi import HTTPException, status
+    if current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super admin access required")
+
+    slug = await _resolve_effective_tenant_slug(request)
+    tenant = await tenants_collection.find_one({"slug": slug})
+    if not tenant:
+        raise HTTPException(status_code=404, detail=f"Tenant '{slug}' not found")
+
+    update_ops: dict = {"updated_at": datetime.now(timezone.utc)}
+    if payload.work_week_hours is not None:
+        if payload.work_week_hours < 1 or payload.work_week_hours > 168:
+            raise HTTPException(status_code=400, detail="work_week_hours must be between 1 and 168")
+        update_ops["settings.work_week_hours"] = payload.work_week_hours
+    if payload.timezone is not None:
+        tz = payload.timezone.strip()
+        if not tz or len(tz) > 64:
+            raise HTTPException(status_code=400, detail="timezone must be a non-empty IANA string")
+        # Validate against pytz (already a dependency)
+        try:
+            import pytz
+            pytz.timezone(tz)
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Unknown timezone '{tz}'. Use an IANA tz like 'Australia/Sydney'.")
+        update_ops["settings.timezone"] = tz
+
+    await tenants_collection.update_one({"slug": slug}, {"$set": update_ops})
+    from middleware.tenant_resolver import invalidate_tenant_cache
+    invalidate_tenant_cache(slug)
+    return await _get_or_default_tenant(request)

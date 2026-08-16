@@ -18,7 +18,7 @@ Audit log:
     a doc to `platform_audit_log`. Includes: actor, action, target, before/after
     snapshot (for updates), and timestamp.
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone, timedelta
@@ -161,7 +161,6 @@ async def create_tenant(
       4. Create matching membership row
       5. Write audit log
     """
-    from database import client as mongo_client
     from database import get_db_for_tenant_slug
 
     slug = payload.slug.lower()

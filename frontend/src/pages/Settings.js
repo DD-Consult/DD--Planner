@@ -16,6 +16,7 @@ import { Settings as SettingsIcon, Key, Sparkles, CheckCircle2, XCircle, User, C
 import { toast } from 'sonner';
 import { getMe, updateAvatar, scanOrphanedData, executeDataCleanup, getAiSettings, updateAiSettings, clearAiSettings, checkTimesheetReminders, checkAllocationReminders, getReminderStatus } from '../api';
 import IntegrationsSettings from '../components/IntegrationsSettings';
+import WorkspaceBrandingSection from '../components/WorkspaceBrandingSection';
 
 const Settings = () => {
   const queryClient = useQueryClient();
@@ -143,6 +144,9 @@ const Settings = () => {
         </h1>
         <p className="text-sm text-[#667085] mt-1">Configure your profile, AI integrations and system preferences</p>
       </div>
+
+      {/* Workspace Branding & Work Policy (Step 9 - Multi-tenant) */}
+      <WorkspaceBrandingSection userRole={userData?.role} />
 
       {/* Profile Avatar Section */}
       <div className="bg-white border border-[#E6E8EC] rounded-lg p-6">

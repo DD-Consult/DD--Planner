@@ -109,6 +109,11 @@ export const getMe = () => api.get('/auth/me');
 // When multi-tenant flag is off, all modules come back as `true` (backward compat).
 export const getMyTenantModules = () => api.get('/tenant/modules');
 
+// Multi-tenant branding & settings (Step 9)
+export const getTenantBranding = () => api.get('/tenant/branding');
+export const updateTenantBranding = (payload) => api.patch('/tenant/branding', payload);
+export const updateTenantSettings = (payload) => api.patch('/tenant/settings', payload);
+
 export const changePassword = (oldPassword, newPassword) =>
   api.post('/auth/change-password', null, {
     params: { old_password: oldPassword, new_password: newPassword }

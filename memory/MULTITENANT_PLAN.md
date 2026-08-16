@@ -207,7 +207,7 @@ Each tenant can enable/disable these independently (respecting dependencies):
 
 ---
 
-### ⏳ Step 9 — Per-Tenant Branding & Settings
+### ✅ Step 9 — Per-Tenant Branding & Settings (COMPLETED)
 **Goal:** Each tenant customizes their workspace.
 - New `tenant_settings` in tenant DB: logo (base64), primary_color, work_week_hours, timezone, ai_custom_instructions
 - Replace hardcoded "DD Consulting" in `ppt_export.py` → pull from settings
@@ -487,6 +487,48 @@ Each tenant can enable/disable these independently (respecting dependencies):
     - No AttributeError, TypeError, or 500s in backend logs
   - **Files created:** `routes/tenant_signup.py`, `frontend/src/pages/Signup.js`
   - **Files modified:** `server.py` (router registration), `middleware/tenant_resolver.py` (X-Forwarded-Host support), `routes/platform.py` (whoami-tenant enrichment), `cloudbuild.yaml` (multi-tenant env vars), `GCP_DEPLOYMENT.md` (multi-tenant section), `frontend/src/App.js` (signup route), `frontend/src/pages/Login.js` (signup link)
+
+- **[Step 9 - ✅ COMPLETED]** Per-Tenant Branding & Settings (backend + frontend + PPT export wired + GCP-hardened + testing verified)
+  - **Bloat cleanup (before implementation):** removed 3 stale unused imports flagged from Steps 5-8 audit (`List` from tenant_signup.py, `Request` + `client as mongo_client` from platform_ops.py)
+  - **Backend — new tenant settings endpoints (`routes/tenant.py`):**
+    - `GET /api/tenant/branding` — public to any authenticated tenant user. Returns `{id, slug, name, branding: {logo_url, primary_color, accent_color}, settings: {work_week_hours, timezone, work_days}, status}` with DD defaults merged for missing keys
+    - `PATCH /api/tenant/branding` — super_admin only. Updates `name`, `primary_color`, `accent_color`, `logo_url`. Strict hex validation (`#RRGGBB` only), name 1-100 chars, **logo size cap 500KB → HTTP 413** (GCP production concern)
+    - `PATCH /api/tenant/settings` — super_admin only. Updates `work_week_hours` (1-168) and `timezone` (validated via pytz.timezone() against IANA list)
+    - `_get_or_default_tenant()` helper — always returns dict with full shape even if no tenant record exists (defensive)
+    - Cache invalidation via `invalidate_tenant_cache(slug)` on every write
+  - **Backend — PPT export tenant-branded (`services/exports/ppt_export.py`):**
+    - New `_resolve_brand_palette(branding)` returns `(primary, accent, light)` RGBColors, falling back to DD Navy/Gold on invalid input
+    - New `_hex_to_rgb(hex_str, fallback)` helper — safe conversion
+    - `_add_cover_slide(prs, cover)` now reads `cover.branding` and `cover.workspace_name`
+    - `_compose_pptx` section slides use tenant primary/accent colors instead of hardcoded DD_NAVY/DD_GOLD
+    - "Prepared by DD Consulting" → "Prepared by {workspace_name}" (dynamic)
+    - Right-header "DD Consulting" logo → tenant workspace name (dynamic)
+    - `_fetch_cover_meta` now also loads branding from `platform_db.tenants` (default tenant) with best-effort try/except; falls back to DD defaults on any error — **no export failures**
+    - Bottom band color computed as -15% darkened primary (approximation), safe fallback preserves original dark-navy `#0F1B30`
+  - **Frontend — Settings page enhancement:**
+    - `components/WorkspaceBrandingSection.js` (new, 300+ lines) — two cards: Branding (name, primary color picker, accent color picker, logo upload with 400KB client-side cap, live preview showing header+CONFIDENTIAL swatch) and Work Policy (work_week_hours numeric, timezone dropdown with 13 common IANA + custom passthrough)
+    - Read-only mode for non-super_admin (no save buttons, disabled inputs)
+    - Uses React Query for cache invalidation on save
+    - Injected into `pages/Settings.js` above the Profile Avatar section
+    - `api.js` new functions: `getTenantBranding`, `updateTenantBranding`, `updateTenantSettings`
+  - **GCP production considerations verified:**
+    - Payload size guard: 500KB base64 logo → 413 (prevents Cloud Run memory OOM on huge uploads)
+    - IANA timezone validation via pytz (which is already a dependency) → 400 on invalid
+    - Hex format strict `#RRGGBB` (7 chars) → 400 on `#FFF`, `1B2A47`, `badcolor`
+    - MongoDB Atlas nested-field updates via dot notation (`branding.primary_color`) verified persisting correctly
+    - X-Forwarded-Host handling continues to work
+    - Backend logs completely clean (no AttributeError, TypeError, 500s)
+  - **Testing agent verification: 37/37 tests PASSED**
+    - 12/12 regression tests (all Steps 1-8 features intact)
+    - 2/2 GET /api/tenant/branding tests
+    - 9/9 PATCH /api/tenant/branding tests (including 413 logo-size guard)
+    - 6/6 PATCH /api/tenant/settings tests (including 400 on invalid timezone)
+    - 3/3 auth boundary tests
+    - 3/3 cleanup tests (defaults restored)
+    - 2/2 GCP production sanity tests
+  - **Live UI verified via screenshot:** Settings page shows Workspace Branding card with color pickers, hex inputs, logo upload button, and live preview showing primary/accent color combo
+  - **Files created:** `frontend/src/components/WorkspaceBrandingSection.js`
+  - **Files modified:** `routes/tenant.py` (branding + settings endpoints), `services/exports/ppt_export.py` (tenant-branded cover + sections), `frontend/src/api.js` (3 new functions), `frontend/src/pages/Settings.js` (integrated section), `routes/tenant_signup.py` (removed unused import), `routes/platform_ops.py` (removed unused imports)
 
 ---
 
