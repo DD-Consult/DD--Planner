@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { LayoutDashboard, Building2, FileText, User, LogOut, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 
-const PlatformLayout = ({ children }) => {
+const PlatformLayout = ({ children, onLogout }) => {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -15,7 +15,16 @@ const PlatformLayout = ({ children }) => {
       console.error('Logout error:', error);
     } finally {
       setPlatformAuthToken(null);
-      navigate('/platform/login');
+      localStorage.removeItem('platform_token');
+      // Ask parent (PlatformApp) to clear its React state so the Routes
+      // re-render to the login screen. If no callback was passed, fall back
+      // to manual navigation (still safe — the guard in PlatformApp will
+      // redirect on the next render).
+      if (typeof onLogout === 'function') {
+        onLogout();
+      } else {
+        navigate('/platform/login');
+      }
     }
   };
 

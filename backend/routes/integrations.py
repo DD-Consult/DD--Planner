@@ -27,7 +27,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from auth.dependencies import get_current_user, require_admin
+from auth.dependencies import get_current_user
 from database import (
     integration_settings_collection,
     integration_sync_logs_collection,
@@ -42,7 +42,6 @@ from services.hubspot import (
     append_sync_log,
     verify_hubspot_signature_v3,
 )
-from bson import ObjectId
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -323,7 +322,6 @@ async def receive_hubspot_webhook(request: Request):
         project_data = map_deal_to_project(deal_data, company_name, contact, hs_config)
 
         # Create project in DD Planner
-        from utils import snap_to_weekday
         import uuid
         from datetime import timedelta
 
