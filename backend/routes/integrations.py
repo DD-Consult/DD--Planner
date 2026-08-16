@@ -1,9 +1,19 @@
 """
 Integration routes — HubSpot bi-directional sync + Agent API key management.
 
+MULTI-TENANT NOTE (Step 10 of MULTITENANT_PLAN.md):
+    Every read/write on integration_settings_collection is automatically scoped
+    to the CURRENT REQUEST'S TENANT via LazyCollection (see database.py).
+    
+    The `ORG_ID = "default"` filter below is now a stable primary-key within
+    each tenant's isolated database — NOT a cross-tenant discriminator. Each
+    tenant has exactly one `integration_settings` document with `org_id="default"`
+    in their own DB. HubSpot tokens, portal IDs, MCP agent keys, etc. are all
+    per-tenant with zero code changes needed here.
+
 Endpoints:
-  GET  /api/integrations/settings              - fetch current config (super_admin)
-  PUT  /api/integrations/settings              - save config (super_admin)
+  GET  /api/integrations/settings              - fetch current tenant config (super_admin)
+  PUT  /api/integrations/settings              - save current tenant config (super_admin)
   POST /api/integrations/hubspot/test          - test HubSpot connection (super_admin)
   POST /api/integrations/hubspot/webhook       - receive HubSpot webhook events (public, sig-validated)
   POST /api/integrations/agent-api/regenerate  - generate/rotate agent API key (super_admin)

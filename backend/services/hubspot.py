@@ -1,6 +1,12 @@
 """
 HubSpot service — wraps the HubSpot Private App API for DD Planner.
 All credentials come from the integration_settings collection (DB-stored, not .env).
+
+MULTI-TENANT (Step 10 of MULTITENANT_PLAN.md):
+    integration_settings_collection is a LazyCollection (see database.py) which
+    routes to the current tenant's DB at read time. All `find_one({"org_id":"default"})`
+    calls in this file therefore return the current tenant's HubSpot config.
+    A tenant that has not configured HubSpot returns `{}` — safe fallback.
 """
 import httpx
 import hashlib

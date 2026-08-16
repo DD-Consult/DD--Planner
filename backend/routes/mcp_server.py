@@ -7,6 +7,13 @@ can query using natural language.
 Protocol: JSON-RPC 2.0 over HTTP (Streamable HTTP — MCP 2025 spec)
 Auth:      X-Agent-Key header (API key from integration_settings)
 
+MULTI-TENANT (Step 10 of MULTITENANT_PLAN.md):
+    Tenant isolation is provided automatically by the LazyCollection layer.
+    The X-Agent-Key is validated against `integration_settings` in the CURRENT
+    tenant's DB (resolved from Host / X-Forwarded-Host). A Tenant A's MCP key
+    is therefore INVALID on Tenant B's endpoint — verified by testing agent
+    in Step 10.
+
 Endpoints:
   GET  /api/mcp          — server info + capabilities (no auth required, allows discovery)
   POST /api/mcp          — JSON-RPC 2.0 endpoint (requires X-Agent-Key)
@@ -101,7 +108,14 @@ TOOLS = [
 # ─── Auth helper ──────────────────────────────────────────────────────────────
 
 async def _validate_agent_key(request: Request):
-    """Validate X-Agent-Key header against the stored agent API key."""
+    """Validate X-Agent-Key header against the stored agent API key.
+    
+    Uses `secrets.compare_digest` for timing-safe comparison to prevent
+    timing side-channel attacks (GCP-prod concern: an attacker sending
+    many keys could otherwise leverage response-time deltas to discover
+    a valid key one byte at a time).
+    """
+    import secrets as _secrets
     key = request.headers.get("X-Agent-Key") or request.headers.get("x-agent-key")
     if not key:
         raise HTTPException(status_code=401, detail="Missing X-Agent-Key header")
@@ -115,7 +129,7 @@ async def _validate_agent_key(request: Request):
         raise HTTPException(status_code=403, detail="Agent API is disabled")
 
     stored_key = agent.get("api_key", "")
-    if not stored_key or key != stored_key:
+    if not stored_key or not _secrets.compare_digest(key, stored_key):
         raise HTTPException(status_code=401, detail="Invalid agent API key")
 
     # Update last_used_at

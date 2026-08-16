@@ -299,3 +299,58 @@ async def update_tenant_settings(
     from middleware.tenant_resolver import invalidate_tenant_cache
     invalidate_tenant_cache(slug)
     return await _get_or_default_tenant(request)
+
+
+# ============================================================================
+# STEP 10 — Integration Isolation
+# ----------------------------------------------------------------------------
+# integration_settings_collection is a LazyCollection → per-tenant DB routing
+# is automatic. This endpoint simply exposes a redacted summary of what's
+# configured for the current tenant so the frontend can render setup CTAs
+# ("Connect HubSpot", "Rotate MCP Key", etc.) without exposing secrets.
+# ============================================================================
+
+@router.get("/integrations-summary")
+async def get_integrations_summary(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Return a redacted view of which integrations the CURRENT TENANT has
+    configured. Zero secrets in the response — safe for any authenticated
+    tenant user.
+
+    Response shape:
+        {
+          "tenant_slug": "ddconsult",
+          "hubspot": {"enabled": bool, "connected": bool, "portal_id": str_or_null},
+          "mcp": {"enabled": bool, "has_key": bool, "last_used_at": str_or_null},
+          "resend_email": {"configured": bool},   // reads from env, not tenant DB
+        }
+    """
+    from database import integration_settings_collection, RESEND_API_KEY
+    tenant_slug = await _resolve_effective_tenant_slug(request)
+
+    doc = await integration_settings_collection.find_one({"org_id": "default"})
+    doc = doc or {}
+    hs = doc.get("hubspot") or {}
+    mcp = doc.get("agent_api") or {}
+
+    return {
+        "tenant_slug": tenant_slug,
+        "hubspot": {
+            "enabled": bool(hs.get("enabled", False)),
+            # `connected` = enabled AND has a non-empty token (redacted from response)
+            "connected": bool(hs.get("enabled") and hs.get("private_app_token")),
+            "portal_id": hs.get("portal_id") or None,
+            "trigger_stage": hs.get("trigger_stage") or None,
+            "sync_status_updates": bool(hs.get("sync_status_updates", False)),
+        },
+        "mcp": {
+            "enabled": bool(mcp.get("enabled", False)),
+            "has_key": bool(mcp.get("api_key")),
+            "last_used_at": mcp.get("last_used_at"),
+        },
+        "resend_email": {
+            "configured": bool(RESEND_API_KEY),  # env-scoped, shared across tenants
+        },
+    }

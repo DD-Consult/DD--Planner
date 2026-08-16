@@ -218,7 +218,7 @@ Each tenant can enable/disable these independently (respecting dependencies):
 
 ---
 
-### ⏳ Step 10 — Integration Isolation
+### ✅ Step 10 — Integration Isolation (COMPLETED)
 **Goal:** HubSpot / MCP / Knowledge Base per tenant.
 - Migrate `integration_settings`: `org_id="default"` → real `tenant_id`
 - MCP endpoints scoped: `{tenant}.ddplanner.io/api/mcp` with tenant-scoped API keys
@@ -529,6 +529,33 @@ Each tenant can enable/disable these independently (respecting dependencies):
   - **Live UI verified via screenshot:** Settings page shows Workspace Branding card with color pickers, hex inputs, logo upload button, and live preview showing primary/accent color combo
   - **Files created:** `frontend/src/components/WorkspaceBrandingSection.js`
   - **Files modified:** `routes/tenant.py` (branding + settings endpoints), `services/exports/ppt_export.py` (tenant-branded cover + sections), `frontend/src/api.js` (3 new functions), `frontend/src/pages/Settings.js` (integrated section), `routes/tenant_signup.py` (removed unused import), `routes/platform_ops.py` (removed unused imports)
+
+- **[Step 10 - ✅ COMPLETED]** Integration Isolation (HubSpot, MCP, AI Instructions, Knowledge Base) — 35/35 tests PASS
+  - **Key insight:** Because Step 4 made `integration_settings_collection`, `ai_instructions_collection`, `ai_knowledge_base_collection`, `integration_sync_logs_collection` all LazyCollection instances, per-tenant isolation is AUTOMATIC. Step 10 is mostly verification + hardening + docs.
+  - **New endpoint** `GET /api/tenant/integrations-summary` (any authenticated tenant user)
+    - Returns redacted status: `{tenant_slug, hubspot: {enabled, connected, portal_id, trigger_stage, sync_status_updates}, mcp: {enabled, has_key, last_used_at}, resend_email: {configured}}`
+    - **NO secrets exposed** — no `private_app_token`, no `api_key` value in response (only boolean flags + safe fields)
+    - Used by frontend to render setup CTAs and connection-status badges
+  - **GCP production hardening** — MCP key comparison now uses `secrets.compare_digest` in `routes/mcp_server.py` (prevents timing side-channel attacks; attacker cannot discover valid key one byte at a time via response-time deltas)
+  - **Documentation updates:** clear docstrings added to `routes/integrations.py`, `routes/mcp_server.py`, `services/hubspot.py` explaining that per-tenant scoping is automatic via LazyCollection. The `org_id="default"` filter is now a stable primary-key within each tenant DB (not a cross-tenant discriminator).
+  - **Empirical isolation verification (with flag=ON, then reverted):**
+    - Created Acme tenant via self-signup
+    - Configured different HubSpot config in each tenant (`dd-hubspot-token-abc` vs `acme-hubspot-token-xyz`)
+    - Generated separate MCP keys per tenant (`dda_698a2e4e4fa8...` and DD's key)
+    - **Cross-tenant MCP key attempt**: DD's key against `acme.ddplanner.io/api/mcp` → **401 "Invalid agent API key"** 🔒
+    - Acme's key on Acme's endpoint → 200 with tools list
+    - DD's integrations summary showed connected=false, Acme's showed connected=true, portal_id=ACME-PORTAL-2 → **complete isolation**
+  - **Testing agent verification: 35/35 tests PASSED**
+    - 11/11 regression tests (Steps 1-9 features intact)
+    - 2/2 integrations-summary tests (shape + no secrets exposed)
+    - 6/6 existing integrations endpoints (settings CRUD, sync logs, MCP key regeneration + rotation)
+    - 3/3 HubSpot config write+read tests (verified redaction in summary)
+    - 5/5 MCP endpoints tests (no auth, wrong key, missing key, valid key + tools/list + tools/call)
+    - 3/3 AI instructions per-tenant tests
+    - 1/1 Knowledge base tests (146 sections indexed)
+    - 2/2 cleanup tests
+    - 2/2 GCP production sanity (X-Forwarded-Host, log cleanliness)
+  - **No files created.** Modified: `routes/tenant.py` (integrations-summary endpoint), `routes/integrations.py` (docstring), `routes/mcp_server.py` (docstring + timing-safe compare_digest), `services/hubspot.py` (docstring)
 
 ---
 
