@@ -26,13 +26,14 @@ TENANT_DB_PREFIX = os.environ.get('TENANT_DB_PREFIX', 'tenant_')
 MULTI_TENANT_ENABLED = os.environ.get('MULTI_TENANT_ENABLED', 'false').lower() == 'true'
 
 # --- Client & DB ---
-# Timeouts tuned for GCP Cloud Run cold-start behaviour so failed Atlas
-# connections don't hang the startup event past the readiness window.
+# Timeouts tuned for GCP Cloud Run cold-start to MongoDB Atlas — 15s allows for
+# the SRV lookup + TLS handshake + first replica set discovery. Original 3s was
+# too tight for Cloud Run's cold-start network path.
 try:
     _platform_client = AsyncIOMotorClient(
         MONGO_URL,
-        serverSelectionTimeoutMS=3000,
-        connectTimeoutMS=5000,
+        serverSelectionTimeoutMS=15000,
+        connectTimeoutMS=10000,
         socketTimeoutMS=30000,
         maxPoolSize=25,
         minPoolSize=0,
