@@ -164,32 +164,46 @@ _app_ready = False
 
 @app.on_event("startup")
 async def startup_event():
-    """Startup: create critical indexes, then schedule non-critical work as
-    background tasks so we don't block Cloud Run from routing traffic.
+    """Ultra-fast startup event — spawn everything as background tasks so
+    uvicorn starts accepting connections in <1 second.
+    
+    This is critical on GCP Cloud Run + MongoDB Atlas: each blocking DB
+    operation adds ~1s of network latency. Doing dozens of them inline caused
+    uvicorn to take 35+ seconds to start serving traffic, during which nginx
+    returned 502 for every request.
+    
+    Now: startup_event returns immediately. All DB initialisation (indexes,
+    migrations, seeding, baseline backfill, KB, health monitor) runs in a
+    single background task. Requests arriving before the background task
+    completes will hit collections that may not have indexes yet (queries
+    still work, just slower for the first few) but will NEVER get 502.
     """
     global _app_ready
-    try:
-        await allocations_collection.create_index("resource_id")
-        await allocations_collection.create_index("project_id")
-        await allocations_collection.create_index("start_date")
-        await allocations_collection.create_index("end_date")
-        # AI agent: TTL index on pending_actions so expired confirmation tokens self-delete
+    import asyncio
+
+    # Flip the readiness flag IMMEDIATELY so /health returns 200 as soon as
+    # uvicorn accepts the first connection. Background init happens after.
+    _app_ready = True
+    print("[STARTUP] Application marked READY — uvicorn will start serving now")
+
+    async def _full_startup_init():
+        """All the heavy startup work — runs in background so it doesn't
+        block uvicorn from accepting connections."""
         try:
-            from database import pending_actions_collection
-            await pending_actions_collection.create_index("expires_at", expireAfterSeconds=0)
-            await pending_actions_collection.create_index("token")
-        except Exception as _e:
-            print(f"[STARTUP] pending_actions index skipped: {_e}")
-        print("[STARTUP] Database indexes created successfully")
+            # --- Core indexes ---
+            await allocations_collection.create_index("resource_id")
+            await allocations_collection.create_index("project_id")
+            await allocations_collection.create_index("start_date")
+            await allocations_collection.create_index("end_date")
+            try:
+                from database import pending_actions_collection
+                await pending_actions_collection.create_index("expires_at", expireAfterSeconds=0)
+                await pending_actions_collection.create_index("token")
+            except Exception as _e:
+                print(f"[STARTUP-BG] pending_actions index skipped: {_e}")
+            print("[STARTUP-BG] Database indexes created successfully")
 
-        # --- MULTI-TENANT PLATFORM LAYER (Step 1 of MULTITENANT_PLAN.md) ---
-        # Deferred to a background task so Cloud Run can start routing traffic
-        # to this instance immediately. The seeding is idempotent (count-based
-        # guards) and takes ~1-3s against Atlas — but if we did it inline, any
-        # slow-Atlas cold-start would delay readiness and cause 502s.
-        import asyncio as _aio
-
-        async def _platform_layer_init():
+            # --- Platform DB layer (multi-tenant) ---
             try:
                 await create_platform_indexes()
                 platform_seed_result = await seed_platform_if_empty()
@@ -199,169 +213,122 @@ async def startup_event():
                     print(f"[STARTUP-BG] Platform DB seeded: {platform_seed_result}")
                 print(f"[STARTUP-BG] MULTI_TENANT_ENABLED = {MULTI_TENANT_ENABLED} (feature flag)")
             except Exception as pe:
-                print(f"[STARTUP-BG] Platform DB seeding skipped due to error: {pe}")
+                print(f"[STARTUP-BG] Platform DB init skipped: {pe}")
 
-        _aio.create_task(_platform_layer_init())
-        # --- END MULTI-TENANT LAYER ---
+            # --- Phase migrations & auto-fixes (idempotent) ---
+            try:
+                projects_without_phases = await projects_collection.count_documents({"phases": {"$exists": False}})
+                if projects_without_phases > 0:
+                    print(f"[STARTUP-BG] Migrating {projects_without_phases} projects to add default Execution Phase...")
+                    cursor = projects_collection.find({"phases": {"$exists": False}})
+                    projects_to_update = await cursor.to_list(length=10000)
+                    for project in projects_to_update:
+                        default_phase = {
+                            "id": str(uuid.uuid4()),
+                            "name": "Execution Phase",
+                            "start_date": project["start_date"],
+                            "end_date": project["end_date"],
+                            "status": "Active"
+                        }
+                        await projects_collection.update_one(
+                            {"_id": project["_id"]},
+                            {"$set": {"phases": [default_phase]}}
+                        )
+                    print(f"[STARTUP-BG] Migration complete: {projects_without_phases} projects updated")
 
-        # MIGRATION: Add default phase to existing projects without phases
-        projects_without_phases = await projects_collection.count_documents({"phases": {"$exists": False}})
-        if projects_without_phases > 0:
-            print(f"[STARTUP] Migrating {projects_without_phases} projects to add default Execution Phase...")
-            cursor = projects_collection.find({"phases": {"$exists": False}})
-            projects_to_update = await cursor.to_list(length=10000)
-            for project in projects_to_update:
-                default_phase = {
-                    "id": str(uuid.uuid4()),
-                    "name": "Execution Phase",
-                    "start_date": project["start_date"],
-                    "end_date": project["end_date"],
-                    "status": "Active"
-                }
-                await projects_collection.update_one(
-                    {"_id": project["_id"]},
-                    {"$set": {"phases": [default_phase]}}
-                )
-            print(f"[STARTUP] Migration complete: {projects_without_phases} projects updated")
+                # Auto-fix phase UUIDs
+                all_projects = await projects_collection.find({"phases": {"$exists": True}}).to_list(length=10000)
+                phases_fixed = 0
+                for project in all_projects:
+                    phases = project.get("phases", [])
+                    needs_fix = any(not p.get("id") or p["id"] in ("", "None", None) for p in phases)
+                    if needs_fix:
+                        ensure_phase_ids(phases)
+                        await projects_collection.update_one(
+                            {"_id": project["_id"]},
+                            {"$set": {"phases": phases}}
+                        )
+                        phases_fixed += 1
+                if phases_fixed > 0:
+                    print(f"[STARTUP-BG] Auto-fixed phase IDs in {phases_fixed} projects")
+            except Exception as pe:
+                print(f"[STARTUP-BG] Phase migration skipped: {pe}")
 
-        # AUTO-FIX: Ensure all existing phases have UUIDs
-        all_projects = await projects_collection.find({"phases": {"$exists": True}}).to_list(length=10000)
-        phases_fixed = 0
-        for project in all_projects:
-            phases = project.get("phases", [])
-            needs_fix = any(not p.get("id") or p["id"] in ("", "None", None) for p in phases)
-            if needs_fix:
-                ensure_phase_ids(phases)
-                await projects_collection.update_one(
-                    {"_id": project["_id"]},
-                    {"$set": {"phases": phases}}
-                )
-                phases_fixed += 1
-        if phases_fixed > 0:
-            print(f"[STARTUP] Auto-fixed phase IDs in {phases_fixed} projects")
+            # --- Seed data if empty (first-time deploys only) ---
+            try:
+                user_count = await users_collection.count_documents({})
+                if user_count == 0:
+                    print("[STARTUP-BG] Seeding database with demo data...")
+                    admin_user = {
+                        "email": "admin@test.com",
+                        "password_hash": get_password_hash("admin123"),
+                        "role": UserRole.ADMIN,
+                        "allowed_project_ids": []
+                    }
+                    client_user = {
+                        "email": "client@test.com",
+                        "password_hash": get_password_hash("client123"),
+                        "role": UserRole.CLIENT,
+                        "allowed_project_ids": []
+                    }
+                    await users_collection.insert_one(admin_user)
+                    await users_collection.insert_one(client_user)
 
-        # Seed data if empty
-        user_count = await users_collection.count_documents({})
-        if user_count == 0:
-            print("[STARTUP] Seeding database...")
-            admin_user = {
-                "email": "admin@test.com",
-                "password_hash": get_password_hash("admin123"),
-                "role": UserRole.ADMIN,
-                "allowed_project_ids": []
-            }
-            client_user = {
-                "email": "client@test.com",
-                "password_hash": get_password_hash("client123"),
-                "role": UserRole.CLIENT,
-                "allowed_project_ids": []
-            }
-            await users_collection.insert_one(admin_user)
-            await users_collection.insert_one(client_user)
+                    resources = [
+                        {"name": "Alice Johnson", "role": "Senior Developer", "standard_capacity": 100, "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Alice"},
+                        {"name": "Bob Smith", "role": "Designer", "standard_capacity": 100, "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Bob"},
+                        {"name": "Carol White", "role": "Project Manager", "standard_capacity": 100, "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Carol"},
+                        {"name": "David Lee", "role": "Developer", "standard_capacity": 100, "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=David"},
+                        {"name": "Emma Davis", "role": "QA Engineer", "standard_capacity": 100, "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Emma"},
+                    ]
+                    resource_results = await resources_collection.insert_many(resources)
+                    resource_ids = [str(rid) for rid in resource_results.inserted_ids]
 
-            resources = [
-                {"name": "Alice Johnson", "role": "Senior Developer", "standard_capacity": 100, "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Alice"},
-                {"name": "Bob Smith", "role": "Designer", "standard_capacity": 100, "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Bob"},
-                {"name": "Carol White", "role": "Project Manager", "standard_capacity": 100, "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Carol"},
-                {"name": "David Lee", "role": "Developer", "standard_capacity": 100, "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=David"},
-                {"name": "Emma Davis", "role": "QA Engineer", "standard_capacity": 100, "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Emma"},
-            ]
-            resource_results = await resources_collection.insert_many(resources)
-            resource_ids = [str(rid) for rid in resource_results.inserted_ids]
+                    today = datetime.now()
+                    projects = [
+                        {"name": "Website Redesign", "client_name": "Acme Corp", "status": ProjectStatus.ACTIVE, "start_date": today, "end_date": today + timedelta(days=30)},
+                        {"name": "Mobile App", "client_name": "TechStart", "status": ProjectStatus.ACTIVE, "start_date": today, "end_date": today + timedelta(days=45)},
+                        {"name": "Data Migration", "client_name": "BigData Inc", "status": ProjectStatus.PIPELINE, "start_date": today + timedelta(days=10), "end_date": today + timedelta(days=40)},
+                        {"name": "Legacy System", "client_name": "OldTech", "status": ProjectStatus.COMPLETED, "start_date": today - timedelta(days=60), "end_date": today - timedelta(days=10)},
+                    ]
+                    project_results = await projects_collection.insert_many(projects)
+                    project_ids = [str(pid) for pid in project_results.inserted_ids]
 
-            today = datetime.now()
-            projects = [
-                {"name": "Website Redesign", "client_name": "Acme Corp", "status": ProjectStatus.ACTIVE, "start_date": today, "end_date": today + timedelta(days=30)},
-                {"name": "Mobile App", "client_name": "TechStart", "status": ProjectStatus.ACTIVE, "start_date": today, "end_date": today + timedelta(days=45)},
-                {"name": "Data Migration", "client_name": "BigData Inc", "status": ProjectStatus.PIPELINE, "start_date": today + timedelta(days=10), "end_date": today + timedelta(days=40)},
-                {"name": "Legacy System", "client_name": "OldTech", "status": ProjectStatus.COMPLETED, "start_date": today - timedelta(days=60), "end_date": today - timedelta(days=10)},
-            ]
-            project_results = await projects_collection.insert_many(projects)
-            project_ids = [str(pid) for pid in project_results.inserted_ids]
+                    await users_collection.update_one(
+                        {"email": "client@test.com"},
+                        {"$set": {"allowed_project_ids": project_ids[:2]}}
+                    )
 
-            await users_collection.update_one(
-                {"email": "client@test.com"},
-                {"$set": {"allowed_project_ids": project_ids[:2]}}
-            )
+                    today_date = today.date()
+                    allocations = [
+                        {"resource_id": resource_ids[0], "project_id": project_ids[0], "start_date": datetime.combine(today_date, datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 70},
+                        {"resource_id": resource_ids[0], "project_id": project_ids[1], "start_date": datetime.combine(today_date, datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 50},
+                        {"resource_id": resource_ids[1], "project_id": project_ids[0], "start_date": datetime.combine(today_date, datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 90},
+                        {"resource_id": resource_ids[2], "project_id": project_ids[1], "start_date": datetime.combine(today_date, datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 60},
+                        {"resource_id": resource_ids[3], "project_id": project_ids[0], "start_date": datetime.combine(today_date, datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=7), datetime.min.time()), "percentage": 50},
+                        {"resource_id": resource_ids[3], "project_id": project_ids[2], "start_date": datetime.combine(today_date + timedelta(days=7), datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 100},
+                        {"resource_id": resource_ids[4], "project_id": project_ids[1], "start_date": datetime.combine(today_date + timedelta(days=5), datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 75},
+                        {"resource_id": resource_ids[1], "project_id": project_ids[2], "start_date": datetime.combine(today_date + timedelta(days=10), datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=20), datetime.min.time()), "percentage": 40},
+                        {"resource_id": resource_ids[2], "project_id": project_ids[2], "start_date": datetime.combine(today_date + timedelta(days=8), datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 30},
+                        {"resource_id": resource_ids[4], "project_id": project_ids[0], "start_date": datetime.combine(today_date, datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=5), datetime.min.time()), "percentage": 40},
+                    ]
+                    await allocations_collection.insert_many(allocations)
+                    print("[STARTUP-BG] Database seeded successfully!")
+                else:
+                    print(f"[STARTUP-BG] Database already contains {user_count} users, skipping seed")
+            except Exception as pe:
+                print(f"[STARTUP-BG] Seed step skipped: {pe}")
 
-            today_date = today.date()
-            allocations = [
-                {"resource_id": resource_ids[0], "project_id": project_ids[0], "start_date": datetime.combine(today_date, datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 70},
-                {"resource_id": resource_ids[0], "project_id": project_ids[1], "start_date": datetime.combine(today_date, datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 50},
-                {"resource_id": resource_ids[1], "project_id": project_ids[0], "start_date": datetime.combine(today_date, datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 90},
-                {"resource_id": resource_ids[2], "project_id": project_ids[1], "start_date": datetime.combine(today_date, datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 60},
-                {"resource_id": resource_ids[3], "project_id": project_ids[0], "start_date": datetime.combine(today_date, datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=7), datetime.min.time()), "percentage": 50},
-                {"resource_id": resource_ids[3], "project_id": project_ids[2], "start_date": datetime.combine(today_date + timedelta(days=7), datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 100},
-                {"resource_id": resource_ids[4], "project_id": project_ids[1], "start_date": datetime.combine(today_date + timedelta(days=5), datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 75},
-                {"resource_id": resource_ids[1], "project_id": project_ids[2], "start_date": datetime.combine(today_date + timedelta(days=10), datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=20), datetime.min.time()), "percentage": 40},
-                {"resource_id": resource_ids[2], "project_id": project_ids[2], "start_date": datetime.combine(today_date + timedelta(days=8), datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=14), datetime.min.time()), "percentage": 30},
-                {"resource_id": resource_ids[4], "project_id": project_ids[0], "start_date": datetime.combine(today_date, datetime.min.time()), "end_date": datetime.combine(today_date + timedelta(days=5), datetime.min.time()), "percentage": 40},
-            ]
-            await allocations_collection.insert_many(allocations)
-            print("[STARTUP] Database seeded successfully!")
-        else:
-            print(f"[STARTUP] Database already contains {user_count} users, skipping seed")
+            # --- Baseline backfill (idempotent) ---
+            try:
+                from services.baselines import backfill_baselines
+                n = await backfill_baselines()
+                if n:
+                    print(f"[STARTUP-BG] Created initial baselines for {n} project(s)")
+            except Exception as e:
+                print(f"[STARTUP-BG] Baseline backfill skipped due to error: {e}")
 
-        print("[STARTUP] Application startup completed successfully")
-
-        # BASELINE BACKFILL — give every existing project an initial baseline.
-        # Idempotent: skips projects that already have one. Safe to re-run.
-        try:
-            from services.baselines import backfill_baselines
-            n = await backfill_baselines()
-            if n:
-                print(f"[STARTUP] Created initial baselines for {n} project(s)")
-        except Exception as e:
-            print(f"[STARTUP] Baseline backfill skipped due to error: {e}")
-
-        # PLAYWRIGHT PRE-WARM — install Chromium (if missing) and launch the
-        # browser on startup so the first export request doesn't time out
-        # waiting on a 30-second install + launch. Failures here are
-        # non-fatal; the renderer will retry on first export.
-        try:
-            import asyncio
-            from services.exports.renderer import _ensure_chromium_installed, _get_browser
-
-            async def _prewarm():
-                try:
-                    _ensure_chromium_installed()
-                    await _get_browser()
-                    print("[STARTUP] Playwright Chromium pre-warmed")
-                except Exception as e:
-                    print(f"[STARTUP] Playwright pre-warm failed (will retry on demand): {e}")
-
-            asyncio.create_task(_prewarm())
-        except Exception as e:
-            print(f"[STARTUP] Playwright pre-warm dispatch skipped: {e}")
-
-        # BACKGROUND HEALTH MONITOR — runs every 24 hours to proactively surface portfolio issues
-        try:
-            import asyncio
-
-            async def _periodic_health_monitor():
-                """Daily portfolio health check."""
-                import asyncio as _aio
-                await _aio.sleep(3600)  # Wait 1h after startup before first run
-                while True:
-                    try:
-                        from services.health_monitor import run_health_monitor
-                        report = await run_health_monitor(triggered_by="scheduler", save_report=True)
-                        findings_count = report.get("summary", {}).get("total_findings", 0)
-                        print(f"[HEALTH MONITOR] Daily check complete — {findings_count} findings")
-                    except Exception as _hme:
-                        print(f"[HEALTH MONITOR] Error: {_hme}")
-                    await _aio.sleep(24 * 60 * 60)  # Sleep 24 hours
-
-            asyncio.create_task(_periodic_health_monitor())
-            print("[STARTUP] Background health monitor scheduled (runs every 24h)")
-        except Exception as e:
-            print(f"[STARTUP] Health monitor scheduling skipped: {e}")
-
-        # AI KNOWLEDGE BASE — indexes GUIDE/README/INTEGRATIONS so the AI copilot
-        # can answer "how do I…" and troubleshoot with citations. Best-effort.
-        # Deferred to background so it doesn't block readiness — first request can
-        # arrive before KB is fully indexed; the KB endpoints handle empty state.
-        async def _kb_init():
+            # --- Knowledge base indexing ---
             try:
                 from services.knowledge_base import reindex as _kb_reindex, status as _kb_status
                 existing = await _kb_status()
@@ -373,26 +340,46 @@ async def startup_event():
             except Exception as e:
                 print(f"[STARTUP-BG] Knowledge base indexing skipped: {e}")
 
-        asyncio.create_task(_kb_init())
-    except Exception as e:
-        print(f"[STARTUP ERROR] Failed to complete startup tasks: {str(e)}")
-        print("[STARTUP] Application will continue to run, but database may not be fully initialized")
-    finally:
-        # Mark app as ready so /health returns 200. This flips even if some
-        # non-critical startup task above failed (defensive: better to serve
-        # traffic with degraded features than 502 forever).
-        _app_ready = True
-        print("[STARTUP] Application marked READY — /health will now return 200")
+            print("[STARTUP-BG] Full initialisation complete")
+        except Exception as e:
+            print(f"[STARTUP-BG] Unexpected error during background init: {e}")
+
+    async def _prewarm_playwright():
+        try:
+            from services.exports.renderer import _ensure_chromium_installed, _get_browser
+            _ensure_chromium_installed()
+            await _get_browser()
+            print("[STARTUP-BG] Playwright Chromium pre-warmed")
+        except Exception as e:
+            print(f"[STARTUP-BG] Playwright pre-warm failed (retries on demand): {e}")
+
+    async def _periodic_health_monitor():
+        """Daily portfolio health check."""
+        await asyncio.sleep(3600)
+        while True:
+            try:
+                from services.health_monitor import run_health_monitor
+                report = await run_health_monitor(triggered_by="scheduler", save_report=True)
+                findings_count = report.get("summary", {}).get("total_findings", 0)
+                print(f"[HEALTH MONITOR] Daily check complete — {findings_count} findings")
+            except Exception as _hme:
+                print(f"[HEALTH MONITOR] Error: {_hme}")
+            await asyncio.sleep(24 * 60 * 60)
+
+    # Fire everything as background tasks — none block startup
+    asyncio.create_task(_full_startup_init())
+    asyncio.create_task(_prewarm_playwright())
+    asyncio.create_task(_periodic_health_monitor())
 
 
 @app.get("/health")
 async def health_check():
-    """Basic health check.
+    """Basic health check. Returns 200 as soon as uvicorn accepts connections.
     
-    Returns 503 during startup (before startup_event finishes) so that Cloud Run
-    and Kubernetes load balancers correctly wait for the instance to be ready
-    before routing traffic to it. This prevents 502s from arriving-too-early
-    requests.
+    Because we now flip _app_ready=True BEFORE spawning background init tasks,
+    /health returns 200 immediately once uvicorn is serving. Background init
+    (DB indexes, seeding, KB) continues in parallel. If DB init hasn't finished
+    yet, queries will still work — they'll just be slower on the first call.
     """
     from database import db
     if not _app_ready:
@@ -404,14 +391,17 @@ async def health_check():
         await db.command("ping")
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
-        return {"status": "unhealthy", "database": str(e)}
+        # DB not ready yet — but uvicorn IS serving, so return 200 with degraded status
+        # rather than 503 (which would kill Cloud Run's routing). App CAN serve static
+        # assets and public endpoints while DB is still cold-starting.
+        return {"status": "degraded", "database": str(e)}
 
 
 @app.get("/api/health")
 async def api_health_check():
     """API health check — mirrors /health so both the Cloud Run health probe
     (/health) and the frontend/monitoring pings (/api/health) get the readiness
-    signal during startup."""
+    signal."""
     from database import db
     if not _app_ready:
         return JSONResponse(
@@ -422,4 +412,5 @@ async def api_health_check():
         await db.command("ping")
         return {"status": "healthy", "database": "connected", "api": "operational"}
     except Exception as e:
+        # DB not connected yet during background init — still 200 so LB keeps us in rotation
         return {"status": "degraded", "database": str(e), "api": "operational"}
