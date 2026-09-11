@@ -106,4 +106,22 @@ export const getModulesCatalog = () => platformApi.get('/modules');
 
 export const getAuditLog = (params) => platformApi.get('/audit-log', { params });
 
+// ============================================
+// Migrations
+// ============================================
+
+export const getMigrationsStatus = () => platformApi.get('/migrations/status');
+
+export const runAllMigrations = () => platformApi.post('/migrations/run');
+
+export const runTenantMigrations = (slug) => platformApi.post(`/tenants/${slug}/migrations/run`);
+
+// ============================================
+// Platform defaults
+// ============================================
+
+export const getPlatformDefaults = () => platformApi.get('/defaults');
+
+export const updatePlatformDefaults = (data) => platformApi.put('/defaults', data);
+
 export default platformApi;

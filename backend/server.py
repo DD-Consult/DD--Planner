@@ -212,6 +212,24 @@ async def startup_event():
                 else:
                     print(f"[STARTUP-BG] Platform DB seeded: {platform_seed_result}")
                 print(f"[STARTUP-BG] MULTI_TENANT_ENABLED = {MULTI_TENANT_ENABLED} (feature flag)")
+                
+                # Seed platform defaults
+                from platform_db import seed_platform_defaults_if_empty
+                await seed_platform_defaults_if_empty()
+                
+                # Run migrations (non-blocking, after platform seed)
+                try:
+                    from migrations.runner import run_all as run_migrations
+                    migration_report = await run_migrations(actor="startup_auto")
+                    if migration_report.get("skipped"):
+                        print(f"[STARTUP-BG] Migrations skipped: {migration_report.get('reason')}")
+                    else:
+                        platform_applied = migration_report.get("platform", {}).get("applied", [])
+                        tenants_count = len(migration_report.get("tenants", []))
+                        total_tenant_applied = sum(len(t.get("applied", [])) for t in migration_report.get("tenants", []))
+                        print(f"[STARTUP-BG] Migrations complete: platform applied {platform_applied}, {tenants_count} tenants, {total_tenant_applied} tenant migrations applied")
+                except Exception as me:
+                    print(f"[STARTUP-BG] Migration auto-run failed (non-fatal): {me}")
             except Exception as pe:
                 print(f"[STARTUP-BG] Platform DB init skipped: {pe}")
 

@@ -55,6 +55,7 @@ modules_catalog_collection = platform_db.modules_catalog    # Available modules 
 tenant_modules_collection = platform_db.tenant_modules      # Per-tenant module toggles
 platform_audit_log_collection = platform_db.platform_audit_log  # All platform-level actions
 subscription_plans_collection = platform_db.subscription_plans  # Plan catalog (future billing)
+platform_defaults_collection = platform_db.platform_defaults    # Global defaults for branding/settings
 
 
 # --- Tenant DB Factory ---
@@ -78,47 +79,64 @@ def get_tenant_db(slug: str):
 MODULES_CATALOG = [
     # Core (non-toggleable in practice, but present in catalog for completeness)
     {"key": "projects", "name": "Projects & Portfolio", "category": "core", "depends_on": [], "is_core": True,
-     "description": "Project lifecycle, phases, portfolio view. Core module — always enabled."},
+     "description": "Project lifecycle, phases, portfolio view. Core module — always enabled.",
+     "default_enabled": True},
     {"key": "resources", "name": "Resources & Team", "category": "core", "depends_on": [], "is_core": True,
-     "description": "Team member profiles, capacity settings. Core module — always enabled."},
+     "description": "Team member profiles, capacity settings. Core module — always enabled.",
+     "default_enabled": True},
 
     # PM modules
     {"key": "wbs", "name": "Work Breakdown Structure", "category": "pm", "depends_on": ["projects"], "is_core": False,
-     "description": "Hierarchical task tree, milestones, dependencies, baselines."},
+     "description": "Hierarchical task tree, milestones, dependencies, baselines.",
+     "default_enabled": True},
     {"key": "milestones", "name": "Milestones", "category": "pm", "depends_on": ["projects", "wbs"], "is_core": False,
-     "description": "Zero-hour milestone tasks with diamond markers on Gantt."},
+     "description": "Zero-hour milestone tasks with diamond markers on Gantt.",
+     "default_enabled": True},
     {"key": "allocations", "name": "Allocations & Capacity", "category": "pm", "depends_on": ["resources", "projects"], "is_core": False,
-     "description": "Assign resources to projects with % and date ranges. Capacity heatmaps."},
+     "description": "Assign resources to projects with % and date ranges. Capacity heatmaps.",
+     "default_enabled": True},
     {"key": "timesheets", "name": "Timesheets", "category": "pm", "depends_on": ["resources", "projects"], "is_core": False,
-     "description": "Weekly timesheet entry, autofill from allocations, approval workflow."},
+     "description": "Weekly timesheet entry, autofill from allocations, approval workflow.",
+     "default_enabled": True},
     {"key": "risks", "name": "Risk Management", "category": "pm", "depends_on": ["projects"], "is_core": False,
-     "description": "Per-project risk register with AI polishing."},
+     "description": "Per-project risk register with AI polishing.",
+     "default_enabled": True},
     {"key": "status_updates", "name": "Status Updates", "category": "pm", "depends_on": ["projects"], "is_core": False,
-     "description": "Weekly project status check-ins with health scoring."},
+     "description": "Weekly project status check-ins with health scoring.",
+     "default_enabled": True},
     {"key": "baselines", "name": "Baselines & Variance", "category": "pm", "depends_on": ["projects"], "is_core": False,
-     "description": "Baseline snapshots and variance tracking against plan."},
+     "description": "Baseline snapshots and variance tracking against plan.",
+     "default_enabled": True},
 
     # Reporting & sharing
     {"key": "reports", "name": "Reports & Exports", "category": "reporting", "depends_on": ["projects"], "is_core": False,
-     "description": "PDF/PPTX exports, budget reconciliation, capacity, utilization reports."},
+     "description": "PDF/PPTX exports, budget reconciliation, capacity, utilization reports.",
+     "default_enabled": True},
     {"key": "client_portal", "name": "Client Portal", "category": "reporting", "depends_on": ["projects"], "is_core": False,
-     "description": "Read-only client view with magic-link sharing."},
+     "description": "Read-only client view with magic-link sharing.",
+     "default_enabled": True},
 
     # AI modules
     {"key": "ai_copilot", "name": "AI Copilot (Chat & Actions)", "category": "ai", "depends_on": [], "is_core": False,
-     "description": "Conversational AI chat with role-scoped actions."},
+     "description": "Conversational AI chat with role-scoped actions.",
+     "default_enabled": True},
     {"key": "ai_intelligence", "name": "AI Intelligence", "category": "ai", "depends_on": ["ai_copilot"], "is_core": False,
-     "description": "Anomaly detection, portfolio forecasting, project retrospectives."},
+     "description": "Anomaly detection, portfolio forecasting, project retrospectives.",
+     "default_enabled": True},
     {"key": "ai_productivity", "name": "AI Productivity", "category": "ai", "depends_on": ["ai_copilot"], "is_core": False,
-     "description": "Kickoff wizard, status drafter, similar projects finder."},
+     "description": "Kickoff wizard, status drafter, similar projects finder.",
+     "default_enabled": True},
     {"key": "knowledge_base", "name": "AI Knowledge Base", "category": "ai", "depends_on": ["ai_copilot"], "is_core": False,
-     "description": "Indexed docs for AI-powered how-to answers with citations."},
+     "description": "Indexed docs for AI-powered how-to answers with citations.",
+     "default_enabled": True},
 
     # Integrations
     {"key": "hubspot_integration", "name": "HubSpot CRM Integration", "category": "integrations", "depends_on": ["projects"], "is_core": False,
-     "description": "Bi-directional HubSpot deal sync: auto-create projects, push status notes."},
+     "description": "Bi-directional HubSpot deal sync: auto-create projects, push status notes.",
+     "default_enabled": True},
     {"key": "mcp_server", "name": "MCP Server (Agent API)", "category": "integrations", "depends_on": [], "is_core": False,
-     "description": "JSON-RPC 2.0 endpoint for external AI agents (Gemini, Copilot)."},
+     "description": "JSON-RPC 2.0 endpoint for external AI agents (Gemini, Copilot).",
+     "default_enabled": True},
 ]
 
 
@@ -263,3 +281,50 @@ async def create_platform_indexes():
         logger.info("[PLATFORM_DB] Indexes created")
     except Exception as e:
         logger.warning(f"[PLATFORM_DB] Index creation warning (may be pre-existing): {e}")
+
+
+async def seed_platform_defaults_if_empty():
+    """Seed platform defaults if not present. Idempotent."""
+    now = datetime.now(timezone.utc)
+    existing = await platform_defaults_collection.find_one({"_id": "global"})
+    if not existing:
+        defaults_doc = {
+            "_id": "global",
+            "branding": {
+                "logo_url": None,
+                "primary_color": "#1B2A47",  # DD Navy
+                "accent_color": "#C9A84C",   # DD Gold
+            },
+            "settings": {
+                "work_week_hours": 40,
+                "timezone": "UTC",
+                "work_days": [0, 1, 2, 3, 4],  # Mon-Fri
+            },
+            "updated_at": now,
+        }
+        await platform_defaults_collection.insert_one(defaults_doc)
+        logger.info("[PLATFORM_DB] Seeded platform defaults (DD Navy/Gold)")
+    else:
+        logger.info("[PLATFORM_DB] Platform defaults already exist")
+
+
+async def get_platform_defaults() -> dict:
+    """Return the global platform defaults doc, or a hardcoded fallback."""
+    doc = await platform_defaults_collection.find_one({"_id": "global"})
+    if doc:
+        return doc
+    # Hardcoded fallback if DB is empty
+    return {
+        "_id": "global",
+        "branding": {
+            "logo_url": None,
+            "primary_color": "#1B2A47",
+            "accent_color": "#C9A84C",
+        },
+        "settings": {
+            "work_week_hours": 40,
+            "timezone": "UTC",
+            "work_days": [0, 1, 2, 3, 4],
+        },
+        "updated_at": datetime.now(timezone.utc),
+    }

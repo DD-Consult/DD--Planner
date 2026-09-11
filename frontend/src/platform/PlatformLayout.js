@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { platformLogout, setPlatformAuthToken } from './api';
 import { Button } from '../components/ui/button';
-import { LayoutDashboard, Building2, FileText, User, LogOut, Shield } from 'lucide-react';
+import { LayoutDashboard, Building2, FileText, User, LogOut, Shield, Palette, Database } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PlatformLayout = ({ children, onLogout }) => {
@@ -31,6 +31,8 @@ const PlatformLayout = ({ children, onLogout }) => {
   const navItems = [
     { path: '/platform', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/platform/tenants', label: 'Tenants', icon: Building2 },
+    { path: '/platform/defaults', label: 'Defaults', icon: Palette },
+    { path: '/platform/system', label: 'System', icon: Database },
     { path: '/platform/audit-log', label: 'Audit Log', icon: FileText },
   ];
 

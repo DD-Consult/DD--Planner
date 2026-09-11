@@ -166,23 +166,37 @@ def _valid_hex_color(v: str) -> bool:
 
 
 async def _get_or_default_tenant(request: Request) -> dict:
-    """Return the current tenant record with fallback to a synthesized default.
+    """Return the current tenant record with config inheritance applied.
 
-    Never raises: guarantees a dict with slug/name/branding/settings keys so
-    downstream code (e.g. exports) can rely on the shape.
+    Config resolution: deep_merge(platform_defaults, tenant_overrides).
+    Never raises: guarantees a dict with slug/name/branding/settings keys.
     """
+    from platform_db import get_platform_defaults
+    
     slug = await _resolve_effective_tenant_slug(request)
     doc = await tenants_collection.find_one({"slug": slug})
+    
+    # Get platform defaults
+    platform_defaults = await get_platform_defaults()
+    default_branding = platform_defaults.get("branding", {})
+    default_settings = platform_defaults.get("settings", {})
+    
     if not doc:
+        # No tenant record -> synthesize from platform defaults
         return {
             "slug": slug or "ddconsult",
             "name": "Workspace",
-            "branding": dict(_DEFAULT_BRANDING),
-            "settings": dict(_DEFAULT_SETTINGS),
+            "branding": dict(default_branding),
+            "settings": dict(default_settings),
         }
-    # Merge with defaults so exports always have every key
-    merged_branding = {**_DEFAULT_BRANDING, **(doc.get("branding") or {})}
-    merged_settings = {**_DEFAULT_SETTINGS, **(doc.get("settings") or {})}
+    
+    # Merge: platform defaults + tenant overrides
+    tenant_branding = doc.get("branding") or {}
+    tenant_settings = doc.get("settings") or {}
+    
+    merged_branding = {**default_branding, **tenant_branding}
+    merged_settings = {**default_settings, **tenant_settings}
+    
     return {
         "id": str(doc.get("_id")),
         "slug": doc.get("slug"),

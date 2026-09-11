@@ -6,6 +6,8 @@ import PlatformDashboard from './pages/PlatformDashboard';
 import PlatformTenants from './pages/PlatformTenants';
 import PlatformTenantDetail from './pages/PlatformTenantDetail';
 import PlatformAuditLog from './pages/PlatformAuditLog';
+import PlatformSystem from './pages/PlatformSystem';
+import PlatformDefaults from './pages/PlatformDefaults';
 import { setPlatformAuthToken } from './api';
 
 const PlatformApp = () => {
@@ -62,6 +64,8 @@ const PlatformApp = () => {
                 <Route path="/tenants" element={<PlatformTenants />} />
                 <Route path="/tenants/:slug" element={<PlatformTenantDetail />} />
                 <Route path="/audit-log" element={<PlatformAuditLog />} />
+                <Route path="/system" element={<PlatformSystem />} />
+                <Route path="/defaults" element={<PlatformDefaults />} />
               </Routes>
             </PlatformLayout>
           )

@@ -433,3 +433,127 @@ async def list_tenant_users(
     users_cursor = tenant_db.users.find({}, {"password_hash": 0})
     users = await users_cursor.to_list(length=1000)
     return [_serialize(u) for u in users]
+
+
+# ============================================================================
+# Migrations endpoints
+# ============================================================================
+
+@router.get("/migrations/status")
+async def get_migrations_status(admin: dict = Depends(get_current_platform_admin)):
+    """Return migration status for platform and all tenants."""
+    from migrations.runner import get_status
+    return await get_status()
+
+
+@router.post("/migrations/run")
+async def run_migrations(admin: dict = Depends(get_current_platform_admin)):
+    """Run all pending migrations (platform + all tenants)."""
+    from migrations.runner import run_all
+    actor = admin.get("email", "platform_admin")
+    report = await run_all(actor=actor)
+    return report
+
+
+@router.post("/tenants/{slug}/migrations/run")
+async def run_tenant_migrations(
+    slug: str,
+    admin: dict = Depends(get_current_platform_admin),
+):
+    """Run pending migrations for a single tenant."""
+    from migrations.runner import run_for_tenant
+    actor = admin.get("email", "platform_admin")
+    report = await run_for_tenant(slug=slug, actor=actor)
+    return report
+
+
+# ============================================================================
+# Platform defaults endpoints
+# ============================================================================
+
+class PlatformDefaultsUpdate(BaseModel):
+    """Payload for PUT /api/platform/defaults."""
+    branding: Optional[Dict[str, Any]] = None
+    settings: Optional[Dict[str, Any]] = None
+
+
+def _valid_hex_color(v: str) -> bool:
+    """Validate a #RRGGBB hex color."""
+    if not v or not isinstance(v, str):
+        return False
+    if not v.startswith("#") or len(v) != 7:
+        return False
+    try:
+        int(v[1:], 16)
+        return True
+    except ValueError:
+        return False
+
+
+@router.get("/defaults")
+async def get_platform_defaults_endpoint(admin: dict = Depends(get_current_platform_admin)):
+    """Return the global platform defaults for branding and settings."""
+    from platform_db import get_platform_defaults
+    return await get_platform_defaults()
+
+
+@router.put("/defaults")
+async def update_platform_defaults(
+    payload: PlatformDefaultsUpdate,
+    admin: dict = Depends(get_current_platform_admin),
+):
+    """Update platform defaults (deep-merge into global doc).
+    
+    Validates hex colors and work_week_hours. Invalidates tenant cache.
+    """
+    from platform_db import platform_defaults_collection, get_platform_defaults
+    from middleware.tenant_resolver import invalidate_tenant_cache
+    
+    current = await get_platform_defaults()
+    
+    update_doc = {"updated_at": datetime.now(timezone.utc)}
+    
+    # Merge branding
+    if payload.branding is not None:
+        new_branding = {**current.get("branding", {}), **payload.branding}
+        
+        # Validate hex colors
+        if "primary_color" in new_branding:
+            if not _valid_hex_color(new_branding["primary_color"]):
+                raise HTTPException(status_code=400, detail="primary_color must be '#RRGGBB' hex")
+        if "accent_color" in new_branding:
+            if not _valid_hex_color(new_branding["accent_color"]):
+                raise HTTPException(status_code=400, detail="accent_color must be '#RRGGBB' hex")
+        
+        update_doc["branding"] = new_branding
+    
+    # Merge settings
+    if payload.settings is not None:
+        new_settings = {**current.get("settings", {}), **payload.settings}
+        
+        # Validate work_week_hours
+        if "work_week_hours" in new_settings:
+            wwh = new_settings["work_week_hours"]
+            if not isinstance(wwh, int) or wwh < 1 or wwh > 168:
+                raise HTTPException(status_code=400, detail="work_week_hours must be between 1 and 168")
+        
+        update_doc["settings"] = new_settings
+    
+    # Update platform_defaults doc
+    await platform_defaults_collection.update_one(
+        {"_id": "global"},
+        {"$set": update_doc},
+        upsert=True,
+    )
+    
+    # Invalidate tenant cache (all tenants inherit from platform defaults)
+    invalidate_tenant_cache()
+    
+    # Audit log
+    await _record_audit(
+        actor_email=admin.get("email", "unknown"),
+        action="platform.defaults.update",
+        details={"changes": {k: v for k, v in update_doc.items() if k != "updated_at"}},
+    )
+    
+    return await get_platform_defaults()
