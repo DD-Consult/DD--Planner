@@ -44,14 +44,14 @@ class TokenWithUser(BaseModel):
 class ResourceCreate(BaseModel):
     name: str
     role: str
-    standard_capacity: int = 100
+    standard_capacity: float = 100  # float so part-time capacity (e.g. 87.5) doesn't crash
     avatar_url: Optional[str] = None
 
 
 class ResourceUpdate(BaseModel):
     name: Optional[str] = None
     role: Optional[str] = None
-    standard_capacity: Optional[int] = None
+    standard_capacity: Optional[float] = None
     avatar_url: Optional[str] = None
     active: Optional[bool] = None
 
@@ -60,7 +60,7 @@ class ResourceResponse(BaseModel):
     id: str
     name: str
     role: str
-    standard_capacity: int
+    standard_capacity: float  # was int — allows 87.5%, 33.3% etc.
     avatar_url: Optional[str] = None
     active: bool = True
 
@@ -129,7 +129,7 @@ class ProjectResponse(BaseModel):
     actual_hours: Optional[float] = 0.0
     health: Optional[str] = None
     schedule_status: Optional[str] = None
-    actual_progress: Optional[int] = None
+    actual_progress: Optional[float] = None  # float — allows 33.3%, 66.7% etc.
     project_lead_id: Optional[str] = None
     project_lead_name: Optional[str] = None
     google_drive_url: Optional[str] = None
@@ -145,7 +145,7 @@ class StatusUpdateCreate(BaseModel):
     project_id: str
     health: str = "Green"
     schedule_status: str = "On Track"
-    actual_progress: Optional[int] = None
+    actual_progress: Optional[float] = None
     accomplishments: Optional[str] = None
     blockers: Optional[str] = None
     next_steps: Optional[str] = None
@@ -161,7 +161,7 @@ class StatusUpdateResponse(BaseModel):
     update_date: str
     health: str
     schedule_status: str
-    actual_progress: int
+    actual_progress: float  # was int — allows fractional progress values
     accomplishments: Optional[str] = None
     blockers: Optional[Union[str, list]] = None
     next_steps: Optional[str] = None
@@ -178,7 +178,7 @@ class StatusUpdateResponse(BaseModel):
 class StatusUpdateEdit(BaseModel):
     health: Optional[str] = None
     schedule_status: Optional[str] = None
-    actual_progress: Optional[int] = None
+    actual_progress: Optional[float] = None
     accomplishments: Optional[str] = None
     blockers: Optional[str] = None
     next_steps: Optional[str] = None
@@ -201,8 +201,8 @@ ALLOCATION_ROLES = [
 class PhaseAllocation(BaseModel):
     """Phase-specific allocation percentage for a resource."""
     phase_id: str
-    percentage: Optional[int] = None
-    hours: Optional[int] = None
+    percentage: Optional[float] = None  # float so 12.5% doesn't crash Pydantic
+    hours: Optional[float] = None
 
 
 class AllocationCreate(BaseModel):
@@ -210,11 +210,11 @@ class AllocationCreate(BaseModel):
     project_id: str
     start_date: date
     end_date: date
-    percentage: Optional[int] = None
-    hours: Optional[int] = None
+    percentage: Optional[float] = None  # accept decimal % (12.5, 33.3)
+    hours: Optional[float] = None
     allocation_type: str = "percentage"
     role: Optional[str] = None
-    actual_percentage: Optional[int] = None
+    actual_percentage: Optional[float] = None
     confirmation_status: str = "Pending"
     phase_names: Optional[List[str]] = None
     phase_allocations: Optional[List[PhaseAllocation]] = []  # NEW: Per-phase allocations
@@ -225,11 +225,11 @@ class AllocationUpdate(BaseModel):
     project_id: Optional[str] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
-    percentage: Optional[int] = None
-    hours: Optional[int] = None
+    percentage: Optional[float] = None  # accept decimal %
+    hours: Optional[float] = None
     allocation_type: Optional[str] = None
     role: Optional[str] = None
-    actual_percentage: Optional[int] = None
+    actual_percentage: Optional[float] = None
     confirmation_status: Optional[str] = None
     phase_names: Optional[List[str]] = None
     phase_allocations: Optional[List[dict]] = None  # NEW: Per-phase allocations
@@ -241,12 +241,12 @@ class AllocationResponse(BaseModel):
     project_id: str
     start_date: str
     end_date: str
-    percentage: int
-    hours: Optional[int] = None
+    percentage: float  # was int — legacy prod data may have 2.5 etc.
+    hours: Optional[float] = None
     weekly_hours: Optional[float] = None
     allocation_type: Optional[str] = "percentage"
     role: Optional[str] = None
-    actual_percentage: Optional[int] = None
+    actual_percentage: Optional[float] = None
     confirmation_status: Optional[str] = "Pending"
     resource_name: Optional[str] = None
     resource_role: Optional[str] = None
@@ -547,7 +547,7 @@ class MoveResourceRequest(BaseModel):
     resource_id: str
     source_project_id: str
     target_project_id: str
-    new_percentage: Optional[int] = None
+    new_percentage: Optional[float] = None  # accept decimal %
     new_start_date: Optional[str] = None
     new_end_date: Optional[str] = None
 
@@ -623,8 +623,8 @@ class AllocationValidateRequest(BaseModel):
     resource_id: str
     start_date: date
     end_date: date
-    percentage: Optional[int] = None
-    hours: Optional[int] = None
+    percentage: Optional[float] = None
+    hours: Optional[float] = None
     allocation_type: str = "percentage"
     exclude_allocation_id: Optional[str] = None  # for edits, exclude the current one
 
