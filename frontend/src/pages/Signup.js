@@ -110,36 +110,63 @@ export default function Signup() {
   // ===== Success screen =====
   if (step === 'success' && signupResult) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md" data-testid="signup-success-card">
+      <div 
+        className="min-h-screen flex items-center justify-center p-4 relative"
+        style={{
+          background: 'linear-gradient(to bottom, #1B2436, #141C2B)',
+        }}
+      >
+        {/* Grid texture overlay */}
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: `
+              linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px)
+            `,
+            backgroundSize: '40px 40px'
+          }}
+        />
+
+        <Card 
+          className="w-full max-w-md relative z-10 bg-[#1F2937] border-[rgba(148,163,184,0.15)]" 
+          data-testid="signup-success-card"
+        >
           <CardContent className="p-8 text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-full mb-4">
-              <CheckCircle2 className="w-10 h-10 text-emerald-600" />
+            {/* Logo */}
+            <img 
+              src="https://customer-assets.emergentagent.com/job_resourcy/artifacts/tongpt22_Options%205-transparent%20background%20landscape%20copy%20%282%29.png"
+              alt="DD Consulting"
+              className="h-12 w-auto mx-auto mb-6"
+            />
+
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-500/20 rounded-full mb-4">
+              <CheckCircle2 className="w-10 h-10 text-emerald-400" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">
+            <h1 className="text-2xl font-bold text-[#F8FAFC] mb-2">
               Welcome to DD Planner!
             </h1>
-            <p className="text-slate-600 mb-6">
-              Your workspace <strong>{signupResult.tenant_name}</strong> is ready.
+            <p className="text-[#94A3B8] mb-6">
+              Your workspace <strong className="text-[#CBD5E1]">{signupResult.tenant_name}</strong> is ready.
             </p>
-            <div className="bg-slate-50 rounded-lg p-4 mb-6 text-left space-y-2 text-sm">
+            <div className="bg-[#141C2B] border border-[#334155] rounded-lg p-4 mb-6 text-left space-y-2 text-sm">
               <div>
-                <span className="text-slate-500">Workspace:</span>{' '}
-                <span className="font-mono text-slate-900">{signupResult.tenant_slug}</span>
+                <span className="text-[#94A3B8]">Workspace:</span>{' '}
+                <span className="font-mono text-[#F8FAFC]">{signupResult.tenant_slug}</span>
               </div>
               <div>
-                <span className="text-slate-500">Admin email:</span>{' '}
-                <span className="font-mono text-slate-900">{signupResult.admin_email}</span>
+                <span className="text-[#94A3B8]">Admin email:</span>{' '}
+                <span className="font-mono text-[#F8FAFC]">{signupResult.admin_email}</span>
               </div>
             </div>
             <a
               href={signupResult.login_url}
-              className="inline-flex items-center justify-center gap-2 w-full bg-slate-900 text-white px-4 py-3 rounded-lg hover:bg-slate-800 transition font-medium"
+              className="inline-flex items-center justify-center gap-2 w-full bg-[#4A90E2] text-white px-4 py-3 rounded-lg hover:bg-[#3A7BC8] transition font-medium"
               data-testid="signup-success-go-to-login-btn"
             >
               Go to Workspace <ArrowRight className="w-4 h-4" />
             </a>
-            <div className="text-xs text-slate-400 mt-4">{signupResult.message}</div>
+            <div className="text-xs text-[#64748B] mt-4">{signupResult.message}</div>
           </CardContent>
         </Card>
       </div>
@@ -148,14 +175,48 @@ export default function Signup() {
 
   // ===== Signup form =====
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg" data-testid="signup-card">
-        <CardHeader className="text-center">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-slate-900 rounded-full mb-3 mx-auto">
-            <Building2 className="w-7 h-7 text-white" />
+    <div 
+      className="min-h-screen flex items-center justify-center p-4 relative"
+      style={{
+        background: 'linear-gradient(to bottom, #1B2436, #141C2B)',
+      }}
+    >
+      {/* Grid texture overlay */}
+      <div 
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundImage: `
+            linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px)
+          `,
+          backgroundSize: '40px 40px'
+        }}
+      />
+
+      <Card 
+        className="w-full max-w-lg relative z-10 bg-[#1F2937] border-[rgba(148,163,184,0.15)]" 
+        data-testid="signup-card"
+      >
+        <CardHeader className="text-center pb-6">
+          {/* Logo */}
+          <img 
+            src="https://customer-assets.emergentagent.com/job_resourcy/artifacts/tongpt22_Options%205-transparent%20background%20landscape%20copy%20%282%29.png"
+            alt="DD Consulting"
+            className="h-12 w-auto mx-auto mb-6"
+          />
+          
+          {/* Micro label */}
+          <div className="text-[#4A90E2] text-xs uppercase tracking-widest font-mono mb-3 opacity-70">
+            // New Workspace
           </div>
-          <CardTitle className="text-2xl">Start your workspace</CardTitle>
-          <CardDescription>
+
+          <CardTitle 
+            className="text-3xl text-[#F8FAFC] uppercase"
+            style={{ fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.05em' }}
+          >
+            Start Your Workspace
+          </CardTitle>
+          <CardDescription className="text-[#94A3B8] mt-2">
             Create your DD Planner workspace in 30 seconds. Free for the first 30 days.
           </CardDescription>
         </CardHeader>
@@ -163,7 +224,7 @@ export default function Signup() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Company name */}
             <div>
-              <Label htmlFor="company_name">Company name</Label>
+              <Label htmlFor="company_name" className="text-[#CBD5E1]">Company name</Label>
               <Input
                 id="company_name"
                 data-testid="signup-company-name"
@@ -171,15 +232,16 @@ export default function Signup() {
                 onChange={(e) => updateField('company_name', e.target.value)}
                 placeholder="Acme Consulting"
                 autoComplete="organization"
+                className="bg-[#141C2B] border-[#334155] text-[#F8FAFC] placeholder:text-[#64748B] focus-visible:ring-[#4A90E2] focus-visible:border-[#4A90E2]"
               />
-              {errors.company_name && <p className="text-sm text-red-600 mt-1">{errors.company_name}</p>}
+              {errors.company_name && <p className="text-sm text-red-400 mt-1">{errors.company_name}</p>}
             </div>
 
             {/* Workspace slug */}
             <div>
-              <Label htmlFor="slug">
+              <Label htmlFor="slug" className="text-[#CBD5E1]">
                 Workspace URL{' '}
-                <span className="text-slate-400 text-xs">(you can't change this later)</span>
+                <span className="text-[#64748B] text-xs">(you can't change this later)</span>
               </Label>
               <div className="flex items-center gap-2">
                 <div className="flex-1 relative">
@@ -189,32 +251,32 @@ export default function Signup() {
                     value={form.slug}
                     onChange={(e) => updateField('slug', e.target.value)}
                     placeholder="acme"
-                    className="pr-10"
+                    className="pr-10 bg-[#141C2B] border-[#334155] text-[#F8FAFC] placeholder:text-[#64748B] focus-visible:ring-[#4A90E2] focus-visible:border-[#4A90E2]"
                   />
                   <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    {slugCheck.status === 'checking' && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
-                    {slugCheck.status === 'available' && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
-                    {slugCheck.status === 'taken' && <XCircle className="w-4 h-4 text-red-500" />}
+                    {slugCheck.status === 'checking' && <Loader2 className="w-4 h-4 animate-spin text-[#64748B]" />}
+                    {slugCheck.status === 'available' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                    {slugCheck.status === 'taken' && <XCircle className="w-4 h-4 text-red-400" />}
                   </div>
                 </div>
-                <span className="text-slate-500 text-sm whitespace-nowrap">.ddplanner.io</span>
+                <span className="text-[#94A3B8] text-sm whitespace-nowrap">.ddplanner.io</span>
               </div>
               {slugCheck.status === 'available' && (
-                <p className="text-sm text-emerald-600 mt-1" data-testid="signup-slug-available">
+                <p className="text-sm text-emerald-400 mt-1" data-testid="signup-slug-available">
                   ✓ Available
                 </p>
               )}
               {slugCheck.status === 'taken' && (
-                <p className="text-sm text-red-600 mt-1" data-testid="signup-slug-taken">
+                <p className="text-sm text-red-400 mt-1" data-testid="signup-slug-taken">
                   {slugCheck.reason}
                 </p>
               )}
-              {errors.slug && <p className="text-sm text-red-600 mt-1">{errors.slug}</p>}
+              {errors.slug && <p className="text-sm text-red-400 mt-1">{errors.slug}</p>}
             </div>
 
             {/* Admin name */}
             <div>
-              <Label htmlFor="admin_name">Your name <span className="text-slate-400 text-xs">(optional)</span></Label>
+              <Label htmlFor="admin_name" className="text-[#CBD5E1]">Your name <span className="text-[#64748B] text-xs">(optional)</span></Label>
               <Input
                 id="admin_name"
                 data-testid="signup-admin-name"
@@ -222,12 +284,13 @@ export default function Signup() {
                 onChange={(e) => updateField('admin_name', e.target.value)}
                 placeholder="Jane Doe"
                 autoComplete="name"
+                className="bg-[#141C2B] border-[#334155] text-[#F8FAFC] placeholder:text-[#64748B] focus-visible:ring-[#4A90E2] focus-visible:border-[#4A90E2]"
               />
             </div>
 
             {/* Admin email */}
             <div>
-              <Label htmlFor="admin_email">Admin email</Label>
+              <Label htmlFor="admin_email" className="text-[#CBD5E1]">Admin email</Label>
               <Input
                 id="admin_email"
                 data-testid="signup-admin-email"
@@ -236,13 +299,14 @@ export default function Signup() {
                 onChange={(e) => updateField('admin_email', e.target.value)}
                 placeholder="jane@acme.com"
                 autoComplete="email"
+                className="bg-[#141C2B] border-[#334155] text-[#F8FAFC] placeholder:text-[#64748B] focus-visible:ring-[#4A90E2] focus-visible:border-[#4A90E2]"
               />
-              {errors.admin_email && <p className="text-sm text-red-600 mt-1">{errors.admin_email}</p>}
+              {errors.admin_email && <p className="text-sm text-red-400 mt-1">{errors.admin_email}</p>}
             </div>
 
             {/* Password */}
             <div>
-              <Label htmlFor="admin_password">Admin password</Label>
+              <Label htmlFor="admin_password" className="text-[#CBD5E1]">Admin password</Label>
               <Input
                 id="admin_password"
                 data-testid="signup-admin-password"
@@ -251,13 +315,14 @@ export default function Signup() {
                 onChange={(e) => updateField('admin_password', e.target.value)}
                 placeholder="At least 8 chars, letters + numbers"
                 autoComplete="new-password"
+                className="bg-[#141C2B] border-[#334155] text-[#F8FAFC] placeholder:text-[#64748B] focus-visible:ring-[#4A90E2] focus-visible:border-[#4A90E2]"
               />
-              {errors.admin_password && <p className="text-sm text-red-600 mt-1">{errors.admin_password}</p>}
+              {errors.admin_password && <p className="text-sm text-red-400 mt-1">{errors.admin_password}</p>}
             </div>
 
             <Button
               type="submit"
-              className="w-full bg-slate-900 hover:bg-slate-800"
+              className="w-full bg-[#4A90E2] hover:bg-[#3A7BC8] text-white font-medium transition-colors"
               disabled={step === 'submitting' || slugCheck.status === 'taken' || slugCheck.status === 'checking'}
               data-testid="signup-submit-btn"
             >
@@ -268,9 +333,9 @@ export default function Signup() {
               )}
             </Button>
 
-            <div className="text-center text-sm text-slate-500 pt-2">
+            <div className="text-center text-sm text-[#94A3B8] pt-2">
               Already have a workspace?{' '}
-              <Link to="/login" className="text-slate-900 font-medium hover:underline" data-testid="signup-login-link">
+              <Link to="/login" className="text-[#4A90E2] font-medium hover:underline" data-testid="signup-login-link">
                 Sign in
               </Link>
             </div>

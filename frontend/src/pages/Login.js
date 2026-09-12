@@ -49,19 +49,57 @@ const Login = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#FCFCFD]">
-      <div className="max-w-md w-full mx-4">
-        <div className="bg-white border border-[#E6E8EC] rounded-lg shadow-sm p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-semibold mb-2" style={{ fontFamily: 'Space Grotesk' }}>
+    <div 
+      className="min-h-screen flex items-center justify-center relative"
+      style={{
+        background: 'linear-gradient(to bottom, #1B2436, #141C2B)',
+      }}
+    >
+      {/* Grid texture overlay */}
+      <div 
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundImage: `
+            linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px)
+          `,
+          backgroundSize: '40px 40px'
+        }}
+      />
+
+      <div className="max-w-md w-full mx-4 relative z-10">
+        <div 
+          className="bg-[#1F2937] rounded-lg shadow-2xl p-8"
+          style={{
+            border: '1px solid rgba(148, 163, 184, 0.15)'
+          }}
+        >
+          {/* Logo */}
+          <div className="text-center mb-6">
+            <img 
+              src="https://customer-assets.emergentagent.com/job_resourcy/artifacts/tongpt22_Options%205-transparent%20background%20landscape%20copy%20%282%29.png"
+              alt="DD Consulting"
+              className="h-12 w-auto mx-auto mb-6"
+            />
+            
+            {/* Micro label */}
+            <div className="text-[#4A90E2] text-xs uppercase tracking-widest font-mono mb-3 opacity-70">
+              // Secure Access
+            </div>
+            
+            {/* Headline */}
+            <h1 
+              className="text-4xl mb-2 text-[#F8FAFC] uppercase"
+              style={{ fontFamily: "'Bebas Neue', sans-serif", letterSpacing: '0.05em' }}
+            >
               DD Planner
             </h1>
-            <p className="text-sm text-[#667085]">Resource Planning & Capacity Management</p>
+            <p className="text-sm text-[#94A3B8]">Resource Planning & Capacity Management</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4" data-testid="login-form">
+          <form onSubmit={handleSubmit} className="space-y-5" data-testid="login-form">
             <div>
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" className="text-[#CBD5E1]">Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -70,11 +108,12 @@ const Login = ({ onLogin }) => {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 data-testid="email-input"
+                className="bg-[#141C2B] border-[#334155] text-[#F8FAFC] placeholder:text-[#64748B] focus-visible:ring-[#4A90E2] focus-visible:border-[#4A90E2]"
               />
             </div>
 
             <div>
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="text-[#CBD5E1]">Password</Label>
               <Input
                 id="password"
                 type="password"
@@ -83,11 +122,12 @@ const Login = ({ onLogin }) => {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 data-testid="password-input"
+                className="bg-[#141C2B] border-[#334155] text-[#F8FAFC] placeholder:text-[#64748B] focus-visible:ring-[#4A90E2] focus-visible:border-[#4A90E2]"
               />
             </div>
 
             {error && (
-              <Alert variant="destructive" data-testid="error-alert">
+              <Alert variant="destructive" data-testid="error-alert" className="bg-red-950/50 border-red-900/50 text-red-200">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
@@ -95,7 +135,7 @@ const Login = ({ onLogin }) => {
 
             <Button
               type="submit"
-              className="w-full"
+              className="w-full bg-[#4A90E2] hover:bg-[#3A7BC8] text-white font-medium transition-colors"
               disabled={loading}
               data-testid="login-button"
             >
@@ -103,11 +143,11 @@ const Login = ({ onLogin }) => {
             </Button>
           </form>
 
-          <div className="mt-4 text-center text-sm text-[#475467]">
+          <div className="mt-6 text-center text-sm text-[#94A3B8]">
             New to DD Planner?{' '}
             <a
               href="/signup"
-              className="text-[#0B1120] font-medium hover:underline"
+              className="text-[#4A90E2] font-medium hover:underline"
               data-testid="login-signup-link"
             >
               Create a workspace
