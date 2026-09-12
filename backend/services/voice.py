@@ -9,11 +9,17 @@ CRITICAL: Uses real Gemini API key only — Emergent LLM key NOT supported for a
 import httpx
 import base64
 import io
+import os
 import wave
 import logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Model names (2026). Overridable via env so future model bumps need no code change.
+# STT: dedicated transcription model. TTS: dedicated speech-generation model.
+GEMINI_STT_MODEL = os.environ.get("GEMINI_STT_MODEL", "gemini-flash-latest")
+GEMINI_TTS_MODEL = os.environ.get("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts")
 
 
 async def _resolve_gemini_key() -> Optional[str]:
@@ -62,7 +68,7 @@ async def transcribe_audio(audio_base64: str, mime_type: str) -> str:
     if not gemini_key:
         raise ValueError("No Gemini API key configured for voice. Add one in Settings → AI or ask an admin.")
     
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_STT_MODEL}:generateContent"
     
     payload = {
         "contents": [
@@ -97,8 +103,18 @@ async def transcribe_audio(audio_base64: str, mime_type: str) -> str:
                 raise ValueError(f"Gemini transcription failed: {error_detail}")
             
             result = response.json()
-            text = result["candidates"][0]["content"]["parts"][0]["text"]
-            
+            # Robustly extract text: some models return multiple parts where
+            # only one carries "text" (others may carry thoughtSignature only).
+            text = ""
+            try:
+                parts = result["candidates"][0]["content"]["parts"]
+                for p in parts:
+                    if isinstance(p, dict) and p.get("text"):
+                        text = p["text"]
+                        break
+            except (KeyError, IndexError, TypeError):
+                text = ""
+
             if not text or not text.strip():
                 raise ValueError("Transcription returned empty text")
             
@@ -166,7 +182,7 @@ async def synthesize_speech(text: str, voice: str = "Kore") -> str:
         text = text[:max_chars] + "... (truncated)"
         logger.warning(f"TTS text truncated to {max_chars} chars")
     
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_TTS_MODEL}:generateContent"
     
     payload = {
         "contents": [
