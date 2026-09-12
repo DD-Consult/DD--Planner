@@ -242,14 +242,14 @@ const SECTIONS = [
   },
   {
     id: 'ai',
-    title: 'AI Assistant',
+    title: 'PM Assist',
     icon: Sparkles,
     color: '#7839EE',
     roles: ['super_admin', 'admin', 'resource', 'contractor'],
     items: [
       {
-        q: 'How do I use the AI assistant?',
-        a: 'Click the **chat button** in the bottom-right corner of any page. Ask questions in natural language about your projects, resources, budgets, or timesheets.',
+        q: 'How do I use PM Assist?',
+        a: 'Click the **chat button** in the bottom-right corner of any page to open **PM Assist**. Ask questions in natural language about your projects, resources, budgets, or timesheets. You can also use the mic to talk to it and have replies read back aloud.',
       },
       {
         q: 'What can I ask?',
@@ -609,7 +609,7 @@ export default function Help() {
 
       {/* Footer */}
       <div className="mt-10 mb-4 text-center text-xs text-[#98A2B3]">
-        Need more help? Use the AI Chat assistant — it knows everything about your projects.
+        Need more help? Use PM Assist (bottom-right chat) — it knows everything about your projects.
       </div>
     </div>
   );

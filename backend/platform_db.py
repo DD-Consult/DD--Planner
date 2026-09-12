@@ -117,7 +117,7 @@ MODULES_CATALOG = [
      "default_enabled": True},
 
     # AI modules
-    {"key": "ai_copilot", "name": "AI Copilot (Chat & Actions)", "category": "ai", "depends_on": [], "is_core": False,
+    {"key": "ai_copilot", "name": "PM Assist (Chat & Actions)", "category": "ai", "depends_on": [], "is_core": False,
      "description": "Conversational AI chat with role-scoped actions.",
      "default_enabled": True},
     {"key": "ai_intelligence", "name": "AI Intelligence", "category": "ai", "depends_on": ["ai_copilot"], "is_core": False,

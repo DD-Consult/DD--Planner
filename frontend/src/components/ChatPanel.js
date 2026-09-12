@@ -1076,7 +1076,7 @@ const ChatPanel = () => {
             <Bot size={18} />
           )}
           <div>
-            <h3 className="font-semibold text-sm">DD Planner AI</h3>
+            <h3 className="font-semibold text-sm">PM Assist</h3>
             <p className="text-[10px] text-[#94A3B8]">
               {showHistory ? 'Chat History' : sessionId ? 'Session active' : 'New conversation'}
             </p>
@@ -1167,7 +1167,7 @@ const ChatPanel = () => {
                 <div className="w-12 h-12 rounded-full bg-[#0B1220] flex items-center justify-center mb-3">
                   <Sparkles size={20} className="text-white" />
                 </div>
-                <h4 className="font-semibold text-[#0B1220] mb-1">DD Planner AI</h4>
+                <h4 className="font-semibold text-[#0B1220] mb-1">PM Assist</h4>
                 <p className="text-xs text-[#667085] mb-4">
                   Ask about projects, resources, utilization, or request actions
                 </p>
