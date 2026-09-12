@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { sendChatMessage, getChatSessions, getChatSession, deleteChatSession, executeChatAction, undoLastAction, executeActionPlan, getMe } from '../api';
+import { sendChatMessage, getChatSessions, getChatSession, deleteChatSession, executeChatAction, undoLastAction, executeActionPlan, getMe, getVoiceStatus, transcribeVoice, speakVoice } from '../api';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
@@ -32,8 +32,13 @@ import {
   ListChecks,
   ChevronDown,
   ChevronUp,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useEnabledModules } from '../hooks/useEnabledModules';
 
 // Parse action blocks from AI response
 const parseResponse = (text) => {
@@ -513,11 +518,268 @@ const ChatPanel = () => {
   const inputRef = useRef(null);
   const queryClient = useQueryClient();
 
+  // Voice state
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [autoRead, setAutoRead] = useState(() => {
+    const stored = localStorage.getItem('ddp_voice_autoread');
+    return stored === 'true';
+  });
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [lastReadIndex, setLastReadIndex] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const currentAudioRef = useRef(null);
+  const speechSynthesisRef = useRef(null);
+  const sendProgrammaticRef = useRef(null);
+
+  const { isEnabled } = useEnabledModules();
+  const voiceEnabled = isEnabled('ai_voice');
+
   const { data: chatUser } = useQuery({
     queryKey: ['me'],
     queryFn: async () => { const r = await getMe(); return r.data; },
   });
   const chatIsAdmin = chatUser?.role === 'admin' || chatUser?.role === 'super_admin';
+
+  // Voice status query
+  const { data: voiceStatus } = useQuery({
+    queryKey: ['voiceStatus'],
+    queryFn: async () => {
+      try {
+        const r = await getVoiceStatus();
+        return r.data;
+      } catch {
+        return { available: false, has_key: false, voice: 'Kore' };
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+    enabled: voiceEnabled && isOpen,
+  });
+
+  // Clean text for TTS (strip markdown and action JSON)
+  const cleanTextForTTS = useCallback((text) => {
+    // Remove action blocks
+    let cleaned = text.replace(/```(?:action|json)?\s*\n?[\s\S]*?```/g, '');
+    // Remove markdown bold/italic
+    cleaned = cleaned.replace(/\*\*([^*]+)\*\*/g, '$1');
+    cleaned = cleaned.replace(/\*([^*]+)\*/g, '$1');
+    cleaned = cleaned.replace(/_([^_]+)_/g, '$1');
+    // Remove markdown lists
+    cleaned = cleaned.replace(/^[\s]*[-•*]\s+/gm, '');
+    // Remove tables (basic)
+    cleaned = cleaned.replace(/\|[^\n]+\|/g, '');
+    // Remove extra whitespace
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+    return cleaned;
+  }, []);
+
+  // Stop any current audio playback
+  const stopAudio = useCallback(() => {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
+    if (speechSynthesisRef.current && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      speechSynthesisRef.current = null;
+    }
+    setIsSpeaking(false);
+  }, []);
+
+  // Speak text using Gemini or browser fallback
+  const speakText = useCallback(async (text) => {
+    if (!text || !autoRead) return;
+    
+    stopAudio();
+    setIsSpeaking(true);
+    
+    const cleanText = cleanTextForTTS(text);
+    if (!cleanText) {
+      setIsSpeaking(false);
+      return;
+    }
+
+    // Try Gemini first
+    if (voiceStatus?.available) {
+      try {
+        const res = await speakVoice(cleanText, voiceStatus.voice || 'Kore');
+        const audioData = res.data;
+        const audio = new Audio(`data:${audioData.mime};base64,${audioData.audio_base64}`);
+        currentAudioRef.current = audio;
+        audio.onended = () => {
+          setIsSpeaking(false);
+          currentAudioRef.current = null;
+        };
+        audio.onerror = () => {
+          setIsSpeaking(false);
+          currentAudioRef.current = null;
+          // Fallback to browser
+          playBrowserTTS(cleanText);
+        };
+        await audio.play();
+        return;
+      } catch (err) {
+        console.warn('Gemini TTS failed, falling back to browser:', err);
+      }
+    }
+
+    // Browser fallback
+    playBrowserTTS(cleanText);
+  }, [autoRead, voiceStatus, cleanTextForTTS, stopAudio]);
+
+  const playBrowserTTS = useCallback((text) => {
+    if (!window.speechSynthesis) {
+      setIsSpeaking(false);
+      return;
+    }
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    speechSynthesisRef.current = utterance;
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      speechSynthesisRef.current = null;
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      speechSynthesisRef.current = null;
+    };
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
+  // Toggle auto-read
+  const toggleAutoRead = useCallback(() => {
+    const newValue = !autoRead;
+    setAutoRead(newValue);
+    localStorage.setItem('ddp_voice_autoread', String(newValue));
+    if (!newValue) {
+      stopAudio();
+    }
+  }, [autoRead, stopAudio]);
+
+  // Voice input handlers
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+      const recorder = new MediaRecorder(stream, { mimeType });
+      
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+      
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        await processRecording(mimeType);
+      };
+      
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        toast.error('Microphone permission is required for voice input');
+      } else {
+        console.warn('MediaRecorder failed, trying Web Speech API:', err);
+        tryWebSpeechAPI();
+      }
+    }
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  }, [isRecording]);
+
+  const processRecording = useCallback(async (mimeType) => {
+    setIsTranscribing(true);
+    
+    const blob = new Blob(audioChunksRef.current, { type: mimeType });
+    audioChunksRef.current = [];
+    
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64 = reader.result.split(',')[1];
+      
+      // Try Gemini first
+      if (voiceStatus?.available) {
+        try {
+          const res = await transcribeVoice(base64, mimeType);
+          const transcript = res.data.text;
+          if (transcript) {
+            setMessage(transcript);
+            setIsTranscribing(false);
+            // Auto-send (via ref to avoid referencing a callback defined later)
+            setTimeout(() => {
+              sendProgrammaticRef.current?.(transcript);
+            }, 100);
+            return;
+          }
+        } catch (err) {
+          console.warn('Gemini transcription failed, falling back to browser:', err);
+        }
+      }
+      
+      // Browser fallback
+      setIsTranscribing(false);
+      toast.error('Voice transcription unavailable - please try Web Speech API or type manually');
+      tryWebSpeechAPI();
+    };
+    reader.readAsDataURL(blob);
+  }, [voiceStatus]);
+
+  const tryWebSpeechAPI = useCallback(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast.error("Voice input isn't supported in this browser");
+      return;
+    }
+    
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setMessage(transcript);
+      setIsRecording(false);
+      // Auto-send (via ref to avoid referencing a callback defined later)
+      setTimeout(() => {
+        sendProgrammaticRef.current?.(transcript);
+      }, 100);
+    };
+    
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
+      setIsRecording(false);
+      if (event.error === 'not-allowed') {
+        toast.error('Microphone permission is required for voice input');
+      } else {
+        toast.error("Voice input isn't supported in this browser");
+      }
+    };
+    
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+    
+    setIsRecording(true);
+    recognition.start();
+  }, []);
+
+  const toggleRecording = useCallback(() => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }, [isRecording, startRecording, stopRecording]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -532,6 +794,32 @@ const ChatPanel = () => {
       inputRef.current.focus();
     }
   }, [isOpen]);
+
+  // Auto-read new assistant messages
+  useEffect(() => {
+    if (!voiceEnabled || !autoRead || !isOpen) return;
+    
+    const assistantMessages = messages.filter(m => m.role === 'assistant' && !m.loading);
+    if (assistantMessages.length > lastReadIndex) {
+      const newMessage = assistantMessages[assistantMessages.length - 1];
+      const { narrative } = parseResponse(newMessage.content);
+      speakText(narrative);
+      setLastReadIndex(assistantMessages.length);
+    }
+  }, [messages, autoRead, voiceEnabled, isOpen, lastReadIndex, speakText]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopAudio();
+      if (mediaRecorderRef.current && isRecording) {
+        mediaRecorderRef.current.stop();
+        if (mediaRecorderRef.current.stream) {
+          mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+        }
+      }
+    };
+  }, [stopAudio, isRecording]);
 
   // Fetch chat sessions for history
   const { data: sessions } = useQuery({
@@ -707,6 +995,24 @@ const ChatPanel = () => {
 
     sendMutation.mutate(userMsg);
   };
+
+  const sendMessageProgrammatically = useCallback((text) => {
+    if (!text.trim() || sendMutation.isPending) return;
+
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: text, timestamp: new Date().toISOString() },
+      { role: 'assistant', content: '', loading: true },
+    ]);
+
+    sendMutation.mutate(text);
+  }, [sendMutation]);
+
+  // Keep a ref to the latest sendMessageProgrammatically so voice handlers
+  // (defined earlier) can invoke it without a temporal-dead-zone reference.
+  useEffect(() => {
+    sendProgrammaticRef.current = sendMessageProgrammatically;
+  }, [sendMessageProgrammatically]);
 
   const handleActionConfirm = (action, msgKey) => {
     setExecutingAction(msgKey);
@@ -901,6 +1207,46 @@ const ChatPanel = () => {
           {/* Input */}
           <form onSubmit={handleSend} className="p-3 border-t border-[#E6E8EC] flex-shrink-0">
             <div className="flex gap-2">
+              {voiceEnabled && (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={toggleRecording}
+                    disabled={sendMutation.isPending || isTranscribing}
+                    className="flex-shrink-0"
+                    title={isRecording ? 'Stop recording' : (isTranscribing ? 'Transcribing...' : 'Voice input')}
+                    data-testid="voice-mic-button"
+                  >
+                    {isTranscribing ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : isRecording ? (
+                      <MicOff size={16} className="text-red-500" />
+                    ) : (
+                      <Mic size={16} />
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={toggleAutoRead}
+                    disabled={sendMutation.isPending}
+                    className="flex-shrink-0"
+                    title={autoRead ? 'Disable auto-read' : 'Enable auto-read'}
+                    data-testid="voice-autoread-toggle"
+                  >
+                    {isSpeaking ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : autoRead ? (
+                      <Volume2 size={16} className="text-blue-500" />
+                    ) : (
+                      <VolumeX size={16} />
+                    )}
+                  </Button>
+                </>
+              )}
               <Input
                 ref={inputRef}
                 value={message}

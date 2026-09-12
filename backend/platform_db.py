@@ -137,6 +137,9 @@ MODULES_CATALOG = [
     {"key": "mcp_server", "name": "MCP Server (Agent API)", "category": "integrations", "depends_on": [], "is_core": False,
      "description": "JSON-RPC 2.0 endpoint for external AI agents (Gemini, Copilot).",
      "default_enabled": True},
+    {"key": "ai_voice", "name": "AI Voice (Speech)", "category": "ai", "depends_on": ["ai_copilot"], "is_core": False,
+     "description": "Speak to the AI Copilot and hear replies (Gemini speech-to-text + text-to-speech).",
+     "default_enabled": True},
 ]
 
 

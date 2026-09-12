@@ -588,4 +588,9 @@ export const aiPersonalBriefing = () => api.get('/ai/briefing/personal');
 // Global Search
 export const globalSearch = (q, limitPerType = 5) => api.get('/search/global', { params: { q, limit_per_type: limitPerType } });
 
+// AI Voice
+export const getVoiceStatus = () => api.get('/ai/voice/status');
+export const transcribeVoice = (audio_base64, mime_type) => api.post('/ai/voice/transcribe', { audio_base64, mime_type });
+export const speakVoice = (text, voice) => api.post('/ai/voice/speak', { text, voice });
+
 export default api;

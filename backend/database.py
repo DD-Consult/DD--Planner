@@ -233,4 +233,5 @@ if 'mongodb+srv' in MONGO_URL or 'mongodb.net' in MONGO_URL:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 EXPORT_API_KEY = os.environ.get('EXPORT_API_KEY')
