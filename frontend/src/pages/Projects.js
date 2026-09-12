@@ -331,7 +331,7 @@ const Projects = ({ token }) => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-3xl font-semibold flex items-center gap-3" style={{ fontFamily: 'Space Grotesk' }}>
             <Folder size={32} />
@@ -340,11 +340,11 @@ const Projects = ({ token }) => {
           <p className="text-sm text-[#667085] mt-1">Manage client projects and timelines</p>
         </div>
         {isAdmin && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               onClick={() => setIsKickoffOpen(true)}
               data-testid="ai-kickoff-btn"
-              className="bg-purple-600 text-white hover:bg-purple-700 shadow-md"
+              className="bg-purple-600 text-white hover:bg-purple-700 shadow-md w-full sm:w-auto"
             >
               <Sparkles size={16} className="mr-2" />
               AI Kickoff
@@ -352,7 +352,7 @@ const Projects = ({ token }) => {
             <Button 
               onClick={() => setIsWizardOpen(true)} 
               data-testid="new-project-wizard"
-              className="bg-[#1570EF] text-white hover:bg-[#0E5FD9] shadow-md"
+              className="bg-[#1570EF] text-white hover:bg-[#0E5FD9] shadow-md w-full sm:w-auto"
             >
               <Sparkles size={16} className="mr-2" />
               New Project Wizard
@@ -361,7 +361,7 @@ const Projects = ({ token }) => {
               variant="outline" 
               onClick={(e) => handleOpenDialog(null, e)} 
               data-testid="add-project-button"
-              className="border-[#1570EF] text-[#1570EF] hover:bg-[#1570EF] hover:text-white"
+              className="border-[#1570EF] text-[#1570EF] hover:bg-[#1570EF] hover:text-white w-full sm:w-auto"
             >
               <Plus size={16} className="mr-2" />
               Quick Add

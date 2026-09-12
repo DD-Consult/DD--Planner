@@ -1064,7 +1064,7 @@ const ChatPanel = () => {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 w-[400px] h-[600px] bg-white rounded-2xl shadow-2xl border border-[#E6E8EC] flex flex-col overflow-hidden z-50" data-testid="chat-panel">
+    <div className="fixed bottom-4 right-2 left-2 sm:left-auto sm:right-4 w-auto sm:w-[400px] h-[600px] max-h-[calc(100vh-2rem)] bg-white rounded-2xl shadow-2xl border border-[#E6E8EC] flex flex-col overflow-hidden z-50" data-testid="chat-panel">
       {/* Header */}
       <div className="px-4 py-3 bg-[#0B1220] text-white flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">

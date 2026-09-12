@@ -339,7 +339,7 @@ export default function IntegrationsSettings() {
                 { hs: 'Contact name/email/phone', dd: 'Main Contact' },
               ].map(({ hs, dd }) => (
                 <div key={hs} className="flex items-center px-4 py-2 text-sm">
-                  <span className="font-mono text-xs text-[#667085] w-48">{hs}</span>
+                  <span className="font-mono text-xs text-[#667085] w-32 sm:w-48 shrink-0 break-all">{hs}</span>
                   <span className="text-[#98A2B3] mr-3">→</span>
                   <span className="text-[#0B1220]">{dd}</span>
                 </div>

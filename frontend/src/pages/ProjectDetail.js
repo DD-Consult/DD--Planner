@@ -981,9 +981,9 @@ const ProjectDetail = () => {
   }
 
   return (
-    <div className="space-y-6" data-testid="project-detail">
+    <div className="space-y-6 overflow-x-hidden" data-testid="project-detail">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-4">
           <Button
             variant="ghost"
@@ -999,6 +999,7 @@ const ProjectDetail = () => {
           onClick={() => navigate(`/projects/${id}/report`)}
           variant="outline"
           data-testid="generate-report"
+          className="w-full sm:w-auto"
         >
           <Printer size={16} className="mr-2" />
           Generate Report
@@ -1042,7 +1043,7 @@ const ProjectDetail = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-1 block">Project Name *</label>
                 <Input
@@ -1064,7 +1065,7 @@ const ProjectDetail = () => {
             {/* Customer Contact Section */}
             <div className="border-t border-gray-200 pt-4 mt-2">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Customer Contact (Optional)</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1 block flex items-center gap-1">
                     <Users size={14} />
@@ -1114,7 +1115,7 @@ const ProjectDetail = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-1 block">Status *</label>
                 <Select
@@ -1147,7 +1148,7 @@ const ProjectDetail = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-1 block">Project Lead</label>
                 <Select
@@ -1200,7 +1201,7 @@ const ProjectDetail = () => {
         ) : (
           /* VIEW MODE */
           <div>
-            <div className="flex items-start justify-between mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
               <div className="flex-1">
                 <h1 className="text-3xl font-semibold mb-2" style={{ fontFamily: 'Space Grotesk' }}>
                   {project.name}
@@ -1265,7 +1266,7 @@ const ProjectDetail = () => {
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge className={getStatusColor(project.status)}>
                   {project.status}
                 </Badge>
@@ -1397,36 +1398,38 @@ const ProjectDetail = () => {
 
       {/* TABBED CONTENT AREA */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-7 lg:w-auto">
-          <TabsTrigger value="overview" data-testid="tab-overview">
-            <FileText size={16} className="mr-2" />
-            Overview
-          </TabsTrigger>
-          <TabsTrigger value="team" data-testid="tab-team">
-            <UserCircle size={16} className="mr-2" />
-            Team
-          </TabsTrigger>
-          <TabsTrigger value="risks" data-testid="tab-risks">
-            <Shield size={16} className="mr-2" />
-            Risks
-          </TabsTrigger>
-          <TabsTrigger value="wbs" data-testid="tab-wbs">
-            <ListTodo size={16} className="mr-2" />
-            WBS &amp; Plan
-          </TabsTrigger>
-          <TabsTrigger value="baselines" data-testid="tab-baselines">
-            <GitCompare size={16} className="mr-2" />
-            Baselines
-          </TabsTrigger>
-          <TabsTrigger value="time-tracking" data-testid="tab-time-tracking">
-            <Clock size={16} className="mr-2" />
-            Time Tracking
-          </TabsTrigger>
-          <TabsTrigger value="settings" data-testid="tab-settings">
-            <SettingsIcon size={16} className="mr-2" />
-            Settings
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+          <TabsList className="inline-flex w-auto min-w-full lg:min-w-0">
+            <TabsTrigger value="overview" data-testid="tab-overview" className="whitespace-nowrap">
+              <FileText size={16} className="mr-2" />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="team" data-testid="tab-team" className="whitespace-nowrap">
+              <UserCircle size={16} className="mr-2" />
+              Team
+            </TabsTrigger>
+            <TabsTrigger value="risks" data-testid="tab-risks" className="whitespace-nowrap">
+              <Shield size={16} className="mr-2" />
+              Risks
+            </TabsTrigger>
+            <TabsTrigger value="wbs" data-testid="tab-wbs" className="whitespace-nowrap">
+              <ListTodo size={16} className="mr-2" />
+              WBS &amp; Plan
+            </TabsTrigger>
+            <TabsTrigger value="baselines" data-testid="tab-baselines" className="whitespace-nowrap">
+              <GitCompare size={16} className="mr-2" />
+              Baselines
+            </TabsTrigger>
+            <TabsTrigger value="time-tracking" data-testid="tab-time-tracking" className="whitespace-nowrap">
+              <Clock size={16} className="mr-2" />
+              Time Tracking
+            </TabsTrigger>
+            <TabsTrigger value="settings" data-testid="tab-settings" className="whitespace-nowrap">
+              <SettingsIcon size={16} className="mr-2" />
+              Settings
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* TAB 1: OVERVIEW */}
         <TabsContent value="overview" className="space-y-6">
@@ -2250,7 +2253,7 @@ const ProjectDetail = () => {
 
                     {/* Burn Rate */}
                     {budgetAnalysis.burn_rate && budgetAnalysis.burn_rate.current_weekly > 0 && (
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="bg-[#F9FAFB] rounded-lg p-3 text-center">
                           <div className="text-xs text-[#667085]">Weekly Burn</div>
                           <div className="text-lg font-bold text-[#0B1220]">{budgetAnalysis.burn_rate.current_weekly}h</div>
@@ -2577,7 +2580,7 @@ const ProjectDetail = () => {
                       className="flex items-center justify-between p-3 border border-[#E6E8EC] rounded-md bg-[#F8FAFC]"
                       data-testid={`phase-view-row-${idx}`}
                     >
-                      <div className="flex-1 grid grid-cols-4 gap-4">
+                      <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-4">
                         <div>
                           <div className="text-xs text-[#667085] uppercase tracking-wide">Name</div>
                           <div className="text-sm font-medium text-[#0B1220]">{phase.name || '—'}</div>

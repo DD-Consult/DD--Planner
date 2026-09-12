@@ -1112,8 +1112,8 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-lg font-semibold">Work Breakdown Structure</h3>
           {tasks.length > 0 && (
             <Badge variant="outline" className="text-xs">{tasks.length} tasks</Badge>
@@ -1142,7 +1142,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
             </Badge>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* View Switcher */}
           {!readOnly && (
           <div className="flex items-center border border-gray-200 rounded-lg p-0.5" data-testid="view-switcher">
@@ -1179,10 +1179,10 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
           {/* Bulk Actions */}
           {!readOnly && selectedTasks.length > 0 && (
             <>
-              <div className="h-6 w-px bg-gray-300" />
-              <div className="flex items-center gap-2">
+              <div className="h-6 w-px bg-gray-300 hidden sm:block" />
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <Select onValueChange={handleBulkStatusChange}>
-                  <SelectTrigger className="h-8 text-xs w-32">
+                  <SelectTrigger className="h-8 text-xs w-full sm:w-32">
                     <SelectValue placeholder="Change Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1195,7 +1195,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
                 </Select>
                 
                 <Select onValueChange={handleBulkAssign}>
-                  <SelectTrigger className="h-8 text-xs w-32">
+                  <SelectTrigger className="h-8 text-xs w-full sm:w-32">
                     <SelectValue placeholder="Assign To" />
                   </SelectTrigger>
                   <SelectContent>

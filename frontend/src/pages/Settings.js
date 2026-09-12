@@ -135,7 +135,7 @@ const Settings = () => {
   const currentAvatarUrl = avatarPreview || avatarUrl || userData?.avatar_url;
 
   return (
-    <div className="space-y-6" data-testid="settings-page">
+    <div className="space-y-6 overflow-x-hidden" data-testid="settings-page">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-semibold flex items-center gap-3" style={{ fontFamily: 'Space Grotesk' }}>

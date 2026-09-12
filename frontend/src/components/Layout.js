@@ -91,8 +91,8 @@ const Layout = ({ children, token, onLogout }) => {
     };
     
     if (isMobileMenuOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [isMobileMenuOpen]);
 
@@ -443,7 +443,6 @@ const Layout = ({ children, token, onLogout }) => {
     }
 
     setParsedCommand(transformedCommand);
-    setIsCommandBarOpen(false);
     setIsConfirmDialogOpen(true);
   };
 
@@ -546,11 +545,10 @@ const Layout = ({ children, token, onLogout }) => {
           </div>
         </div>
 
-        {/* Mobile Menu Backdrop — below the header */}
+        {/* Mobile Menu Backdrop — below the header, BEHIND the sidebar */}
         {isMobileMenuOpen && (
           <div
-            className="lg:hidden fixed top-16 left-0 right-0 bottom-0 bg-black bg-opacity-50 z-35"
-            style={{ zIndex: 35 }}
+            className="lg:hidden fixed top-16 left-0 right-0 bottom-0 bg-black bg-opacity-50 z-30"
             onClick={() => setIsMobileMenuOpen(false)}
           />
         )}
@@ -558,7 +556,7 @@ const Layout = ({ children, token, onLogout }) => {
         <div className="min-h-screen">
           {/* Sidebar - Desktop always visible, Mobile slide-in below header */}
           <aside className={`
-            fixed top-16 lg:top-0 left-0 h-[calc(100vh-4rem)] lg:h-screen w-[260px] bg-[#0B1120] border-r border-[#1A2332] z-40
+            fixed top-16 lg:top-0 left-0 h-[calc(100vh-4rem)] lg:h-screen w-[260px] bg-[#0B1120] border-r border-[#1A2332] z-50
             transition-transform duration-300 ease-in-out
             ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           `} data-testid="sidebar">
@@ -581,24 +579,20 @@ const Layout = ({ children, token, onLogout }) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
                 return (
-                  <Tooltip key={item.path}>
-                    <TooltipTrigger asChild>
-                      <Link
-                        to={item.path}
-                        className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                          isActive
-                            ? 'bg-[#1570EF] text-white shadow-lg shadow-[#1570EF]/20'
-                            : 'text-[#94A3B8] hover:bg-[#1A2332] hover:text-white'
-                        }`}
-                      >
-                        <Icon size={20} />
-                        <span>{item.label}</span>
-                      </Link>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">
-                      <p>{item.tooltip}</p>
-                    </TooltipContent>
-                  </Tooltip>
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    title={item.tooltip}
+                    data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
+                      isActive
+                        ? 'bg-[#1570EF] text-white shadow-lg shadow-[#1570EF]/20'
+                        : 'text-[#94A3B8] hover:bg-[#1A2332] hover:text-white'
+                    }`}
+                  >
+                    <Icon size={20} />
+                    <span>{item.label}</span>
+                  </Link>
                 );
               })}
             </nav>
