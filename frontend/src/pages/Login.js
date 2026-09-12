@@ -65,7 +65,7 @@ const Login = ({ onLogin }) => {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@test.com"
+                placeholder="you@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -102,12 +102,6 @@ const Login = ({ onLogin }) => {
               {loading ? 'Signing in...' : 'Sign in'}
             </Button>
           </form>
-
-          <div className="mt-6 p-4 bg-[#F7F7F8] rounded-lg text-xs text-[#475467]">
-            <p className="font-medium mb-2">Demo Credentials:</p>
-            <p>Admin: admin@test.com / admin123</p>
-            <p>Client: client@test.com / client123</p>
-          </div>
 
           <div className="mt-4 text-center text-sm text-[#475467]">
             New to DD Planner?{' '}
