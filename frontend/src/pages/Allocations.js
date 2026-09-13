@@ -1061,7 +1061,7 @@ const Allocations = () => {
                   <SelectValue placeholder="Select a project" />
                 </SelectTrigger>
                 <SelectContent>
-                  {projects?.map((project) => (
+                  {projects?.filter(p => p.status === 'Active' || String(p.id) === String(formData.project_id)).map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name} - {project.client_name}
                     </SelectItem>

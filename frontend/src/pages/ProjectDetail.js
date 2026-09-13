@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getProject, getProjectRisks, getProjectAllocations, getResources, generateProjectSummary, updateProjectSummary, getProjectStatusUpdates, getProjectTimeReport, getProjectBudgetAnalysis, createRisk, updateRisk, deleteRisk, updateProject, polishAllRisks, editStatusUpdate, syncProjectDatesFromWBS, getMe, getStatusOptions, createStatusUpdate, createAllocation, updateAllocation, deleteAllocation, getBudgetHealth, aiDraftStatusUpdate, aiSimilarProjects } from '../api';
+import { getProject, getProjectRisks, getProjectAllocations, getResources, generateProjectSummary, updateProjectSummary, getProjectStatusUpdates, getProjectTimeReport, getProjectBudgetAnalysis, createRisk, updateRisk, deleteRisk, updateProject, polishAllRisks, editStatusUpdate, syncProjectDatesFromWBS, getMe, getStatusOptions, createStatusUpdate, createAllocation, updateAllocation, deleteAllocation, getBudgetHealth, aiDraftStatusUpdate, aiSimilarProjects, getProjects } from '../api';
 import { format, differenceInDays, differenceInBusinessDays } from 'date-fns';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -75,7 +75,9 @@ import {
   Info,
   Mail,
   Phone,
-  Building2
+  Building2,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import {
   Table,
@@ -257,8 +259,24 @@ const ProjectDetail = () => {
     },
   });
 
+  // Fetch all projects for navigation
+  const { data: allProjects } = useQuery({
+    queryKey: ['projects'],
+    queryFn: async () => {
+      const response = await getProjects();
+      return response.data;
+    },
+  });
+
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
   const isLead = !!(currentUser?.resource_id && project?.project_lead_id && currentUser.resource_id === project.project_lead_id);
+  const isClient = currentUser?.role === 'client';
+
+  // Project navigation
+  const projectList = Array.isArray(allProjects) ? allProjects : [];
+  const currentIndex = projectList.findIndex(p => String(p.id) === String(id));
+  const prevProject = currentIndex > 0 ? projectList[currentIndex - 1] : null;
+  const nextProject = currentIndex >= 0 && currentIndex < projectList.length - 1 ? projectList[currentIndex + 1] : null;
 
   // Risk mutations
   const createRiskMutation = useMutation({
@@ -984,7 +1002,7 @@ const ProjectDetail = () => {
     <div className="space-y-6 overflow-x-hidden" data-testid="project-detail">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="ghost"
             size="sm"
@@ -994,6 +1012,51 @@ const ProjectDetail = () => {
             <ArrowLeft size={16} className="mr-2" />
             Back to Projects
           </Button>
+          
+          {/* Project Navigation */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => prevProject && navigate(`/projects/${prevProject.id}`)}
+            disabled={!prevProject}
+            title={prevProject ? `Previous: ${prevProject.name}` : 'No previous project'}
+            data-testid="project-prev-btn"
+          >
+            <ChevronLeft size={16} />
+          </Button>
+          
+          <Select
+            value={id}
+            onValueChange={(value) => navigate(`/projects/${value}`)}
+          >
+            <SelectTrigger className="w-[200px] sm:w-[240px]" data-testid="project-switcher">
+              <SelectValue>{project?.name || 'Select project'}</SelectValue>
+            </SelectTrigger>
+            <SelectContent className="max-h-[400px] overflow-y-auto">
+              {projectList.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name} — {p.client_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => nextProject && navigate(`/projects/${nextProject.id}`)}
+            disabled={!nextProject}
+            title={nextProject ? `Next: ${nextProject.name}` : 'No next project'}
+            data-testid="project-next-btn"
+          >
+            <ChevronRight size={16} />
+          </Button>
+          
+          {projectList.length > 0 && currentIndex >= 0 && (
+            <span className="text-xs text-[#667085] ml-1">
+              {currentIndex + 1} of {projectList.length}
+            </span>
+          )}
         </div>
         <Button
           onClick={() => navigate(`/projects/${id}/report`)}
@@ -1470,6 +1533,108 @@ const ProjectDetail = () => {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Read-only Project Details Card */}
+          <div className="bg-white border border-[#E6E8EC] rounded-lg p-6">
+            <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: 'Space Grotesk' }}>
+              Project Details
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Timeline */}
+              <div>
+                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Timeline</div>
+                <div className="text-sm text-[#0B1220]">
+                  {safeFormatDate(project.start_date)} – {safeFormatDate(project.end_date)}
+                </div>
+              </div>
+              
+              {/* Budgeted Hours - hidden from clients */}
+              {!isClient && (
+                <div>
+                  <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Budgeted Hours</div>
+                  <div className="text-sm text-[#0B1220]">
+                    {project.budgeted_hours ? project.budgeted_hours + 'h' : '—'}
+                  </div>
+                </div>
+              )}
+              
+              {/* Project Lead */}
+              <div>
+                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Project Lead</div>
+                <div className="text-sm text-[#0B1220]">
+                  {project.project_lead_name || 'No lead assigned'}
+                </div>
+              </div>
+              
+              {/* Google Drive */}
+              <div>
+                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Google Drive</div>
+                <div className="text-sm text-[#0B1220]">
+                  {project.google_drive_url ? (
+                    <a 
+                      href={project.google_drive_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-[#1570EF] hover:underline inline-flex items-center gap-1"
+                    >
+                      Open Drive <ExternalLink size={14} />
+                    </a>
+                  ) : '—'}
+                </div>
+              </div>
+              
+              {/* Customer Contact */}
+              <div className="sm:col-span-2">
+                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Customer Contact</div>
+                <div className="text-sm text-[#0B1220]">
+                  {(project.main_contact_name || project.main_contact_email || project.main_contact_phone || project.main_contact_role) ? (
+                    <div className="space-y-1">
+                      {project.main_contact_name && (
+                        <div>
+                          {project.main_contact_name}
+                          {project.main_contact_role && <span className="text-[#667085]"> ({project.main_contact_role})</span>}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-3">
+                        {project.main_contact_email && (
+                          <a 
+                            href={`mailto:${project.main_contact_email}`}
+                            className="text-[#1570EF] hover:underline inline-flex items-center gap-1"
+                          >
+                            <Mail size={13} />
+                            {project.main_contact_email}
+                          </a>
+                        )}
+                        {project.main_contact_phone && (
+                          <a 
+                            href={`tel:${project.main_contact_phone}`}
+                            className="text-[#1570EF] hover:underline inline-flex items-center gap-1"
+                          >
+                            <Phone size={13} />
+                            {project.main_contact_phone}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ) : '—'}
+                </div>
+              </div>
+            </div>
+            
+            {/* Project Objective - full width */}
+            {project.project_objective && (
+              <div className="mt-4">
+                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Objective</div>
+                <div className="text-sm text-[#344054] whitespace-pre-wrap">{project.project_objective}</div>
+              </div>
+            )}
+            {!project.project_objective && (
+              <div className="mt-4">
+                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Objective</div>
+                <div className="text-sm text-[#667085]">—</div>
+              </div>
+            )}
           </div>
 
           {/* AI-Generated Status Summary */}
