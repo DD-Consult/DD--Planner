@@ -22,6 +22,7 @@ from auth.dependencies import get_current_user, require_admin, require_super_adm
 from utils import serialize_doc
 from services.ai_providers import (
     get_ai_config, call_openai_api, call_gemini_api, call_emergent_fallback,
+    extract_gemini_text,
 )
 from services.ai_actions import (
     AUTO_EXECUTE_ACTIONS, execute_ai_action, capture_pre_state,
@@ -432,7 +433,8 @@ Important:
             response = await call_gemini_api(config_key, system_prompt, user_message)
             if response.status_code == 200:
                 result = response.json()
-                ai_response = json.loads(result["candidates"][0]["content"]["parts"][0]["text"])
+                text = extract_gemini_text(result)
+                ai_response = json.loads(text)
                 provider_used = "gemini"
             else:
                 ai_response = await call_emergent_fallback(system_prompt, user_message)
@@ -1036,24 +1038,55 @@ Recommended weeks should be between 1 and 8."""
     try:
         ai_config = await get_ai_config()
         config_key = ai_config["api_key"]
-        
-        if not config_key:
-            raise HTTPException(status_code=500, detail="No AI provider configured")
-        
-        ai_response = None
         provider = ai_config["provider"]
-        
-        if provider == "openai":
+
+        # Clear message when nothing is configured (no provider key AND no emergent fallback)
+        if not config_key and not EMERGENT_LLM_KEY:
+            raise HTTPException(
+                status_code=400,
+                detail="No AI provider configured. A super admin can set one in Settings → AI.",
+            )
+
+        ai_response = None
+
+        if provider == "openai" and config_key:
             response = await call_openai_api(config_key, system_prompt, context)
             if response.status_code == 200:
-                result = response.json()
-                ai_response = json.loads(result["choices"][0]["message"]["content"])
-        
+                try:
+                    result = response.json()
+                    ai_response = json.loads(result["choices"][0]["message"]["content"])
+                except Exception:
+                    ai_response = None
+        elif provider == "gemini" and config_key:
+            from services.ai_providers import extract_gemini_text
+            response = await call_gemini_api(config_key, system_prompt, context)
+            if response.status_code == 200:
+                try:
+                    text = extract_gemini_text(response.json())
+                    ai_response = json.loads(text) if text else None
+                except Exception:
+                    ai_response = None
+
+        # Fallback to Emergent LLM (used for provider=="emergent" or if the direct call failed)
         if not ai_response:
             ai_response = await call_emergent_fallback(system_prompt, context)
-        
+
         if not ai_response:
-            raise HTTPException(status_code=500, detail="AI service unavailable")
+            raise HTTPException(
+                status_code=502,
+                detail="AI service temporarily unavailable. Please try again.",
+            )
+        # Guard: ensure expected keys exist so downstream never 500s on missing fields
+        ai_response = {
+            "should_reschedule": ai_response.get("should_reschedule", False),
+            "recommended_weeks": ai_response.get("recommended_weeks", 0) or 0,
+            "direction": ai_response.get("direction", "forward"),
+            "confidence": ai_response.get("confidence", 0.0),
+            "analysis": ai_response.get("analysis", ""),
+            "reasons": ai_response.get("reasons", []),
+            "risk_if_not_rescheduled": ai_response.get("risk_if_not_rescheduled", ""),
+            "impact_summary": ai_response.get("impact_summary", ""),
+        }
         
         # Build preview of date changes
         weeks = ai_response.get("recommended_weeks", 0)
@@ -1609,6 +1642,14 @@ SYSTEM CONTRACT:
 - If an action fails, the system appends "⚠️ **Action failed:** {{reason}}" — so omitting the block means failure, not success.
 - If the user says "yes" / "go ahead" after an already-executed action, say "Already done — confirmed" WITHOUT re-emitting the action.
 
+CLARIFYING QUESTIONS (CRITICAL — ask before acting when info is missing):
+- If the user asks you to perform an action but has NOT given the information required to do it correctly, DO NOT guess, DO NOT fabricate values, and DO NOT emit an action block. Instead reply conversationally with ONE short, specific follow-up question naming exactly what you still need.
+- Required-info examples: creating an allocation needs the resource, the project, a percentage (or hours), and a date range; assigning a lead needs which person and which project; rescheduling needs how far/direction; creating a project needs at least a name, client, and dates.
+- Also ask when the request is AMBIGUOUS — e.g. the name matches multiple resources/projects, or "this project" is unclear. List the candidates and ask which they mean.
+- Ask ONLY for the pieces that are actually missing (don't re-ask for things they already said). You have full conversation memory, so once they answer — even across several turns — combine everything and THEN emit the action.
+- Keep it to a single, friendly question (or a tight "I need A and B" line), never a long checklist.
+Example: user says "assign Alice to the website project" → reply: "Sure — at what percentage (or hours) and over which date range should I allocate Alice to Website Redesign?" (no action block yet).
+
 PROJECT IDs:
 {project_id_list}
 
@@ -1739,7 +1780,7 @@ Guidelines:
                 response = await call_gemini_api(ai_config["api_key"], system_prompt, user_message)
                 if response.status_code == 200:
                     data = response.json()
-                    ai_response_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    ai_response_text = extract_gemini_text(data).strip()
             elif ai_config["provider"] == "emergent":
                 # Use emergentintegrations library for Emergent LLM key
                 try:

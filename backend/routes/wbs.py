@@ -20,6 +20,7 @@ from utils import serialize_doc
 from utils import compute_task_end_date, user_leads_project
 from services.ai_providers import (
     get_ai_config, call_openai_api, call_gemini_api, call_emergent_fallback,
+    extract_gemini_text,
 )
 from services.ai_instructions import get_instructions_for_prompt
 
@@ -50,7 +51,7 @@ def _parse_openai_json(response) -> Optional[dict]:
 def _parse_gemini_json(response) -> Optional[dict]:
     try:
         result = response.json()
-        text = result["candidates"][0]["content"]["parts"][0]["text"]
+        text = extract_gemini_text(result)
         # Strip markdown code blocks if present
         cleaned = re.sub(r'^```(?:json)?\s*', '', text.strip())
         cleaned = re.sub(r'\s*```$', '', cleaned)
@@ -1006,6 +1007,41 @@ async def generate_wbs(
         else:
             phase_resource_info.append(f"  - {p}")
 
+    # Build RESOURCE AVAILABILITY WINDOWS — the date range(s) each resource is
+    # actually allocated to THIS project. The AI (and server-side enforcement)
+    # will only assign a resource to a task whose dates fall inside a window.
+    def _alloc_bounds(alloc):
+        """Return (start_date, end_date) as date objects for an allocation, or (None, None)."""
+        def _parse(v):
+            if not v:
+                return None
+            if isinstance(v, datetime):
+                return v.date()
+            try:
+                return datetime.fromisoformat(str(v)[:10]).date()
+            except Exception:
+                return None
+        return _parse(alloc.get("start_date")), _parse(alloc.get("end_date"))
+
+    resource_windows = {}  # resource_id -> list[(start_date, end_date)]
+    for alloc in allocations:
+        rid = alloc.get("resource_id")
+        if not rid:
+            continue
+        s, e = _alloc_bounds(alloc)
+        if s and e:
+            resource_windows.setdefault(rid, []).append((s, e))
+
+    availability_lines = []
+    for r in resources_list:
+        rid = str(r["_id"])
+        wins = resource_windows.get(rid, [])
+        if wins:
+            ranges = ", ".join(f"{s.isoformat()} → {e.isoformat()}" for s, e in wins)
+            availability_lines.append(f"  - {r.get('name', 'Unknown')}: {ranges}")
+        else:
+            availability_lines.append(f"  - {r.get('name', 'Unknown')}: (no active allocation — do NOT assign)")
+
     # Build context
     phase_info = []
     for p in phases:
@@ -1029,6 +1065,9 @@ Phase-Specific Resource Allocations:
 
 All Team Members (for reference): {', '.join(resource_names) if resource_names else 'No team members assigned yet'}
 
+RESOURCE AVAILABILITY WINDOWS (only assign a member to a task whose dates fall INSIDE their window):
+{chr(10).join(availability_lines) if availability_lines else '  - No resource allocations defined'}
+
 Additional Context: {request.additional_context or 'None'}
 Primary Deliverables: {request.primary_deliverables or 'Not specified'}
 Complexity: {request.complexity or 'standard'}
@@ -1048,7 +1087,8 @@ RULES:
 - Return ONLY valid JSON (no markdown, no code blocks, no explanation)
 - Use exact phase names from the project (or null if no phases match)
 - Use exact resource names from the team list (or null if unknown)
-- **IMPORTANT**: Only assign resources to tasks in phases where they have an allocation > 0%
+- **IMPORTANT**: Only assign a resource to a task if the task's scheduled dates fall WITHIN that resource's availability window (see RESOURCE AVAILABILITY WINDOWS). If no allocated member covers a task's dates, set assigned_to to null (leave it unassigned).
+- Only assign resources to tasks in phases where they have an allocation > 0%
 - If a resource has 0% allocation in a phase, DO NOT assign them to tasks in that phase
 - Respect the allocation percentages when distributing work - higher % = more tasks/hours
 - Complexity guidance: {complexity_guidance.get(request.complexity or 'standard', complexity_guidance['standard'])}
@@ -1085,10 +1125,22 @@ JSON FORMAT:
     custom_instructions = await get_instructions_for_prompt(category="wbs_generation", project_id=request.project_id)
     effective_prompt = system_prompt + custom_instructions
 
+    # Determine if ANY AI key is available so we can give a clear, correct error.
+    _cfg = await get_ai_config()
+    has_key = bool(request.api_key or _cfg.get("api_key") or EMERGENT_LLM_KEY)
+    if not has_key:
+        raise HTTPException(
+            status_code=400,
+            detail="No AI provider configured. Ask a super admin to set an AI key in Settings → AI.",
+        )
+
     ai_result = await _call_wbs_ai(request.provider, request.api_key, effective_prompt, user_message)
 
     if not ai_result:
-        raise HTTPException(status_code=500, detail="AI service unavailable. Please configure an AI key in Settings.")
+        raise HTTPException(
+            status_code=502,
+            detail="AI service failed to generate a WBS. Please try again.",
+        )
 
     raw_tasks = ai_result.get("tasks", [])
     if not raw_tasks:
@@ -1098,7 +1150,45 @@ JSON FORMAT:
         else:
             raise HTTPException(status_code=500, detail="AI returned unexpected format. Please try again.")
 
-    # Enrich tasks with phase_id and assigned_to_id
+    # --- Resource allocation overlap enforcement ---------------------------------
+    # A resource may only be assigned to a task if they have an allocation on THIS
+    # project whose date range overlaps the task's scheduled dates. Otherwise we
+    # unassign (server-side authority; the prompt guidance is best-effort).
+    project_start_d, project_end_d = None, None
+    try:
+        ps = project.get("start_date"); pe = project.get("end_date")
+        project_start_d = ps.date() if isinstance(ps, datetime) else datetime.fromisoformat(str(ps)[:10]).date() if ps else None
+        project_end_d = pe.date() if isinstance(pe, datetime) else datetime.fromisoformat(str(pe)[:10]).date() if pe else None
+    except Exception:
+        project_start_d, project_end_d = None, None
+
+    def _task_dates(task):
+        """Resolve a task's [start,end] date window from start_date_offset + duration_days,
+        falling back to the project window. Returns (start_date, end_date) or (None, None)."""
+        try:
+            offset = int(task.get("start_date_offset") or 0)
+            dur = int(task.get("duration_days") or 1)
+            if project_start_d:
+                t_start = project_start_d + timedelta(days=offset)
+                t_end = t_start + timedelta(days=max(0, dur - 1))
+                return t_start, t_end
+        except Exception:
+            pass
+        return project_start_d, project_end_d
+
+    def _has_overlapping_alloc(resource_id, t_start, t_end):
+        wins = resource_windows.get(resource_id, [])
+        if not wins:
+            return False
+        if not t_start or not t_end:
+            # Can't determine task dates → be lenient (don't strip)
+            return True
+        for s, e in wins:
+            if s <= t_end and e >= t_start:  # ranges intersect
+                return True
+        return False
+
+    # Enrich tasks with phase_id and assigned_to_id (+ allocation enforcement)
     enriched_tasks = []
     for task in raw_tasks:
         enriched = dict(task)
@@ -1108,7 +1198,17 @@ JSON FORMAT:
 
         # Map assigned_to name → resource_id
         assigned_name = task.get("assigned_to") or ""
-        enriched["assigned_to_id"] = resource_map_by_name.get(assigned_name.lower()) or None
+        rid = resource_map_by_name.get(assigned_name.lower()) or None
+        enriched["assigned_to_id"] = rid
+
+        # Enforce allocation overlap: unassign if the resource has no allocation
+        # covering this task's dates.
+        if rid:
+            t_start, t_end = _task_dates(task)
+            if not _has_overlapping_alloc(rid, t_start, t_end):
+                enriched["assigned_to_id"] = None
+                enriched["assigned_to"] = None
+                enriched["assignment_note"] = "Unassigned: no active allocation covering these dates"
 
         enriched_tasks.append(enriched)
 

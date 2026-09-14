@@ -1,21 +1,33 @@
 """AI provider helpers: OpenAI, Gemini, Emergent LLM, and app-wide AI config."""
 import json
+import os
 import re
 import uuid as uuid_module
 
 from database import settings_collection, EMERGENT_LLM_KEY
 
+# Gemini model name (env-overridable for future model upgrades)
+GEMINI_TEXT_MODEL = os.environ.get("GEMINI_TEXT_MODEL", "gemini-flash-latest")
+# Default Gemini key from env — used as a fallback across ALL AI features
+# (chat, WBS, reschedule, voice) when a tenant hasn't set their own in Settings → AI.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
 
 async def get_ai_config() -> dict:
     """
     Get the app-wide AI configuration.
-    Priority: 1) App-wide settings from DB, 2) EMERGENT_LLM_KEY fallback.
+    Priority:
+      1) Per-tenant/app settings from DB (Settings → AI)
+      2) EMERGENT_LLM_KEY (if present)
+      3) Env GEMINI_API_KEY default (so a key set in backend .env works everywhere)
     """
     settings = await settings_collection.find_one({"type": "ai_config"})
     if settings and settings.get("ai_provider") and settings.get("ai_api_key"):
         return {"provider": settings["ai_provider"], "api_key": settings["ai_api_key"]}
     if EMERGENT_LLM_KEY:
         return {"provider": "emergent", "api_key": EMERGENT_LLM_KEY}
+    if GEMINI_API_KEY:
+        return {"provider": "gemini", "api_key": GEMINI_API_KEY}
     return {"provider": None, "api_key": None}
 
 
@@ -53,7 +65,7 @@ async def call_gemini_api(api_key: str, system_prompt: str, user_message: str):
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
             response = await client.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}",
+                f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_TEXT_MODEL}:generateContent?key={api_key}",
                 headers={"Content-Type": "application/json"},
                 json={
                     "contents": [{
@@ -97,3 +109,22 @@ async def call_emergent_fallback(system_prompt: str, user_message: str):
     except Exception as e:
         print(f"Emergent fallback error: {type(e).__name__}: {str(e)}")
         return None
+
+
+def extract_gemini_text(result: dict) -> str:
+    """
+    Robustly extract text from Gemini API response.
+    Handles responses where some parts may only have thoughtSignature.
+    Returns the first non-empty text part found.
+    """
+    try:
+        parts = result.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        for part in parts:
+            text = part.get("text", "").strip()
+            if text:  # Return first non-empty text
+                return text
+        # If no text found, fall back to first part (original behavior)
+        return parts[0].get("text", "") if parts else ""
+    except (KeyError, IndexError, TypeError) as e:
+        print(f"Gemini text extraction error: {e}")
+        return ""
