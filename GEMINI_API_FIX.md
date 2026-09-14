@@ -70,7 +70,7 @@ Response: {"status": "ok", "message": "hello"}
 
 ### Your API Key Status:
 
-- **API Key:** AIzaSyBmWkO5MiwOFJqcf09JeNfTC4lO-nkNYkU
+- **API Key:** <REDACTED_GEMINI_KEY>
 - **Status:** ✅ Active and working
 - **Quota:** ✅ Available (not exhausted)
 - **Access Level:** Full access to Gemini 2.5 models
@@ -118,7 +118,7 @@ Response: {"status": "ok", "message": "hello"}
 **In Production:**
 1. Go to Settings
 2. Select "Gemini" as provider
-3. Enter your API key: `AIzaSyBmWkO5MiwOFJqcf09JeNfTC4lO-nkNYkU`
+3. Enter your API key: `<REDACTED_GEMINI_KEY>`
 4. Click "Save AI Settings"
 5. Open AI command bar (Ctrl+K or floating button)
 6. Type: "Show me all active projects"

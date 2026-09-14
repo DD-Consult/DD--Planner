@@ -8,7 +8,7 @@ The Gemini API key has been successfully updated in the local database and all A
 - ✅ Budget analysis
 - ✅ Portfolio insights
 
-**New Gemini API Key:** `AIzaSyCWrc_BsY2kJgM706xsfnbu2kBHNJIIEjA`
+**New Gemini API Key:** `<REDACTED_GEMINI_KEY>`
 
 ---
 
@@ -34,7 +34,7 @@ python3 /app/setup_gemini_key.py
    {
      "type": "ai_config",
      "ai_provider": "gemini",
-     "ai_api_key": "AIzaSyCWrc_BsY2kJgM706xsfnbu2kBHNJIIEjA"
+     "ai_api_key": "<REDACTED_GEMINI_KEY>"
    }
    ```
 
@@ -55,7 +55,7 @@ gcloud auth login
 gcloud config set project dd-planner-494404
 
 # Update the secret with new Gemini key
-echo -n "AIzaSyCWrc_BsY2kJgM706xsfnbu2kBHNJIIEjA" | \
+echo -n "<REDACTED_GEMINI_KEY>" | \
   gcloud secrets versions add EMERGENT_LLM_KEY --data-file=-
 ```
 
@@ -124,7 +124,7 @@ curl -X POST "$URL/api/ai/chat" \
 
 ## 📋 Summary of Changes Made
 
-1. ✅ **Updated Gemini API key** from `AIzaSyBmWkO5MiwOFJqcf09JeNfTC4lO-nkNYkU` (leaked/disabled) to `AIzaSyCWrc_BsY2kJgM706xsfnbu2kBHNJIIEjA` (active)
+1. ✅ **Updated Gemini API key** from `<REDACTED_GEMINI_KEY>` (leaked/disabled) to `<REDACTED_GEMINI_KEY>` (active)
 2. ✅ **Verified API key** works with Gemini API (model: gemini-2.5-flash)
 3. ✅ **Updated local database** settings collection
 4. ✅ **Tested all AI endpoints** - all working correctly
