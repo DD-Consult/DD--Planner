@@ -231,10 +231,10 @@ const Allocations = () => {
     filteredAllocations.forEach(alloc => {
       const pid = alloc.project_id;
       if (!projectMap[pid]) {
-        const project = projects?.find(p => p.id === pid);
+        const project = projects?.find(p => String(p.id) === String(pid));
         projectMap[pid] = {
           id: pid,
-          name: alloc.project_name || 'Unknown Project',
+          name: (alloc.project_name && alloc.project_name !== 'Unknown') ? alloc.project_name : (project?.name || 'Unknown Project'),
           client_name: alloc.client_name || project?.client_name || '',
           status: project?.status || 'Active',
           allocations: [],
@@ -342,8 +342,8 @@ const Allocations = () => {
     else if (viewMode === 'project') setExpandedProjects({});
   };
 
-  const getProjectName = (alloc) => alloc.project_name || 'Unknown';
-  const getProjectClient = (alloc) => alloc.client_name || '';
+  const getProjectName = (alloc) => (alloc.project_name && alloc.project_name !== 'Unknown') ? alloc.project_name : (projects?.find(p => String(p.id) === String(alloc.project_id))?.name || 'Unknown Project');
+  const getProjectClient = (alloc) => alloc.client_name || projects?.find(p => String(p.id) === String(alloc.project_id))?.client_name || '';
 
   // Sum weekly hours from API-computed values (handles hours-type allocations correctly)
   const getTotalWeeklyHours = (allocs) =>
@@ -1061,7 +1061,7 @@ const Allocations = () => {
                   <SelectValue placeholder="Select a project" />
                 </SelectTrigger>
                 <SelectContent>
-                  {projects?.filter(p => p.status === 'Active' || String(p.id) === String(formData.project_id)).map((project) => (
+                  {projects?.filter(p => p.status !== 'Completed' || String(p.id) === String(formData.project_id)).map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name} - {project.client_name}
                     </SelectItem>

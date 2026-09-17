@@ -7,7 +7,7 @@ Testing that module toggles are respected when MULTI_TENANT_ENABLED=false
 import requests
 import sys
 
-BASE_URL = "https://a0ac7ee9-2785-4339-ad6f-6886af7a3f1a.preview.emergentagent.com"
+BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com"
 
 # Credentials
 TENANT_ADMIN_EMAIL = "admin@test.com"

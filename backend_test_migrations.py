@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # Base URL from frontend/.env
-BASE_URL = "https://saas-launch-44.preview.emergentagent.com/api"
+BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
 
 # Test credentials
 PLATFORM_ADMIN_EMAIL = "don@ddconsult.tech"

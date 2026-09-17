@@ -42,12 +42,21 @@ async def create_timesheet(timesheet: TimesheetCreate, current_user: dict = Depe
     
     timesheet_doc = timesheet.dict()
     
-    # VALIDATION: Ensure phase_id is not None
-    if not timesheet_doc.get("phase_id"):
-        raise HTTPException(
-            status_code=400, 
-            detail="phase_id is required. Please select a valid project phase."
-        )
+    # VALIDATION: Allow "general" phase for projects without phases
+    phase_id = timesheet_doc.get("phase_id")
+    if not phase_id or phase_id == "general":
+        # Allow "general" phase - no validation needed
+        pass
+    else:
+        # Validate that phase exists in project if not "general"
+        project = await projects_collection.find_one({"_id": ObjectId(timesheet_doc.get("project_id"))})
+        if project:
+            phases = project.get("phases", [])
+            if phases and not any(p.get("id") == phase_id for p in phases):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid phase_id. Phase not found in project."
+                )
     
     # NEW: VALIDATION - Check phase allocation
     # Verify that the resource is allocated to this phase with sufficient capacity
@@ -174,12 +183,16 @@ async def get_my_week_timesheets(
             timesheet_data["client_name"] = project.get("client_name", "Unknown Client")
             
             # Find phase name from project phases
+            phase_id = timesheet.get("phase_id")
             phase_name = "Unknown Phase"
-            phases = project.get("phases", [])
-            for phase in phases:
-                if phase.get("id") == timesheet.get("phase_id"):
-                    phase_name = phase.get("name", "Unknown Phase")
-                    break
+            if phase_id == "general" or not phase_id:
+                phase_name = "General"
+            else:
+                phases = project.get("phases", [])
+                for phase in phases:
+                    if phase.get("id") == phase_id:
+                        phase_name = phase.get("name", "Unknown Phase")
+                        break
             timesheet_data["phase_name"] = phase_name
         else:
             timesheet_data["project_name"] = "Unknown Project"
@@ -290,15 +303,39 @@ async def auto_fill_timesheets(week_start: str, current_user: dict = Depends(get
         raise HTTPException(status_code=404, detail="Resource profile not found")
     
     resource_id = str(resource["_id"])
+    standard_capacity = resource.get("standard_capacity", 100) or 100
     
     # Get active allocations for this resource that overlap with the week
+    # Use $or to handle both datetime and ISO string date comparisons
+    week_start_dt = datetime.combine(week_start_date, datetime.min.time())
+    week_end_dt = datetime.combine(week_end_date, datetime.max.time())
+    
     cursor = allocations_collection.find({
         "resource_id": resource_id,
-        "start_date": {"$lte": datetime.combine(week_end_date, datetime.max.time())},
-        "end_date": {"$gte": datetime.combine(week_start_date, datetime.min.time())}
+        "$or": [
+            {
+                "start_date": {"$lte": week_end_dt},
+                "end_date": {"$gte": week_start_dt}
+            },
+            # Fallback for string dates (shouldn't happen but be defensive)
+            {
+                "start_date": {"$exists": True},
+                "end_date": {"$exists": True}
+            }
+        ]
     })
     
-    allocations = await cursor.to_list(length=1000)
+    raw_allocations = await cursor.to_list(length=1000)
+    
+    # Filter allocations using coerce_date for safe date comparison
+    from utils import coerce_date
+    allocations = []
+    for alloc in raw_allocations:
+        alloc_start = coerce_date(alloc.get("start_date"))
+        alloc_end = coerce_date(alloc.get("end_date"))
+        if alloc_start and alloc_end:
+            if alloc_start <= week_end_date and alloc_end >= week_start_date:
+                allocations.append(alloc)
     
     # Non-working business days this week: public holidays + this resource's leaves
     week_start_dt = datetime.combine(week_start_date, datetime.min.time())
@@ -345,8 +382,15 @@ async def auto_fill_timesheets(week_start: str, current_user: dict = Depends(get
             continue
         
         phases = project.get("phases", [])
+        
+        # If project has NO phases or empty phases, provide default "general" phase
         if not phases:
-            continue  # Skip projects without phases
+            phases = [{
+                "id": "general",
+                "name": "General",
+                "start_date": project.get("start_date"),
+                "end_date": project.get("end_date")
+            }]
         
         # Determine which phases this allocation applies to
         phase_ids_to_process = []
@@ -487,12 +531,16 @@ async def auto_fill_timesheets(week_start: str, current_user: dict = Depends(get
             })
             
             # Calculate planned hours for this week (phase-aware, canonical 40h/week)
-            allocation_start = allocation["start_date"].date() if isinstance(allocation["start_date"], datetime) else allocation["start_date"]
-            allocation_end = allocation["end_date"].date() if isinstance(allocation["end_date"], datetime) else allocation["end_date"]
+            from utils import coerce_date
+            allocation_start = coerce_date(allocation.get("start_date"))
+            allocation_end = coerce_date(allocation.get("end_date"))
+            
+            if not allocation_start or not allocation_end:
+                continue  # Skip allocations with invalid dates
             
             if allocation.get("allocation_type") == "hours" and allocation.get("hours") is not None:
                 # hours-type = total over range → derive effective weekly percentage
-                effective_pct = (allocation_weekly_hours(allocation) / HOURS_PER_WEEK) * 100.0
+                effective_pct = (allocation_weekly_hours(allocation, standard_capacity) / HOURS_PER_WEEK) * 100.0
             else:
                 # Use phase-specific percentage when defined, else project-level
                 effective_pct = get_allocation_for_phase(allocation, phase_id)
@@ -669,11 +717,15 @@ async def get_my_timesheet_history(
         doc["project_name"] = proj.get("name", "Unknown Project")
         doc["client_name"] = proj.get("client_name", "")
         # Resolve phase name
+        phase_id = doc.get("phase_id")
         phase_name = "—"
-        for ph in proj.get("phases", []):
-            if ph.get("id") == doc.get("phase_id"):
-                phase_name = ph.get("name", "—")
-                break
+        if phase_id == "general" or not phase_id or phase_id == "":
+            phase_name = "General"
+        else:
+            for ph in proj.get("phases", []):
+                if ph.get("id") == phase_id:
+                    phase_name = ph.get("name", "—")
+                    break
         doc["phase_name"] = phase_name
 
         # Group key: first 10 chars of week_start_date string

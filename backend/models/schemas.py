@@ -455,6 +455,7 @@ class WBSTaskCreate(BaseModel):
     order: Optional[int] = 0
     dependencies: Optional[List[str]] = []
     labels: Optional[List[str]] = []
+    progress_percentage: Optional[float] = 0
     # Milestone fields
     is_milestone: Optional[bool] = False
     milestone_date: Optional[str] = None
@@ -476,6 +477,7 @@ class WBSTaskUpdate(BaseModel):
     order: Optional[int] = None
     dependencies: Optional[List[str]] = None
     labels: Optional[List[str]] = None
+    progress_percentage: Optional[float] = None
     # Milestone fields
     is_milestone: Optional[bool] = None
     milestone_date: Optional[str] = None
@@ -496,6 +498,7 @@ class WBSTaskResponse(BaseModel):
     priority: str = "medium"
     estimated_hours: Optional[float] = 0
     actual_hours: Optional[float] = 0
+    progress_percentage: Optional[float] = 0
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     # Baseline (planned) dates — snapshot of the committed schedule.
@@ -559,11 +562,12 @@ class BulkSummaryUpdate(BaseModel):
 class CreateProjectFullRequest(BaseModel):
     name: str
     client_name: str
-    status: str = "Active"
-    start_date: str
-    end_date: str
+    status: Optional[str] = "Active"
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
     budgeted_hours: Optional[float] = None
     phases: Optional[List[dict]] = None
+    allocations: Optional[List[dict]] = []
 
 
 class ChatMessage(BaseModel):

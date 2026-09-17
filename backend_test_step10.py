@@ -8,7 +8,7 @@ New features in Step 10:
 - Timing-safe MCP key comparison using secrets.compare_digest
 - Docstring updates explaining per-tenant scoping
 
-Test URL: https://a0ac7ee9-2785-4339-ad6f-6886af7a3f1a.preview.emergentagent.com
+Test URL: https://enhance-feedback-2.preview.emergentagent.com
 Feature flag: MULTI_TENANT_ENABLED=false
 Credentials:
   - admin@test.com / admin123 (tenant admin, super_admin in resource_planner DB)
@@ -22,7 +22,7 @@ import subprocess
 from typing import Dict, Any, Optional
 
 # Configuration
-BASE_URL = "https://a0ac7ee9-2785-4339-ad6f-6886af7a3f1a.preview.emergentagent.com"
+BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com"
 TENANT_ADMIN_EMAIL = "admin@test.com"
 TENANT_ADMIN_PASSWORD = "admin123"
 PLATFORM_ADMIN_EMAIL = "don@ddconsult.tech"

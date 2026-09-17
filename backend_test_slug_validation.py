@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 Bug Fix Verification: Strict slug validation now rejects uppercase
-Test URL: https://a0ac7ee9-2785-4339-ad6f-6886af7a3f1a.preview.emergentagent.com
+Test URL: https://enhance-feedback-2.preview.emergentagent.com
 """
 
 import requests
 import json
 import sys
 
-BASE_URL = "https://a0ac7ee9-2785-4339-ad6f-6886af7a3f1a.preview.emergentagent.com/api"
+BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
 
 # Credentials from review request
 TENANT_ADMIN = {"email": "admin@test.com", "password": "admin123"}

@@ -1590,18 +1590,81 @@ WBS (Work Breakdown Structure) ACTIONS (FIX #4):
 When user asks to "plan the project", "break down tasks", "create a WBS", or "decompose the project", use generate_wbs.
 
 MULTI-STEP ACTION PLAN — for complex requests that require multiple actions:
-When the user asks to do something that requires several steps (e.g. "set up a new project with phases and allocations", "onboard this client"), emit an `action_plan` block instead of a single action. The system will present the plan to the user for review before executing anything.
+When the user asks to do something that requires several steps (e.g. "create project X and allocate Y to it", "set up a new project with phases and team"), emit an `action_plan` block. The system will present the plan to the user for review before executing anything.
+
+**CRITICAL: Dynamic ID References**
+When a later step needs an ID from an earlier step (e.g., project_id from create_project), use the placeholder format: `"<step_N_id>"` where N is the 0-based step index.
+
+Example: "Create project FX1 and allocate Alice at 50%"
 
 ```action
-{{"action": "action_plan", "title": "Setup New Project", "description": "What this plan will do overall", "steps": [{{"action": "create_project", "name": "Project X", "client_name": "Acme", "status": "Pipeline", "start_date": "2026-03-01", "end_date": "2026-06-30", "budgeted_hours": 400, "description": "Create the project"}}, {{"action": "manage_phases", "project_id": "<id from step 1>", "phases": [{{"name": "Discovery", "start_date": "2026-03-01", "end_date": "2026-03-31"}}], "description": "Add phases"}}]}}
+{{
+  "action": "action_plan",
+  "title": "Create Project and Allocate Resource",
+  "description": "Create FX1 project and allocate Alice at 50%",
+  "steps": [
+    {{
+      "action": "create_project",
+      "name": "FX1",
+      "client_name": "TechCorp",
+      "status": "Active",
+      "start_date": "2026-05-01",
+      "end_date": "2026-08-31",
+      "budgeted_hours": 500,
+      "description": "Create the FX1 project"
+    }},
+    {{
+      "action": "create_allocation",
+      "project_id": "<step_0_id>",
+      "resource_id": "674abc123def456...",
+      "percentage": 50,
+      "start_date": "2026-05-01",
+      "end_date": "2026-08-31",
+      "description": "Allocate Alice to FX1 at 50%"
+    }}
+  ]
+}}
+```
+
+In the example above, step 0 creates the project and returns {{"id": "674xyz..."}}. Step 1's `"<step_0_id>"` placeholder is automatically replaced with `"674xyz..."` before execution.
+
+**More Examples:**
+
+1. "Create project with 3 phases"
+```action
+{{
+  "action": "action_plan",
+  "title": "Create Project with Phases",
+  "steps": [
+    {{"action": "create_project", "name": "Mobile App", "client_name": "Acme", "status": "Active", "start_date": "2026-06-01", "end_date": "2026-12-31", "budgeted_hours": 800, "description": "Create project"}},
+    {{"action": "manage_phases", "project_id": "<step_0_id>", "phases": [{{"name": "Discovery", "start_date": "2026-06-01", "end_date": "2026-07-15"}}, {{"name": "Development", "start_date": "2026-07-16", "end_date": "2026-11-30"}}, {{"name": "Launch", "start_date": "2026-12-01", "end_date": "2026-12-31"}}], "description": "Add 3 phases"}}
+  ]
+}}
+```
+
+2. "Create project, add phases, allocate 2 people, and generate WBS"
+```action
+{{
+  "action": "action_plan",
+  "title": "Full Project Setup",
+  "steps": [
+    {{"action": "create_project", "name": "Website Redesign", "client_name": "XYZ Corp", "status": "Pipeline", "start_date": "2026-07-01", "end_date": "2026-10-31", "budgeted_hours": 600, "description": "Create project"}},
+    {{"action": "manage_phases", "project_id": "<step_0_id>", "phases": [{{"name": "Design", "start_date": "2026-07-01", "end_date": "2026-08-15"}}, {{"name": "Build", "start_date": "2026-08-16", "end_date": "2026-10-31"}}], "description": "Add phases"}},
+    {{"action": "create_allocation", "project_id": "<step_0_id>", "resource_id": "674alice...", "percentage": 60, "start_date": "2026-07-01", "end_date": "2026-10-31", "description": "Allocate Alice"}},
+    {{"action": "create_allocation", "project_id": "<step_0_id>", "resource_id": "674bob...", "percentage": 40, "start_date": "2026-07-01", "end_date": "2026-10-31", "description": "Allocate Bob"}},
+    {{"action": "generate_wbs", "project_id": "<step_0_id>", "complexity": "standard", "description": "Generate WBS tasks"}}
+  ]
+}}
 ```
 
 Rules for action_plan:
 - Use when the user wants 2+ sequential actions that logically belong together
 - Each step is a standard action object (same format as single actions)
+- Use `"<step_N_id>"` placeholders to reference IDs from previous steps (N is 0-based index)
 - Max 8 steps per plan
 - The user reviews the plan before anything executes — so be thorough in descriptions
 - DO NOT use action_plan for a single action — use a regular action block instead
+- ALWAYS use action_plan when a request involves creating something AND then using that thing (e.g., "create X and allocate Y to it")
 
 ═══════════════════════════════════════════════════════════════════════
 EXTENDED ADMIN ACTIONS — full admin parity (auto-registered)
@@ -1955,12 +2018,63 @@ Guidelines:
 
 
 
+def _resolve_step_references(step: dict, step_results: dict) -> dict:
+    """
+    Recursively resolve placeholder references like '<step_0_id>' to actual IDs.
+    
+    Examples:
+      - "<step_0_id>" → ID returned by step 0
+      - "<step_1_id>" → ID returned by step 1
+      - "674abc..." (normal ID) → unchanged
+    
+    Args:
+        step: Action step dict that may contain placeholders
+        step_results: Map of step_index → result dict from previous steps
+    
+    Returns:
+        New step dict with placeholders replaced by actual values
+    """
+    import re
+    import copy
+    
+    resolved = copy.deepcopy(step)
+    
+    # Pattern to match <step_N_id> where N is a digit
+    placeholder_pattern = re.compile(r'<step_(\d+)_id>')
+    
+    def replace_in_value(value):
+        """Recursively replace placeholders in strings, lists, dicts."""
+        if isinstance(value, str):
+            # Check if entire value is a placeholder
+            match = placeholder_pattern.fullmatch(value)
+            if match:
+                step_index = int(match.group(1))
+                if step_index in step_results:
+                    # Return the ID from that step's result
+                    return step_results[step_index].get("id") or value
+            # Check for inline placeholders (less common but possible)
+            return placeholder_pattern.sub(
+                lambda m: step_results.get(int(m.group(1)), {}).get("id", m.group(0)),
+                value
+            )
+        elif isinstance(value, list):
+            return [replace_in_value(item) for item in value]
+        elif isinstance(value, dict):
+            return {k: replace_in_value(v) for k, v in value.items()}
+        else:
+            return value
+    
+    return replace_in_value(resolved)
+
+
 @router.post("/api/ai/chat/execute-plan")
 async def execute_action_plan(
     payload: dict = Body(...),
     current_user: dict = Depends(get_current_user),
 ):
-    """Execute a multi-step action plan sequentially.
+    """
+    Execute a multi-step action plan with dynamic ID resolution.
+    Subsequent steps can reference IDs returned by previous steps using <step_N_id> placeholders.
     Each step goes through the full dispatch_action flow (permission checks, confirmation tokens, etc.)
     Returns per-step results.
     """
@@ -1977,34 +2091,55 @@ async def execute_action_plan(
 
     results = []
     stop_on_error = payload.get("stop_on_error", True)
+    
+    # Track IDs returned by each step for dynamic injection
+    step_results_map = {}  # step_index → result dict
 
     for i, step in enumerate(steps):
         try:
-            result = await dispatch_action(step, current_user)
+            # ── DYNAMIC ID INJECTION ──
+            # Replace placeholders like "<step_0_id>", "<step_1_id>" with actual IDs from previous steps
+            resolved_step = _resolve_step_references(step, step_results_map)
+            
+            result = await dispatch_action(resolved_step, current_user)
+            
             step_result = {
                 "step": i + 1,
                 "action": step.get("action"),
                 "description": step.get("description", step.get("action")),
                 "success": result.get("success", False),
+                "status": "success" if result.get("success", False) else "failed",
                 "message": result.get("message", ""),
                 "needs_confirmation": result.get("needs_confirmation", False),
+                "result": result,  # Include full result for test compatibility
             }
+            
+            # Store the full result for future step references
+            step_results_map[i] = result
+            
             results.append(step_result)
+            
             if not result.get("success") and stop_on_error:
+                step_result["message"] += " (execution stopped due to error)"
                 break
+                
         except Exception as e:
-            results.append({
+            step_result = {
                 "step": i + 1,
                 "action": step.get("action"),
                 "success": False,
-                "message": str(e)[:200],
-            })
+                "status": "failed",
+                "message": f"Error: {str(e)[:200]}",
+                "result": {"success": False, "message": str(e)[:200]},
+            }
+            results.append(step_result)
             if stop_on_error:
                 break
 
     success_count = sum(1 for r in results if r.get("success"))
     return {
         "results": results,
+        "steps": results,  # Include both for backward compatibility
         "success_count": success_count,
         "total_steps": len(steps),
         "executed_steps": len(results),

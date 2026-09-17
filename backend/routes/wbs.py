@@ -183,7 +183,12 @@ async def validate_wbs_budget(project_id: str, new_task_hours: float = 0, exclud
 
 @router.get("/api/projects/{project_id}/wbs")
 async def get_project_wbs(project_id: str, current_user: dict = Depends(get_current_user)):
-    """Get all WBS tasks for a project (flat list, ordered)."""
+    """Get all WBS tasks for a project (flat list, ordered).
+    
+    Calculates rollup progress_percentage for parent tasks:
+    - Weighted average by estimated_hours of children
+    - Simple average if children have 0 estimated hours
+    """
     cursor = wbs_tasks_collection.find({"project_id": project_id}).sort("order", 1)
     tasks = await cursor.to_list(length=10000)
 
@@ -191,12 +196,58 @@ async def get_project_wbs(project_id: str, current_user: dict = Depends(get_curr
     resources_cursor = resources_collection.find()
     resources_list = await resources_cursor.to_list(length=10000)
     resource_map = {str(r["_id"]): r.get("name", "") for r in resources_list}
+    
+    # Build parent-child relationships for progress rollup
+    children_map = {}  # parent_id -> [child tasks]
+    task_map = {}  # task_id -> task
+    
+    for task in tasks:
+        task_id = str(task["_id"])
+        task_map[task_id] = task
+        parent_id = task.get("parent_id")
+        if parent_id:
+            if parent_id not in children_map:
+                children_map[parent_id] = []
+            children_map[parent_id].append(task)
+    
+    # Calculate rollup progress for parent tasks
+    def calculate_rollup_progress(task_id: str) -> float:
+        """Calculate progress percentage for a parent task from its children."""
+        if task_id not in children_map:
+            # Leaf task - use its own progress
+            task = task_map.get(task_id)
+            return float(task.get("progress_percentage", 0)) if task else 0.0
+        
+        children = children_map[task_id]
+        total_estimated = sum(float(c.get("estimated_hours", 0)) for c in children)
+        
+        if total_estimated > 0:
+            # Weighted average by estimated hours
+            weighted_progress = sum(
+                calculate_rollup_progress(str(c["_id"])) * float(c.get("estimated_hours", 0))
+                for c in children
+            )
+            return weighted_progress / total_estimated
+        else:
+            # Simple average if no estimated hours
+            if children:
+                return sum(calculate_rollup_progress(str(c["_id"])) for c in children) / len(children)
+            return 0.0
 
     result = []
     for task in tasks:
         task_data = serialize_doc(task)
         if task_data.get("assigned_to"):
             task_data["assigned_to_name"] = resource_map.get(task_data["assigned_to"], "Unknown")
+        
+        # Calculate rollup progress if this is a parent task
+        task_id = str(task["_id"])
+        if task_id in children_map:
+            task_data["progress_percentage"] = round(calculate_rollup_progress(task_id), 1)
+        else:
+            # Ensure progress_percentage exists for leaf tasks
+            task_data["progress_percentage"] = float(task.get("progress_percentage", 0))
+        
         task_data["children"] = []
         result.append(task_data)
 
@@ -262,6 +313,9 @@ async def create_wbs_task(
     task_doc["created_by"] = current_user.get("email", "")
     task_doc["created_at"] = datetime.now(timezone.utc).isoformat()
     task_doc["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    # Save progress_percentage with default 0
+    task_doc["progress_percentage"] = float(task_doc.get("progress_percentage") or 0)
     
     # Handle milestone-specific logic
     if task_doc.get("is_milestone"):
@@ -362,6 +416,26 @@ async def update_wbs_task(
 
     update_data = update.dict(exclude_unset=True)
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    # Auto-sync progress_percentage with status
+    # If progress_percentage == 100 and status is not set, set status = "done"
+    # If status == "done" and progress_percentage is not provided or 0, set progress_percentage = 100
+    # If status is set to "todo" and progress was 100, set progress_percentage = 0
+    if "progress_percentage" in update_data:
+        if update_data["progress_percentage"] == 100 and "status" not in update_data:
+            update_data["status"] = "done"
+    
+    if "status" in update_data:
+        if update_data["status"] == "done" and "progress_percentage" not in update_data:
+            # Check current progress
+            current_progress = task.get("progress_percentage", 0)
+            if current_progress < 100:
+                update_data["progress_percentage"] = 100
+        elif update_data["status"] == "todo":
+            # If setting back to todo, reset progress if it was 100
+            current_progress = task.get("progress_percentage", 0)
+            if current_progress == 100 and "progress_percentage" not in update_data:
+                update_data["progress_percentage"] = 0
 
     # Auto-recompute end_date when estimated_hours, assigned_to, or start_date changes
     if not task.get("is_milestone"):

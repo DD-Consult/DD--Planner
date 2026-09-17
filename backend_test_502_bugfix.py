@@ -13,7 +13,7 @@ Fixes applied:
 5. Reduced MongoDB timeouts
 6. Added --cpu-boost flag
 
-Test URL: https://a0ac7ee9-2785-4339-ad6f-6886af7a3f1a.preview.emergentagent.com
+Test URL: https://enhance-feedback-2.preview.emergentagent.com
 Credentials:
   - Tenant admin: admin@test.com / admin123
   - Platform admin: don@ddconsult.tech / Welcome123!
@@ -23,7 +23,7 @@ import httpx
 import time
 from typing import Dict, Any, Optional
 
-BASE_URL = "https://a0ac7ee9-2785-4339-ad6f-6886af7a3f1a.preview.emergentagent.com"
+BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com"
 TIMEOUT = 30.0
 
 # Test credentials

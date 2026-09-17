@@ -19,7 +19,7 @@ from models.schemas import (
     ALLOCATION_ROLES, SCHEDULE_STATUS_OPTIONS, HEALTH_STATUS_OPTIONS,
 )
 from auth.dependencies import get_current_user, require_admin
-from utils import serialize_doc, ensure_phase_ids, find_user_resource, snap_to_weekday
+from utils import serialize_doc, ensure_phase_ids, find_user_resource, snap_to_weekday, coerce_date
 from services.ai_providers import get_ai_config, call_openai_api, call_gemini_api
 
 router = APIRouter()
@@ -1221,18 +1221,25 @@ async def create_project_full(
     Create a complete project with phases and resource allocations in one operation.
     Useful for AI-driven project creation.
     """
-    from datetime import timezone
-    
-    today = datetime.now(timezone.utc)
+    now = datetime.now()
+    today = datetime(now.year, now.month, now.day)
+    if request.start_date:
+        parsed_s = coerce_date(request.start_date)
+        if parsed_s:
+            today = datetime.combine(parsed_s, datetime.min.time())
     
     # Calculate project dates based on phases
     total_weeks = sum(phase.get("duration_weeks", 3) for phase in request.phases) if request.phases else 12
-    project_end = today + timedelta(weeks=total_weeks)
+    if request.end_date:
+        parsed_e = coerce_date(request.end_date)
+        project_end = datetime.combine(parsed_e, datetime.min.time()) if parsed_e else (today + timedelta(weeks=total_weeks))
+    else:
+        project_end = today + timedelta(weeks=total_weeks)
     
     # Build phases with calculated dates
     phases_with_dates = []
     current_start = today
-    for phase in request.phases:
+    for phase in (request.phases or []):
         duration_weeks = phase.get("duration_weeks", 3)
         phase_end = current_start + timedelta(weeks=duration_weeks)
         phases_with_dates.append({
@@ -1258,9 +1265,10 @@ async def create_project_full(
     project_doc = {
         "name": request.name,
         "client_name": request.client_name,
-        "status": request.status,
+        "status": request.status or "Active",
         "start_date": today,
         "end_date": phases_with_dates[-1]["end_date"] if phases_with_dates else project_end,
+        "budgeted_hours": request.budgeted_hours,
         "phases": phases_with_dates,
         "created_at": today
     }
@@ -1270,13 +1278,19 @@ async def create_project_full(
     
     # Create allocations
     created_allocations = []
-    for alloc in request.allocations:
+    for alloc in (request.allocations or []):
+        r_id = alloc.get("resource_id")
+        if r_id and not ObjectId.is_valid(str(r_id)):
+            res = await resources_collection.find_one({"name": {"$regex": f"^{re.escape(str(r_id))}$", "$options": "i"}})
+            if res:
+                r_id = str(res["_id"])
+        
         allocation_doc = {
-            "resource_id": alloc.get("resource_id"),
+            "resource_id": r_id,
             "project_id": project_id,
             "start_date": today,
             "end_date": project_doc["end_date"],
-            "percentage": alloc.get("percentage", 50),
+            "percentage": float(alloc.get("percentage") or 50),
             "role": alloc.get("role"),
             "allocation_type": "percentage",
             "confirmation_status": "Pending"

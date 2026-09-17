@@ -1,534 +1,605 @@
+#!/usr/bin/env python3
 """
-DD Planner Step 4 Regression Test Suite
-========================================
-Tests the LazyCollection proxy refactor to ensure backward compatibility
-when MULTI_TENANT_ENABLED=false.
-
-This test verifies:
-1. Auth flow (login, /api/auth/me)
-2. Core reads (projects, resources, allocations, portfolio) - verify counts
-3. CRUD on projects (create, update, delete)
-4. CRUD on resources (create, update, delete)
-5. Platform endpoints (new, added by Step 1-2)
-6. Auth negative test (401 without token)
-
-Expected behavior: Everything should work identically to pre-refactor.
+Backend API Testing for 6 Reported Issues
+Test URL: https://enhance-feedback-2.preview.emergentagent.com
 """
+
 import requests
 import json
 from datetime import datetime, timedelta
 
 # Configuration
-BASE_URL = "https://a0ac7ee9-2785-4339-ad6f-6886af7a3f1a.preview.emergentagent.com"
-API_URL = f"{BASE_URL}/api"
+BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
+TEST_USER = "admin@test.com"
+TEST_PASSWORD = "admin123"
+RESOURCE_ID = "6aabd45b6023b8429321ad67"  # Alice Johnson
 
-# Test credentials
-ADMIN_EMAIL = "admin@test.com"
-ADMIN_PASSWORD = "admin123"
-CLIENT_EMAIL = "client@test.com"
-CLIENT_PASSWORD = "client123"
+# Global token storage
+token = None
 
-# Test state
-admin_token = None
-test_project_id = None
-test_resource_id = None
-
-def log_test(name, passed, details=""):
-    """Log test result"""
-    status = "✅ PASS" if passed else "❌ FAIL"
-    print(f"{status}: {name}")
-    if details:
-        print(f"   {details}")
-    return passed
-
-def test_auth_login():
-    """Test 1: POST /api/auth/login with admin credentials"""
-    global admin_token
+def login():
+    """Login and get JWT token"""
+    global token
+    print("\n" + "="*80)
+    print("TEST: Login")
+    print("="*80)
     
-    # OAuth2PasswordRequestForm expects form data with username/password
     response = requests.post(
-        f"{API_URL}/auth/login",
-        data={"username": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
+        f"{BASE_URL}/auth/login",
+        data={
+            "username": TEST_USER,
+            "password": TEST_PASSWORD
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
     )
     
-    if response.status_code != 200:
-        return log_test("Auth Login", False, f"Status: {response.status_code}, Body: {response.text}")
-    
-    data = response.json()
-    if "access_token" not in data:
-        return log_test("Auth Login", False, "No access_token in response")
-    
-    admin_token = data["access_token"]
-    return log_test("Auth Login", True, f"Token received: {admin_token[:20]}...")
-
-def test_auth_me():
-    """Test 2: GET /api/auth/me returns admin user"""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    response = requests.get(f"{API_URL}/auth/me", headers=headers)
-    
-    if response.status_code != 200:
-        return log_test("Auth Me", False, f"Status: {response.status_code}")
-    
-    data = response.json()
-    if data.get("email") != ADMIN_EMAIL:
-        return log_test("Auth Me", False, f"Wrong email: {data.get('email')}")
-    
-    if data.get("role") != "admin":
-        return log_test("Auth Me", False, f"Wrong role: {data.get('role')}")
-    
-    return log_test("Auth Me", True, f"User: {data.get('email')}, Role: {data.get('role')}")
-
-def test_get_projects():
-    """Test 3: GET /api/projects returns 4 projects"""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    response = requests.get(f"{API_URL}/projects", headers=headers)
-    
-    if response.status_code != 200:
-        return log_test("Get Projects", False, f"Status: {response.status_code}")
-    
-    data = response.json()
-    if not isinstance(data, list):
-        return log_test("Get Projects", False, f"Response is not a list: {type(data)}")
-    
-    count = len(data)
-    if count != 4:
-        return log_test("Get Projects", False, f"Expected 4 projects, got {count}")
-    
-    # Verify essential fields are present (backend uses 'id' not '_id')
-    first_project = data[0]
-    required_fields = ["id", "name", "client_name", "status", "start_date", "end_date"]
-    missing_fields = [f for f in required_fields if f not in first_project]
-    if missing_fields:
-        return log_test("Get Projects", False, f"Missing fields: {missing_fields}")
-    
-    return log_test("Get Projects", True, f"Count: {count}, Fields OK")
-
-def test_get_resources():
-    """Test 4: GET /api/resources returns 5 resources"""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    response = requests.get(f"{API_URL}/resources", headers=headers)
-    
-    if response.status_code != 200:
-        return log_test("Get Resources", False, f"Status: {response.status_code}")
-    
-    data = response.json()
-    if not isinstance(data, list):
-        return log_test("Get Resources", False, f"Response is not a list: {type(data)}")
-    
-    count = len(data)
-    if count != 5:
-        return log_test("Get Resources", False, f"Expected 5 resources, got {count}")
-    
-    # Verify essential fields (backend uses 'id' not '_id')
-    first_resource = data[0]
-    required_fields = ["id", "name", "role", "standard_capacity"]
-    missing_fields = [f for f in required_fields if f not in first_resource]
-    if missing_fields:
-        return log_test("Get Resources", False, f"Missing fields: {missing_fields}")
-    
-    return log_test("Get Resources", True, f"Count: {count}, Fields OK")
-
-def test_get_allocations():
-    """Test 5: GET /api/allocations returns 10 allocations"""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    response = requests.get(f"{API_URL}/allocations", headers=headers)
-    
-    if response.status_code != 200:
-        return log_test("Get Allocations", False, f"Status: {response.status_code}")
-    
-    data = response.json()
-    if not isinstance(data, list):
-        return log_test("Get Allocations", False, f"Response is not a list: {type(data)}")
-    
-    count = len(data)
-    if count != 10:
-        return log_test("Get Allocations", False, f"Expected 10 allocations, got {count}")
-    
-    # Verify essential fields
-    first_allocation = data[0]
-    required_fields = ["_id", "resource_id", "project_id", "start_date", "end_date", "percentage"]
-    missing_fields = [f for f in required_fields if f not in first_allocation]
-    if missing_fields:
-        return log_test("Get Allocations", False, f"Missing fields: {missing_fields}")
-    
-    return log_test("Get Allocations", True, f"Count: {count}, Fields OK")
-
-def test_get_portfolio():
-    """Test 6: GET /api/portfolio returns portfolio data with 3+ project cards"""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    response = requests.get(f"{API_URL}/portfolio", headers=headers)
-    
-    if response.status_code != 200:
-        return log_test("Get Portfolio", False, f"Status: {response.status_code}")
-    
-    data = response.json()
-    if not isinstance(data, dict):
-        return log_test("Get Portfolio", False, f"Response is not a dict: {type(data)}")
-    
-    # Portfolio should have projects array
-    projects = data.get("projects", [])
-    if len(projects) < 3:
-        return log_test("Get Portfolio", False, f"Expected 3+ projects, got {len(projects)}")
-    
-    return log_test("Get Portfolio", True, f"Projects: {len(projects)}")
-
-def test_create_project():
-    """Test 7: POST /api/projects to create a new project"""
-    global test_project_id
-    
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    
-    # Generate unique name with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    project_data = {
-        "name": f"TEST_STEP4_REGRESSION_{timestamp}",
-        "client_name": "Test Client",
-        "status": "Pipeline",
-        "start_date": (datetime.now() + timedelta(days=1)).isoformat(),
-        "end_date": (datetime.now() + timedelta(days=30)).isoformat()
-    }
-    
-    response = requests.post(f"{API_URL}/projects", json=project_data, headers=headers)
-    
-    if response.status_code != 200:
-        return log_test("Create Project", False, f"Status: {response.status_code}, Body: {response.text}")
-    
-    data = response.json()
-    if "_id" not in data:
-        return log_test("Create Project", False, "No _id in response")
-    
-    test_project_id = data["_id"]
-    
-    # Verify the project was created with correct data
-    if data.get("name") != project_data["name"]:
-        return log_test("Create Project", False, f"Name mismatch: {data.get('name')}")
-    
-    return log_test("Create Project", True, f"ID: {test_project_id}, Name: {data.get('name')}")
-
-def test_verify_project_count_after_create():
-    """Test 8: GET /api/projects should now return 5 projects"""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    response = requests.get(f"{API_URL}/projects", headers=headers)
-    
-    if response.status_code != 200:
-        return log_test("Verify Project Count (After Create)", False, f"Status: {response.status_code}")
-    
-    data = response.json()
-    count = len(data)
-    if count != 5:
-        return log_test("Verify Project Count (After Create)", False, f"Expected 5 projects, got {count}")
-    
-    return log_test("Verify Project Count (After Create)", True, f"Count: {count}")
-
-def test_update_project():
-    """Test 9: PUT /api/projects/{id} to update the project name"""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    
-    update_data = {
-        "name": f"TEST_STEP4_REGRESSION_UPDATED_{datetime.now().strftime('%H%M%S')}"
-    }
-    
-    response = requests.put(
-        f"{API_URL}/projects/{test_project_id}",
-        json=update_data,
-        headers=headers
-    )
-    
-    if response.status_code != 200:
-        return log_test("Update Project", False, f"Status: {response.status_code}, Body: {response.text}")
-    
-    data = response.json()
-    if data.get("name") != update_data["name"]:
-        return log_test("Update Project", False, f"Name not updated: {data.get('name')}")
-    
-    return log_test("Update Project", True, f"New name: {data.get('name')}")
-
-def test_delete_project():
-    """Test 10: DELETE /api/projects/{id} to clean up"""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    
-    response = requests.delete(
-        f"{API_URL}/projects/{test_project_id}",
-        headers=headers
-    )
-    
-    if response.status_code != 200:
-        return log_test("Delete Project", False, f"Status: {response.status_code}")
-    
-    return log_test("Delete Project", True, f"Deleted ID: {test_project_id}")
-
-def test_verify_project_count_after_delete():
-    """Test 11: GET /api/projects should return 4 again"""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    response = requests.get(f"{API_URL}/projects", headers=headers)
-    
-    if response.status_code != 200:
-        return log_test("Verify Project Count (After Delete)", False, f"Status: {response.status_code}")
-    
-    data = response.json()
-    count = len(data)
-    if count != 4:
-        return log_test("Verify Project Count (After Delete)", False, f"Expected 4 projects, got {count}")
-    
-    return log_test("Verify Project Count (After Delete)", True, f"Count: {count}")
-
-def test_create_resource():
-    """Test 12: POST /api/resources to create a new resource"""
-    global test_resource_id
-    
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    
-    resource_data = {
-        "name": f"Test Resource {datetime.now().strftime('%H%M%S')}",
-        "role": "Test Engineer",
-        "standard_capacity": 100
-    }
-    
-    response = requests.post(f"{API_URL}/resources", json=resource_data, headers=headers)
-    
-    if response.status_code != 200:
-        return log_test("Create Resource", False, f"Status: {response.status_code}, Body: {response.text}")
-    
-    data = response.json()
-    if "_id" not in data:
-        return log_test("Create Resource", False, "No _id in response")
-    
-    test_resource_id = data["_id"]
-    
-    return log_test("Create Resource", True, f"ID: {test_resource_id}, Name: {data.get('name')}")
-
-def test_update_resource():
-    """Test 13: PUT /api/resources/{id} to update the resource"""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    
-    update_data = {
-        "name": f"Test Resource Updated {datetime.now().strftime('%H%M%S')}",
-        "role": "Senior Test Engineer",
-        "standard_capacity": 100
-    }
-    
-    response = requests.put(
-        f"{API_URL}/resources/{test_resource_id}",
-        json=update_data,
-        headers=headers
-    )
-    
-    if response.status_code != 200:
-        return log_test("Update Resource", False, f"Status: {response.status_code}, Body: {response.text}")
-    
-    data = response.json()
-    if data.get("name") != update_data["name"]:
-        return log_test("Update Resource", False, f"Name not updated: {data.get('name')}")
-    
-    return log_test("Update Resource", True, f"New name: {data.get('name')}")
-
-def test_delete_resource():
-    """Test 14: DELETE /api/resources/{id} to clean up"""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    
-    response = requests.delete(
-        f"{API_URL}/resources/{test_resource_id}",
-        headers=headers
-    )
-    
-    if response.status_code != 200:
-        return log_test("Delete Resource", False, f"Status: {response.status_code}")
-    
-    return log_test("Delete Resource", True, f"Deleted ID: {test_resource_id}")
-
-def test_platform_status():
-    """Test 15: GET /api/platform/status (public endpoint)"""
-    response = requests.get(f"{API_URL}/platform/status")
-    
-    if response.status_code != 200:
-        return log_test("Platform Status", False, f"Status: {response.status_code}")
-    
-    data = response.json()
-    
-    # Verify expected fields
-    if data.get("multi_tenant_enabled") != False:
-        return log_test("Platform Status", False, f"multi_tenant_enabled should be false, got {data.get('multi_tenant_enabled')}")
-    
-    if data.get("platform_db_ready") != True:
-        return log_test("Platform Status", False, f"platform_db_ready should be true, got {data.get('platform_db_ready')}")
-    
-    # Tenants count can be 0 or more - just verify the field exists
-    tenants = data.get("tenants")
-    if tenants is None:
-        return log_test("Platform Status", False, f"tenants field missing")
-    
-    return log_test("Platform Status", True, f"multi_tenant_enabled: {data.get('multi_tenant_enabled')}, tenants: {tenants}")
-
-def test_platform_whoami_tenant():
-    """Test 16: GET /api/platform/whoami-tenant (public endpoint)"""
-    response = requests.get(f"{API_URL}/platform/whoami-tenant")
-    
-    if response.status_code != 200:
-        return log_test("Platform Whoami Tenant", False, f"Status: {response.status_code}")
-    
-    data = response.json()
-    
-    # When flag is off, should show tenant object with slug=ddconsult (default fallback)
-    tenant = data.get("tenant")
-    if not tenant:
-        return log_test("Platform Whoami Tenant", False, f"No tenant in response")
-    
-    # Tenant can be either a string or an object
-    tenant_slug = tenant if isinstance(tenant, str) else tenant.get("slug")
-    if tenant_slug != "ddconsult":
-        return log_test("Platform Whoami Tenant", False, f"Expected tenant slug=ddconsult, got {tenant_slug}")
-    
-    resolution_mode = data.get("resolution_mode")
-    if resolution_mode != "flag_off":
-        return log_test("Platform Whoami Tenant", False, f"Expected resolution_mode=flag_off, got {resolution_mode}")
-    
-    return log_test("Platform Whoami Tenant", True, f"tenant slug: {tenant_slug}, resolution_mode: {resolution_mode}")
-
-def test_platform_resolve_subdomain_ddconsult():
-    """Test 17: GET /api/platform/resolve-subdomain?host=ddconsult.ddplanner.io"""
-    response = requests.get(f"{API_URL}/platform/resolve-subdomain?host=ddconsult.ddplanner.io")
-    
-    if response.status_code != 200:
-        return log_test("Platform Resolve Subdomain (ddconsult)", False, f"Status: {response.status_code}")
-    
-    data = response.json()
-    subdomain = data.get("subdomain")
-    if subdomain != "ddconsult":
-        return log_test("Platform Resolve Subdomain (ddconsult)", False, f"Expected subdomain=ddconsult, got {subdomain}")
-    
-    return log_test("Platform Resolve Subdomain (ddconsult)", True, f"subdomain: {subdomain}")
-
-def test_platform_resolve_subdomain_admin():
-    """Test 18: GET /api/platform/resolve-subdomain?host=admin.ddplanner.io"""
-    response = requests.get(f"{API_URL}/platform/resolve-subdomain?host=admin.ddplanner.io")
-    
-    if response.status_code != 200:
-        return log_test("Platform Resolve Subdomain (admin)", False, f"Status: {response.status_code}")
-    
-    data = response.json()
-    subdomain = data.get("subdomain")
-    if subdomain != "admin":
-        return log_test("Platform Resolve Subdomain (admin)", False, f"Expected subdomain=admin, got {subdomain}")
-    
-    return log_test("Platform Resolve Subdomain (admin)", True, f"subdomain: {subdomain}")
-
-def test_platform_resolve_subdomain_localhost():
-    """Test 19: GET /api/platform/resolve-subdomain?host=localhost:8001"""
-    response = requests.get(f"{API_URL}/platform/resolve-subdomain?host=localhost:8001")
-    
-    if response.status_code != 200:
-        return log_test("Platform Resolve Subdomain (localhost)", False, f"Status: {response.status_code}")
-    
-    data = response.json()
-    subdomain = data.get("subdomain")
-    if subdomain is not None:
-        return log_test("Platform Resolve Subdomain (localhost)", False, f"Expected subdomain=null, got {subdomain}")
-    
-    return log_test("Platform Resolve Subdomain (localhost)", True, f"subdomain: {subdomain}")
-
-def test_auth_negative():
-    """Test 20: GET /api/projects without Authorization header should return 401"""
-    response = requests.get(f"{API_URL}/projects")
-    
-    if response.status_code != 401:
-        return log_test("Auth Negative Test", False, f"Expected 401, got {response.status_code}")
-    
-    return log_test("Auth Negative Test", True, "Correctly returned 401")
-
-def test_dashboard_action_items():
-    """Test 21: GET /api/dashboard/action-items (low priority, may be slow)"""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    
-    try:
-        response = requests.get(f"{API_URL}/dashboard/action-items", headers=headers, timeout=30)
-        
-        if response.status_code != 200:
-            return log_test("Dashboard Action Items", False, f"Status: {response.status_code}")
-        
+    print(f"Status: {response.status_code}")
+    if response.status_code == 200:
         data = response.json()
-        if not isinstance(data, list):
-            return log_test("Dashboard Action Items", False, f"Response is not a list: {type(data)}")
-        
-        return log_test("Dashboard Action Items", True, f"Returned {len(data)} action items")
-    except requests.exceptions.Timeout:
-        return log_test("Dashboard Action Items", True, "Skipped (timeout, low priority)")
-    except Exception as e:
-        return log_test("Dashboard Action Items", False, f"Error: {str(e)}")
-
-def run_all_tests():
-    """Run all regression tests"""
-    print("=" * 80)
-    print("DD Planner Step 4 Regression Test Suite")
-    print("Testing LazyCollection proxy refactor with MULTI_TENANT_ENABLED=false")
-    print("=" * 80)
-    print()
-    
-    results = []
-    
-    # Auth tests
-    print("--- AUTH TESTS ---")
-    results.append(test_auth_login())
-    results.append(test_auth_me())
-    print()
-    
-    # Core read tests
-    print("--- CORE READ TESTS ---")
-    results.append(test_get_projects())
-    results.append(test_get_resources())
-    results.append(test_get_allocations())
-    results.append(test_get_portfolio())
-    print()
-    
-    # Project CRUD tests
-    print("--- PROJECT CRUD TESTS ---")
-    results.append(test_create_project())
-    results.append(test_verify_project_count_after_create())
-    results.append(test_update_project())
-    results.append(test_delete_project())
-    results.append(test_verify_project_count_after_delete())
-    print()
-    
-    # Resource CRUD tests
-    print("--- RESOURCE CRUD TESTS ---")
-    results.append(test_create_resource())
-    results.append(test_update_resource())
-    results.append(test_delete_resource())
-    print()
-    
-    # Platform endpoints tests
-    print("--- PLATFORM ENDPOINTS TESTS ---")
-    results.append(test_platform_status())
-    results.append(test_platform_whoami_tenant())
-    results.append(test_platform_resolve_subdomain_ddconsult())
-    results.append(test_platform_resolve_subdomain_admin())
-    results.append(test_platform_resolve_subdomain_localhost())
-    print()
-    
-    # Auth negative test
-    print("--- AUTH NEGATIVE TEST ---")
-    results.append(test_auth_negative())
-    print()
-    
-    # AI endpoints (low priority)
-    print("--- AI ENDPOINTS (LOW PRIORITY) ---")
-    results.append(test_dashboard_action_items())
-    print()
-    
-    # Summary
-    print("=" * 80)
-    passed = sum(results)
-    total = len(results)
-    print(f"SUMMARY: {passed}/{total} tests passed ({passed*100//total}%)")
-    
-    if passed == total:
-        print("✅ ALL TESTS PASSED - No regressions detected")
+        token = data.get("access_token")
+        print(f"✅ Login successful. Token: {token[:20]}...")
+        return True
     else:
-        print(f"❌ {total - passed} test(s) failed - Regressions detected")
+        print(f"❌ Login failed: {response.text}")
+        return False
+
+def get_headers():
+    """Get authorization headers"""
+    return {"Authorization": f"Bearer {token}"}
+
+# ============================================================================
+# ISSUE 1: Timesheet Pre-fill
+# ============================================================================
+
+def test_issue_1_timesheet_prefill():
+    """
+    Issue 1: Timesheet pre-fill (/api/timesheets/auto-fill?week_start=2026-09-14)
+    - Test with user admin@test.com / admin123 (linked to Alice Johnson resource_id 6aabd45b6023b8429321ad67)
+    - Verify that POST /api/timesheets/auto-fill succeeds and returns created/updated counts without crashing.
+    - Verify that projects without phases or with phases are handled cleanly.
+    - Verify GET /api/timesheets/history returns entries with proper phase_name and project_name.
+    """
+    print("\n" + "="*80)
+    print("ISSUE 1: Timesheet Pre-fill")
+    print("="*80)
     
-    print("=" * 80)
+    # Test 1.1: Auto-fill timesheets for week 2026-09-14
+    print("\n[Test 1.1] POST /api/timesheets/auto-fill?week_start=2026-09-14")
+    response = requests.post(
+        f"{BASE_URL}/timesheets/auto-fill?week_start=2026-09-14",
+        headers=get_headers()
+    )
+    print(f"Status: {response.status_code}")
+    print(f"Response: {json.dumps(response.json(), indent=2)}")
     
-    return passed == total
+    if response.status_code == 200:
+        data = response.json()
+        print(f"✅ Auto-fill successful")
+        print(f"   Created: {data.get('created', 0)}")
+        print(f"   Updated: {data.get('updated', 0)}")
+        print(f"   Skipped: {data.get('skipped', 0)}")
+        print(f"   Total: {data.get('total', 0)}")
+    else:
+        print(f"❌ Auto-fill failed: {response.text}")
+        return False
+    
+    # Test 1.2: Verify GET /api/timesheets/history returns entries with proper phase_name and project_name
+    print("\n[Test 1.2] GET /api/timesheets/history")
+    response = requests.get(
+        f"{BASE_URL}/timesheets/history?weeks=4",
+        headers=get_headers()
+    )
+    print(f"Status: {response.status_code}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        weeks = data.get("weeks", [])
+        print(f"✅ History retrieved: {len(weeks)} weeks")
+        
+        # Check first few entries for phase_name and project_name
+        if weeks:
+            first_week = weeks[0]
+            entries = first_week.get("entries", [])
+            print(f"\n   Sample entries from week {first_week.get('week_start')}:")
+            for entry in entries[:3]:
+                project_name = entry.get("project_name", "MISSING")
+                phase_name = entry.get("phase_name", "MISSING")
+                print(f"   - Project: {project_name}, Phase: {phase_name}")
+                
+                if project_name == "MISSING" or project_name == "Unknown Project":
+                    print(f"   ❌ ISSUE: project_name is missing or 'Unknown Project'")
+                if phase_name == "MISSING" or phase_name == "Unknown Phase":
+                    print(f"   ❌ ISSUE: phase_name is missing or 'Unknown Phase'")
+        else:
+            print("   ⚠️  No timesheet entries found in history")
+    else:
+        print(f"❌ History retrieval failed: {response.text}")
+        return False
+    
+    return True
+
+# ============================================================================
+# ISSUE 2: New Projects Created and Allocated to Resources
+# ============================================================================
+
+def test_issue_2_new_project_allocation():
+    """
+    Issue 2: New projects created and allocated to resources:
+    - Create a new project via POST /api/projects or POST /api/projects/create-full.
+    - Create an allocation for this project and a resource via POST /api/allocations.
+    - Verify that GET /api/allocations and GET /api/my-allocations return the correct project_name and client_name (NOT 'Unknown' or blank).
+    """
+    print("\n" + "="*80)
+    print("ISSUE 2: New Projects Created and Allocated to Resources")
+    print("="*80)
+    
+    # Test 2.1: Create a new project via POST /api/projects/create-full
+    print("\n[Test 2.1] POST /api/projects/create-full")
+    
+    project_data = {
+        "name": "Test Project Issue 2",
+        "client_name": "Test Client Corp",
+        "status": "Active",
+        "start_date": "2026-09-14",
+        "end_date": "2026-12-31",
+        "phases": [
+            {"name": "Planning", "duration_weeks": 2},
+            {"name": "Execution", "duration_weeks": 4}
+        ],
+        "allocations": [
+            {
+                "resource_id": RESOURCE_ID,
+                "percentage": 50,
+                "role": "Developer"
+            }
+        ]
+    }
+    
+    response = requests.post(
+        f"{BASE_URL}/projects/create-full",
+        headers=get_headers(),
+        json=project_data
+    )
+    print(f"Status: {response.status_code}")
+    print(f"Response: {json.dumps(response.json(), indent=2)}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        project_id = data.get("project_id")
+        print(f"✅ Project created: {project_id}")
+        print(f"   Phases created: {data.get('phases_created', 0)}")
+        print(f"   Allocations created: {data.get('allocations_created', 0)}")
+    else:
+        print(f"❌ Project creation failed: {response.text}")
+        return False
+    
+    # Test 2.2: Verify GET /api/allocations returns correct project_name and client_name
+    print("\n[Test 2.2] GET /api/allocations")
+    response = requests.get(
+        f"{BASE_URL}/allocations",
+        headers=get_headers()
+    )
+    print(f"Status: {response.status_code}")
+    
+    if response.status_code == 200:
+        allocations = response.json()
+        print(f"✅ Allocations retrieved: {len(allocations)} total")
+        
+        # Find our newly created allocation
+        found = False
+        for alloc in allocations:
+            if alloc.get("project_id") == project_id:
+                found = True
+                project_name = alloc.get("project_name", "MISSING")
+                client_name = alloc.get("client_name", "MISSING")
+                print(f"\n   Found allocation for new project:")
+                print(f"   - Project Name: {project_name}")
+                print(f"   - Client Name: {client_name}")
+                
+                if project_name == "Unknown" or project_name == "MISSING" or not project_name:
+                    print(f"   ❌ ISSUE: project_name is 'Unknown', 'MISSING', or blank")
+                    return False
+                if client_name == "Unknown" or client_name == "MISSING" or not client_name:
+                    print(f"   ❌ ISSUE: client_name is 'Unknown', 'MISSING', or blank")
+                    return False
+                
+                print(f"   ✅ project_name and client_name are correct")
+                break
+        
+        if not found:
+            print(f"   ❌ ISSUE: Could not find allocation for newly created project")
+            return False
+    else:
+        print(f"❌ Allocations retrieval failed: {response.text}")
+        return False
+    
+    # Test 2.3: Verify GET /api/my-allocations returns correct project_name and client_name
+    print("\n[Test 2.3] GET /api/my-allocations")
+    response = requests.get(
+        f"{BASE_URL}/my-allocations",
+        headers=get_headers()
+    )
+    print(f"Status: {response.status_code}")
+    
+    if response.status_code == 200:
+        allocations = response.json()
+        print(f"✅ My allocations retrieved: {len(allocations)} total")
+        
+        # Find our newly created allocation
+        found = False
+        for alloc in allocations:
+            if alloc.get("project_id") == project_id:
+                found = True
+                project_name = alloc.get("project_name", "MISSING")
+                client_name = alloc.get("client_name", "MISSING")
+                print(f"\n   Found allocation for new project:")
+                print(f"   - Project Name: {project_name}")
+                print(f"   - Client Name: {client_name}")
+                
+                if project_name == "Unknown" or project_name == "MISSING" or not project_name:
+                    print(f"   ❌ ISSUE: project_name is 'Unknown', 'MISSING', or blank")
+                    return False
+                if client_name == "Unknown" or client_name == "MISSING" or not client_name:
+                    print(f"   ❌ ISSUE: client_name is 'Unknown', 'MISSING', or blank")
+                    return False
+                
+                print(f"   ✅ project_name and client_name are correct")
+                break
+        
+        if not found:
+            print(f"   ⚠️  Could not find allocation in my-allocations (may be expected if user is not the resource)")
+    else:
+        print(f"❌ My allocations retrieval failed: {response.text}")
+        return False
+    
+    return True
+
+# ============================================================================
+# ISSUE 3: WBS Percentage Updates
+# ============================================================================
+
+def test_issue_3_wbs_percentage():
+    """
+    Issue 3: WBS percentage updates:
+    - Create a WBS task via POST /api/projects/{project_id}/wbs/tasks with progress_percentage (e.g. 25).
+    - Verify that GET /api/projects/{project_id}/wbs returns progress_percentage.
+    - Update the task via PUT /api/wbs/tasks/{task_id} with progress_percentage=75, then 100.
+    - Verify that progress_percentage=100 sets status to 'done'.
+    """
+    print("\n" + "="*80)
+    print("ISSUE 3: WBS Percentage Updates")
+    print("="*80)
+    
+    # First, get a project to work with
+    print("\n[Test 3.0] GET /api/projects (to find a project)")
+    response = requests.get(
+        f"{BASE_URL}/projects",
+        headers=get_headers()
+    )
+    
+    if response.status_code != 200 or not response.json():
+        print(f"❌ Could not get projects")
+        return False
+    
+    projects = response.json()
+    project_id = str(projects[0]["id"])
+    project_name = projects[0]["name"]
+    print(f"✅ Using project: {project_name} (ID: {project_id})")
+    
+    # Test 3.1: Create a WBS task with progress_percentage=25
+    print("\n[Test 3.1] POST /api/projects/{project_id}/wbs/tasks with progress_percentage=25")
+    
+    task_data = {
+        "name": "Test WBS Task Issue 3",
+        "description": "Testing progress percentage updates",
+        "status": "in_progress",
+        "priority": "medium",
+        "estimated_hours": 10,
+        "progress_percentage": 25,
+        "start_date": "2026-09-14",
+        "end_date": "2026-09-18"
+    }
+    
+    response = requests.post(
+        f"{BASE_URL}/projects/{project_id}/wbs/tasks",
+        headers=get_headers(),
+        json=task_data
+    )
+    print(f"Status: {response.status_code}")
+    
+    if response.status_code == 200:
+        task = response.json()
+        task_id = task.get("id")
+        progress = task.get("progress_percentage")
+        print(f"✅ WBS task created: {task_id}")
+        print(f"   Progress percentage: {progress}%")
+        
+        if progress != 25:
+            print(f"   ❌ ISSUE: progress_percentage is {progress}, expected 25")
+            return False
+    else:
+        print(f"❌ WBS task creation failed: {response.text}")
+        return False
+    
+    # Test 3.2: Verify GET /api/projects/{project_id}/wbs returns progress_percentage
+    print("\n[Test 3.2] GET /api/projects/{project_id}/wbs")
+    response = requests.get(
+        f"{BASE_URL}/projects/{project_id}/wbs",
+        headers=get_headers()
+    )
+    print(f"Status: {response.status_code}")
+    
+    if response.status_code == 200:
+        tasks = response.json()
+        print(f"✅ WBS tasks retrieved: {len(tasks)} total")
+        
+        # Find our task
+        found = False
+        for task in tasks:
+            if task.get("id") == task_id:
+                found = True
+                progress = task.get("progress_percentage")
+                print(f"\n   Found task: {task.get('name')}")
+                print(f"   Progress percentage: {progress}%")
+                
+                if progress != 25:
+                    print(f"   ❌ ISSUE: progress_percentage is {progress}, expected 25")
+                    return False
+                
+                print(f"   ✅ progress_percentage is correct")
+                break
+        
+        if not found:
+            print(f"   ❌ ISSUE: Could not find newly created task")
+            return False
+    else:
+        print(f"❌ WBS tasks retrieval failed: {response.text}")
+        return False
+    
+    # Test 3.3: Update task with progress_percentage=75
+    print("\n[Test 3.3] PUT /api/wbs/tasks/{task_id} with progress_percentage=75")
+    
+    update_data = {
+        "progress_percentage": 75
+    }
+    
+    response = requests.put(
+        f"{BASE_URL}/wbs/tasks/{task_id}",
+        headers=get_headers(),
+        json=update_data
+    )
+    print(f"Status: {response.status_code}")
+    
+    if response.status_code == 200:
+        task = response.json()
+        progress = task.get("progress_percentage")
+        status = task.get("status")
+        print(f"✅ WBS task updated")
+        print(f"   Progress percentage: {progress}%")
+        print(f"   Status: {status}")
+        
+        if progress != 75:
+            print(f"   ❌ ISSUE: progress_percentage is {progress}, expected 75")
+            return False
+    else:
+        print(f"❌ WBS task update failed: {response.text}")
+        return False
+    
+    # Test 3.4: Update task with progress_percentage=100 and verify status='done'
+    print("\n[Test 3.4] PUT /api/wbs/tasks/{task_id} with progress_percentage=100")
+    
+    update_data = {
+        "progress_percentage": 100
+    }
+    
+    response = requests.put(
+        f"{BASE_URL}/wbs/tasks/{task_id}",
+        headers=get_headers(),
+        json=update_data
+    )
+    print(f"Status: {response.status_code}")
+    
+    if response.status_code == 200:
+        task = response.json()
+        progress = task.get("progress_percentage")
+        status = task.get("status")
+        print(f"✅ WBS task updated")
+        print(f"   Progress percentage: {progress}%")
+        print(f"   Status: {status}")
+        
+        if progress != 100:
+            print(f"   ❌ ISSUE: progress_percentage is {progress}, expected 100")
+            return False
+        
+        if status != "done":
+            print(f"   ❌ ISSUE: status is '{status}', expected 'done'")
+            return False
+        
+        print(f"   ✅ progress_percentage=100 correctly set status to 'done'")
+    else:
+        print(f"❌ WBS task update failed: {response.text}")
+        return False
+    
+    return True
+
+# ============================================================================
+# ISSUE 6: AI Actions
+# ============================================================================
+
+def test_issue_6_ai_actions():
+    """
+    Issue 6: AI actions:
+    - Test AI action execution: POST /api/ai/chat/execute-plan with a multi-step plan containing create_project followed by create_allocation using placeholder "<step_0_id>".
+    - Verify that both steps complete successfully and the allocation has the resolved project_id.
+    - Also test POST /api/projects/create-full.
+    """
+    print("\n" + "="*80)
+    print("ISSUE 6: AI Actions")
+    print("="*80)
+    
+    # Test 6.1: POST /api/projects/create-full (already tested in Issue 2, but verify again)
+    print("\n[Test 6.1] POST /api/projects/create-full")
+    
+    project_data = {
+        "name": "AI Test Project Issue 6",
+        "client_name": "AI Test Client",
+        "status": "Active",
+        "start_date": "2026-09-14",
+        "end_date": "2026-12-31",
+        "phases": [
+            {"name": "Phase 1", "duration_weeks": 2}
+        ],
+        "allocations": [
+            {
+                "resource_id": RESOURCE_ID,
+                "percentage": 30,
+                "role": "Tester"
+            }
+        ]
+    }
+    
+    response = requests.post(
+        f"{BASE_URL}/projects/create-full",
+        headers=get_headers(),
+        json=project_data
+    )
+    print(f"Status: {response.status_code}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        project_id = data.get("project_id")
+        print(f"✅ Project created via create-full: {project_id}")
+    else:
+        print(f"❌ Project creation failed: {response.text}")
+        return False
+    
+    # Test 6.2: POST /api/ai/chat/execute-plan with multi-step plan
+    print("\n[Test 6.2] POST /api/ai/chat/execute-plan with multi-step plan")
+    
+    # Create a multi-step plan: create_project followed by create_allocation using <step_0_id>
+    plan_data = {
+        "plan": [
+            {
+                "action": "create_project",
+                "params": {
+                    "name": "AI Multi-Step Project",
+                    "client_name": "AI Multi-Step Client",
+                    "status": "Active"
+                }
+            },
+            {
+                "action": "create_allocation",
+                "params": {
+                    "project_id": "<step_0_id>",
+                    "resource_id": RESOURCE_ID,
+                    "percentage": 40,
+                    "role": "Developer"
+                }
+            }
+        ]
+    }
+    
+    response = requests.post(
+        f"{BASE_URL}/ai/chat/execute-plan",
+        headers=get_headers(),
+        json=plan_data
+    )
+    print(f"Status: {response.status_code}")
+    print(f"Response: {json.dumps(response.json(), indent=2)}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        results = data.get("results", [])
+        print(f"✅ Plan executed: {len(results)} steps")
+        
+        # Verify step 0 (create_project)
+        if len(results) > 0:
+            step_0 = results[0]
+            if step_0.get("success"):
+                project_id = step_0.get("result", {}).get("project_id")
+                print(f"\n   Step 0 (create_project): ✅ Success")
+                print(f"   Project ID: {project_id}")
+            else:
+                print(f"\n   Step 0 (create_project): ❌ Failed")
+                print(f"   Error: {step_0.get('error')}")
+                return False
+        
+        # Verify step 1 (create_allocation with <step_0_id>)
+        if len(results) > 1:
+            step_1 = results[1]
+            if step_1.get("success"):
+                allocation_id = step_1.get("result", {}).get("allocation_id")
+                resolved_project_id = step_1.get("result", {}).get("project_id")
+                print(f"\n   Step 1 (create_allocation): ✅ Success")
+                print(f"   Allocation ID: {allocation_id}")
+                print(f"   Resolved Project ID: {resolved_project_id}")
+                
+                # Verify that <step_0_id> was resolved to actual project_id
+                if resolved_project_id == project_id:
+                    print(f"   ✅ <step_0_id> correctly resolved to {project_id}")
+                else:
+                    print(f"   ❌ ISSUE: <step_0_id> not resolved correctly")
+                    print(f"      Expected: {project_id}")
+                    print(f"      Got: {resolved_project_id}")
+                    return False
+            else:
+                print(f"\n   Step 1 (create_allocation): ❌ Failed")
+                print(f"   Error: {step_1.get('error')}")
+                return False
+    else:
+        print(f"❌ Plan execution failed: {response.text}")
+        return False
+    
+    return True
+
+# ============================================================================
+# Main Test Runner
+# ============================================================================
+
+def main():
+    """Run all tests"""
+    print("\n" + "="*80)
+    print("BACKEND API TESTING - 6 REPORTED ISSUES")
+    print("="*80)
+    print(f"Base URL: {BASE_URL}")
+    print(f"Test User: {TEST_USER}")
+    print(f"Resource ID: {RESOURCE_ID}")
+    
+    # Login first
+    if not login():
+        print("\n❌ Login failed. Cannot proceed with tests.")
+        return
+    
+    # Run all tests
+    results = {
+        "Issue 1: Timesheet Pre-fill": test_issue_1_timesheet_prefill(),
+        "Issue 2: New Project Allocation": test_issue_2_new_project_allocation(),
+        "Issue 3: WBS Percentage Updates": test_issue_3_wbs_percentage(),
+        "Issue 6: AI Actions": test_issue_6_ai_actions()
+    }
+    
+    # Print summary
+    print("\n" + "="*80)
+    print("TEST SUMMARY")
+    print("="*80)
+    
+    passed = 0
+    failed = 0
+    
+    for test_name, result in results.items():
+        status = "✅ PASSED" if result else "❌ FAILED"
+        print(f"{test_name}: {status}")
+        if result:
+            passed += 1
+        else:
+            failed += 1
+    
+    print(f"\nTotal: {passed} passed, {failed} failed out of {len(results)} tests")
+    
+    if failed == 0:
+        print("\n🎉 All tests passed!")
+    else:
+        print(f"\n⚠️  {failed} test(s) failed. Please review the output above.")
 
 if __name__ == "__main__":
-    success = run_all_tests()
-    exit(0 if success else 1)
+    main()

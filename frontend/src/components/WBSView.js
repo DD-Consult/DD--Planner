@@ -835,6 +835,21 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
                 '—'
               )}
             </td>
+            <td className="py-2.5 px-3 text-xs text-gray-600 text-right">
+              {isMilestone ? (
+                <span className="text-purple-600">—</span>
+              ) : (
+                <div className="flex items-center justify-end gap-2">
+                  <span className="font-medium">{task.progress_percentage != null ? Math.round(task.progress_percentage) : 0}%</span>
+                  <div className="w-16 bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-500 h-2 rounded-full"
+                      style={{ width: `${Math.min(100, task.progress_percentage || 0)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </td>
             {!readOnly && (
             <td className="py-2.5 px-3">
               <div className="opacity-0 group-hover:opacity-100 flex gap-1.5">
@@ -874,13 +889,14 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Priority</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide text-right">Est. Hours</th>
+              <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide text-right">% Complete</th>
               {!readOnly && <th className="py-2.5 px-3 w-20"></th>}
             </tr>
           </thead>
           <tbody>
             {rootTasks.length === 0 ? (
               <tr>
-                <td colSpan={readOnly ? 6 : 7} className="py-12 text-center text-gray-400 text-sm">
+                <td colSpan={readOnly ? 7 : 8} className="py-12 text-center text-gray-400 text-sm">
                   No tasks yet
                 </td>
               </tr>
@@ -919,6 +935,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">End</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide text-right">Duration</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
+              <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide text-right">% Complete</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide min-w-40">Actuals vs Est.</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Deps</th>
               {!readOnly && <th className="py-2.5 px-3 w-24"></th>}
@@ -927,7 +944,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
           <tbody>
             {sortedTasksByDate.length === 0 ? (
               <tr>
-                <td colSpan={readOnly ? 10 : 11} className="py-12 text-center text-gray-400 text-sm">
+                <td colSpan={readOnly ? 11 : 12} className="py-12 text-center text-gray-400 text-sm">
                   No tasks yet
                 </td>
               </tr>
@@ -1022,6 +1039,21 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
                     </td>
                     <td className="py-2.5 px-3">
                       <Badge className={`text-xs border ${statusCfg.className}`}>{statusCfg.label}</Badge>
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      {task.is_milestone ? (
+                        <span className="text-xs text-purple-600">—</span>
+                      ) : (
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="text-xs font-medium">{task.progress_percentage != null ? Math.round(task.progress_percentage) : 0}%</span>
+                          <div className="w-16 bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-blue-500 h-2 rounded-full"
+                              style={{ width: `${Math.min(100, task.progress_percentage || 0)}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </td>
                     <td className="py-2.5 px-3">
                       {task.estimated_hours > 0 ? (

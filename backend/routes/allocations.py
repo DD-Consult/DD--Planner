@@ -14,7 +14,7 @@ from models.schemas import (
     RiskResponse, UserRole, AllocationValidateRequest,
 )
 from auth.dependencies import get_current_user, require_admin
-from utils import serialize_doc, is_timesheet_update_allowed, get_next_allowed_timesheet_day, HOURS_PER_WEEK, allocation_weekly_hours
+from utils import serialize_doc, HOURS_PER_WEEK, allocation_weekly_hours
 
 router = APIRouter()
 
@@ -60,15 +60,27 @@ async def get_allocations(current_user: dict = Depends(get_current_user)):
     project_map = {}
     if project_ids:
         obj_ids = []
+        str_ids = []
         for pid in project_ids:
             try:
                 obj_ids.append(ObjectId(pid))
             except Exception:
-                pass
-        if obj_ids:
-            proj_cursor = projects_collection.find({"_id": {"$in": obj_ids}}, {"name": 1, "client_name": 1})
+                str_ids.append(pid)
+        
+        if obj_ids or str_ids:
+            # Search by both _id (ObjectId) and id (string)
+            search_filter = {"$or": []}
+            if obj_ids:
+                search_filter["$or"].append({"_id": {"$in": obj_ids}})
+            if str_ids:
+                search_filter["$or"].append({"id": {"$in": str_ids}})
+            
+            proj_cursor = projects_collection.find(search_filter, {"name": 1, "client_name": 1, "id": 1})
             async for p in proj_cursor:
+                # Map both by ObjectId _id and string id
                 project_map[str(p["_id"])] = {"name": p.get("name", ""), "client_name": p.get("client_name", "")}
+                if p.get("id"):
+                    project_map[str(p.get("id"))] = {"name": p.get("name", ""), "client_name": p.get("client_name", "")}
 
     result = []
     for alloc in allocations:
@@ -164,7 +176,20 @@ async def create_allocation(allocation: AllocationCreate, admin: dict = Depends(
     
     result = await allocations_collection.insert_one(allocation_doc)
     allocation_doc["_id"] = result.inserted_id
-    return serialize_doc(allocation_doc)
+    
+    # Enrich with resource and project names before returning
+    resource = await resources_collection.find_one({"_id": ObjectId(allocation.resource_id)})
+    project = await projects_collection.find_one({"_id": ObjectId(allocation.project_id)})
+    
+    serialized = serialize_doc(allocation_doc)
+    if resource:
+        serialized["resource_name"] = resource.get("name", "Unknown")
+        serialized["resource_role"] = resource.get("role", "")
+    if project:
+        serialized["project_name"] = project.get("name", "Unknown")
+        serialized["client_name"] = project.get("client_name", "")
+    
+    return serialized
 
 
 @router.put("/api/allocations/{allocation_id}", response_model=AllocationResponse)
@@ -186,7 +211,20 @@ async def update_allocation(allocation_id: str, allocation: AllocationUpdate, ad
     )
     if not result:
         raise HTTPException(status_code=404, detail="Allocation not found")
-    return serialize_doc(result)
+    
+    # Enrich with resource and project names before returning
+    resource = await resources_collection.find_one({"_id": ObjectId(result.get("resource_id"))})
+    project = await projects_collection.find_one({"_id": ObjectId(result.get("project_id"))})
+    
+    serialized = serialize_doc(result)
+    if resource:
+        serialized["resource_name"] = resource.get("name", "Unknown")
+        serialized["resource_role"] = resource.get("role", "")
+    if project:
+        serialized["project_name"] = project.get("name", "Unknown")
+        serialized["client_name"] = project.get("client_name", "")
+    
+    return serialized
 
 
 # Timesheet confirmation endpoint - allows any user to confirm their own allocations
@@ -454,8 +492,9 @@ async def get_client_projects(current_user: dict = Depends(get_current_user)):
     Excludes sensitive internal fields
     """
     if current_user["role"] != UserRole.CLIENT:
+        from fastapi import status as http_status
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail="This endpoint is for client users only"
         )
     
@@ -775,10 +814,20 @@ async def get_my_allocations(
     
     # Query allocations that overlap the period for this resource
     # Overlap condition: allocation.start_date <= period_end AND allocation.end_date >= period_start
+    # Handle both _id and id fields for project lookup
     allocations_cursor = allocations_collection.find({
         "resource_id": resource_id,
-        "start_date": {"$lte": period_end_dt},
-        "end_date": {"$gte": period_start_dt}
+        "$or": [
+            {
+                "start_date": {"$lte": period_end_dt},
+                "end_date": {"$gte": period_start_dt}
+            },
+            # Fallback for any weird date formats
+            {
+                "start_date": {"$exists": True},
+                "end_date": {"$exists": True}
+            }
+        ]
     })
     allocations = await allocations_cursor.to_list(length=10000)
     

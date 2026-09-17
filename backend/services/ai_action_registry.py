@@ -185,6 +185,15 @@ def register(
 async def dispatch_action(action: dict, current_user: dict) -> dict:
     """Validate, permission-check, confirm (if destructive), execute, and
     audit-log an AI-proposed action."""
+    
+    # ── Flatten nested params if present ──
+    # Support both flat actions {"action": "create_project", "name": "..."} 
+    # and nested actions {"action": "create_project", "params": {"name": "..."}}
+    if "params" in action and isinstance(action["params"], dict):
+        # Merge params into action dict, with top-level keys taking precedence
+        flattened = {**action["params"], **{k: v for k, v in action.items() if k != "params"}}
+        action = flattened
+    
     name = action.get("action")
 
     # ── Permission check FIRST — applies to registry AND legacy actions ──

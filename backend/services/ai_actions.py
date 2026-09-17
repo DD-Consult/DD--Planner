@@ -1,5 +1,5 @@
 """AI action execution, pre-state capture, undo spec building, and undo application."""
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta, date
 import re
 import uuid
 from bson import ObjectId
@@ -44,36 +44,164 @@ async def execute_ai_action(action: dict, current_user: dict) -> dict:
             if raw_lead_id and isinstance(raw_lead_id, str) and re.match(r'^[a-fA-F0-9]{24}$', raw_lead_id):
                 valid_lead_id = raw_lead_id
 
+            now = datetime.now()
+            today = datetime(now.year, now.month, now.day)
+            
+            # Flexible start_date
+            start_date_val = action.get("start_date")
+            start_dt = today
+            if start_date_val:
+                try:
+                    if isinstance(start_date_val, datetime):
+                        start_dt = datetime(start_date_val.year, start_date_val.month, start_date_val.day)
+                    elif isinstance(start_date_val, date):
+                        start_dt = datetime.combine(start_date_val, datetime.min.time())
+                    else:
+                        start_dt = datetime.strptime(str(start_date_val)[:10], "%Y-%m-%d")
+                except Exception:
+                    start_dt = today
+
+            # Flexible end_date
+            end_date_val = action.get("end_date")
+            end_dt = start_dt + timedelta(days=90)
+            if end_date_val:
+                try:
+                    if isinstance(end_date_val, datetime):
+                        end_dt = datetime(end_date_val.year, end_date_val.month, end_date_val.day)
+                    elif isinstance(end_date_val, date):
+                        end_dt = datetime.combine(end_date_val, datetime.min.time())
+                    else:
+                        end_dt = datetime.strptime(str(end_date_val)[:10], "%Y-%m-%d")
+                except Exception:
+                    end_dt = start_dt + timedelta(days=90)
+
+            # Build phases if provided
+            raw_phases = action.get("phases", [])
+            phases = []
+            if raw_phases:
+                cur_phase_start = start_dt
+                for p in raw_phases:
+                    p_name = p.get("name", "Phase") if isinstance(p, dict) else str(p)
+                    dur_weeks = p.get("duration_weeks", 4) if isinstance(p, dict) else 4
+                    p_end = cur_phase_start + timedelta(weeks=dur_weeks)
+                    phases.append({
+                        "id": str(uuid.uuid4()),
+                        "name": p_name,
+                        "start_date": cur_phase_start,
+                        "end_date": p_end,
+                        "status": "Active"
+                    })
+                    cur_phase_start = p_end
+                end_dt = phases[-1]["end_date"]
+
+            proj_name = action.get("name") or "New Project"
             project_doc = {
-                "name": action["name"],
+                "name": proj_name,
                 "client_name": action.get("client_name", ""),
-                "status": action.get("status", "Pipeline"),
-                "start_date": datetime.strptime(action["start_date"], "%Y-%m-%d"),
-                "end_date": datetime.strptime(action["end_date"], "%Y-%m-%d"),
+                "status": action.get("status", "Active"),
+                "start_date": start_dt,
+                "end_date": end_dt,
                 "is_draft": False,
                 "budgeted_hours": action.get("budgeted_hours"),
                 "project_lead_id": valid_lead_id,
                 "google_drive_url": action.get("google_drive_url"),
-                "phases": [],
+                "phases": phases,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
             result = await projects_collection.insert_one(project_doc)
-            return {"success": True, "message": f"Project '{action['name']}' created successfully", "id": str(result.inserted_id)}
+            proj_id = str(result.inserted_id)
+            return {"success": True, "message": f"Project '{proj_name}' created successfully", "id": proj_id, "project_id": proj_id}
 
         elif action_type == "create_allocation":
+            # Flexible resource lookup: support both ID and name
+            resource_id = action.get("resource_id")
+            if resource_id:
+                # Check if it's a valid ObjectId
+                try:
+                    from database import resources_collection
+                    resource = await resources_collection.find_one({"_id": ObjectId(resource_id)})
+                    if not resource:
+                        # Try by name (case-insensitive)
+                        resource = await resources_collection.find_one({
+                            "name": {"$regex": f"^{re.escape(resource_id)}$", "$options": "i"}
+                        })
+                        if resource:
+                            resource_id = str(resource["_id"])
+                except Exception:
+                    # Not a valid ObjectId, try name lookup
+                    from database import resources_collection
+                    resource = await resources_collection.find_one({
+                        "name": {"$regex": f"^{re.escape(resource_id)}$", "$options": "i"}
+                    })
+                    if resource:
+                        resource_id = str(resource["_id"])
+            
+            # Flexible project lookup: support both ID and name
+            project_id = action.get("project_id")
+            if project_id:
+                try:
+                    project = await projects_collection.find_one({"_id": ObjectId(project_id)})
+                    if not project:
+                        # Try by name (case-insensitive)
+                        project = await projects_collection.find_one({
+                            "name": {"$regex": f"^{re.escape(project_id)}$", "$options": "i"}
+                        })
+                        if project:
+                            project_id = str(project["_id"])
+                except Exception:
+                    # Not a valid ObjectId, try name lookup
+                    project = await projects_collection.find_one({
+                        "name": {"$regex": f"^{re.escape(project_id)}$", "$options": "i"}
+                    })
+                    if project:
+                        project_id = str(project["_id"])
+            
+            # Parse percentage flexibly (handle "50%", "50", or int)
+            percentage = action.get("percentage", 100)
+            if isinstance(percentage, str):
+                percentage = float(percentage.strip('%'))
+            percentage = min(200, max(0, float(percentage)))  # Clamp to 0-200%
+            
+            # Parse dates flexibly with fallback to project dates
+            start_date_str = action.get("start_date")
+            end_date_str = action.get("end_date")
+            
+            try:
+                start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+            except Exception:
+                # Fallback to project start date
+                if project:
+                    start_date = project.get("start_date")
+                    if isinstance(start_date, str):
+                        start_date = datetime.strptime(start_date[:10], "%Y-%m-%d")
+                else:
+                    start_date = datetime.now(timezone.utc)
+            
+            try:
+                end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
+            except Exception:
+                # Fallback to project end date
+                if project:
+                    end_date = project.get("end_date")
+                    if isinstance(end_date, str):
+                        end_date = datetime.strptime(end_date[:10], "%Y-%m-%d")
+                else:
+                    end_date = start_date + timedelta(days=30)
+            
             alloc_data = {
-                "resource_id": action["resource_id"],
-                "project_id": action["project_id"],
-                "percentage": action.get("percentage", 100),
-                "start_date": datetime.strptime(action["start_date"], "%Y-%m-%d"),
-                "end_date": datetime.strptime(action["end_date"], "%Y-%m-%d"),
+                "resource_id": resource_id,
+                "project_id": project_id,
+                "percentage": percentage,
+                "start_date": start_date,
+                "end_date": end_date,
                 "allocation_type": "percentage",
                 "confirmation_status": "Pending",
                 "role": action.get("role", ""),
                 "phase_names": [],
             }
             result = await allocations_collection.insert_one(alloc_data)
-            return {"success": True, "message": "Allocation created successfully", "id": str(result.inserted_id)}
+            alloc_id = str(result.inserted_id)
+            return {"success": True, "message": "Allocation created successfully", "id": alloc_id, "allocation_id": alloc_id, "project_id": project_id}
 
         elif action_type == "update_allocation":
             update_data = {}

@@ -1535,17 +1535,54 @@ const ProjectDetail = () => {
             </div>
           </div>
 
-          {/* Read-only Project Details Card */}
+          {/* Read-only Project Details Card - Enhanced with all information */}
           <div className="bg-white border border-[#E6E8EC] rounded-lg p-6">
-            <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: 'Space Grotesk' }}>
-              Project Details
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Timeline */}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold" style={{ fontFamily: 'Space Grotesk' }}>
+                Project Information
+              </h3>
+              <div className="text-xs text-[#667085]">
+                Use <strong>Edit Project</strong> button above to modify these details
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Project Name & Status */}
               <div>
+                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Project Name</div>
+                <div className="text-sm font-semibold text-[#0B1220]">{project.name}</div>
+              </div>
+              
+              <div>
+                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Status</div>
+                <div>
+                  <Badge className={getStatusColor(project.status)}>
+                    {project.status}
+                  </Badge>
+                </div>
+              </div>
+              
+              {/* Client Name */}
+              <div>
+                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Client</div>
+                <div className="text-sm text-[#0B1220] flex items-center gap-1">
+                  <Building2 size={14} className="text-[#94A3B8]" />
+                  {project.client_name || '—'}
+                </div>
+              </div>
+              
+              {/* Timeline */}
+              <div className="sm:col-span-2">
                 <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Timeline</div>
-                <div className="text-sm text-[#0B1220]">
-                  {safeFormatDate(project.start_date)} – {safeFormatDate(project.end_date)}
+                <div className="text-sm text-[#0B1220] flex items-center gap-2">
+                  <Calendar size={14} className="text-[#94A3B8]" />
+                  <span>
+                    {safeFormatDate(project.start_date)} – {safeFormatDate(project.end_date)}
+                  </span>
+                  {project.start_date && project.end_date && (
+                    <span className="text-xs text-[#667085]">
+                      ({safeDifferenceInDays(project.end_date, project.start_date)} business days)
+                    </span>
+                  )}
                 </div>
               </div>
               
@@ -1562,8 +1599,15 @@ const ProjectDetail = () => {
               {/* Project Lead */}
               <div>
                 <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Project Lead</div>
-                <div className="text-sm text-[#0B1220]">
-                  {project.project_lead_name || 'No lead assigned'}
+                <div className="text-sm text-[#0B1220] flex items-center gap-1">
+                  {project.project_lead_name ? (
+                    <>
+                      <Crown size={14} className="text-[#F4B740]" />
+                      <span className="font-medium">{project.project_lead_name}</span>
+                    </>
+                  ) : (
+                    <span className="text-[#667085]">No lead assigned</span>
+                  )}
                 </div>
               </div>
               
@@ -1578,25 +1622,45 @@ const ProjectDetail = () => {
                       rel="noopener noreferrer"
                       className="text-[#1570EF] hover:underline inline-flex items-center gap-1"
                     >
-                      Open Drive <ExternalLink size={14} />
+                      <ExternalLink size={14} />
+                      Open Drive
                     </a>
-                  ) : '—'}
+                  ) : (
+                    <span className="text-[#667085]">—</span>
+                  )}
                 </div>
               </div>
               
-              {/* Customer Contact */}
-              <div className="sm:col-span-2">
+              {/* Project ID */}
+              <div>
+                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Project ID</div>
+                <div className="text-xs font-mono text-[#0B1220] bg-[#F7F7F8] px-2 py-1 rounded inline-block">
+                  {project.id}
+                </div>
+              </div>
+              
+              {/* Created Date */}
+              <div>
+                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Created</div>
+                <div className="text-sm text-[#0B1220]">
+                  {safeFormatDate(project.created_at)}
+                </div>
+              </div>
+              
+              {/* Customer Contact - Full width */}
+              <div className="sm:col-span-2 lg:col-span-3">
                 <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Customer Contact</div>
                 <div className="text-sm text-[#0B1220]">
                   {(project.main_contact_name || project.main_contact_email || project.main_contact_phone || project.main_contact_role) ? (
                     <div className="space-y-1">
                       {project.main_contact_name && (
-                        <div>
-                          {project.main_contact_name}
-                          {project.main_contact_role && <span className="text-[#667085]"> ({project.main_contact_role})</span>}
+                        <div className="flex items-center gap-1">
+                          <UserCircle size={14} className="text-[#94A3B8]" />
+                          <span className="font-medium">{project.main_contact_name}</span>
+                          {project.main_contact_role && <span className="text-[#667085]"> – {project.main_contact_role}</span>}
                         </div>
                       )}
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 ml-5">
                         {project.main_contact_email && (
                           <a 
                             href={`mailto:${project.main_contact_email}`}
@@ -1617,22 +1681,178 @@ const ProjectDetail = () => {
                         )}
                       </div>
                     </div>
-                  ) : '—'}
+                  ) : (
+                    <span className="text-[#667085]">—</span>
+                  )}
                 </div>
               </div>
             </div>
             
             {/* Project Objective - full width */}
-            {project.project_objective && (
-              <div className="mt-4">
-                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Objective</div>
-                <div className="text-sm text-[#344054] whitespace-pre-wrap">{project.project_objective}</div>
+            <div className="mt-4 pt-4 border-t border-[#E6E8EC]">
+              <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Project Objective</div>
+              <div className="text-sm text-[#344054] whitespace-pre-wrap">
+                {project.project_objective || <span className="text-[#667085]">No objective defined</span>}
               </div>
-            )}
-            {!project.project_objective && (
-              <div className="mt-4">
-                <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Objective</div>
-                <div className="text-sm text-[#667085]">—</div>
+            </div>
+          </div>
+
+          {/* Phase Management - Moved from Settings tab */}
+          <div className="bg-white border border-[#E6E8EC] rounded-lg p-6" data-testid="phase-manager-card-overview">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold" style={{ fontFamily: 'Space Grotesk' }}>
+                  Project Phases & Schedule
+                </h3>
+                <p className="text-sm text-[#667085] mt-1">
+                  View and manage project phases with dates and budgeted hours
+                </p>
+              </div>
+              {!isEditingPhases && (isAdmin || isLead) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleEditPhases}
+                  data-testid="edit-phases-button-overview"
+                >
+                  <Edit2 size={14} className="mr-2" />
+                  Edit Phases
+                </Button>
+              )}
+              {isEditingPhases && (
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCancelEditPhases}
+                    disabled={updatePhasesMutation.isPending}
+                    data-testid="cancel-phase-edits-button-overview"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSavePhases}
+                    disabled={updatePhasesMutation.isPending}
+                    className="bg-[#1570EF] hover:bg-[#1570EF]/90"
+                    data-testid="save-phase-edits-button-overview"
+                  >
+                    {updatePhasesMutation.isPending ? (
+                      <><Loader2 size={14} className="mr-2 animate-spin" />Saving...</>
+                    ) : (
+                      <><Save size={14} className="mr-2" />Save Phases</>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Phase List */}
+            {!isEditingPhases ? (
+              <div className="space-y-2">
+                {(project.phases || []).length === 0 ? (
+                  <p className="text-sm text-[#667085] italic py-4 text-center">
+                    No phases defined. Click &ldquo;Edit Phases&rdquo; to add some.
+                  </p>
+                ) : (
+                  (project.phases || []).map((phase, idx) => (
+                    <div
+                      key={phase.id || idx}
+                      className="flex items-center justify-between p-3 border border-[#E6E8EC] rounded-md bg-[#F8FAFC]"
+                      data-testid={`phase-view-row-overview-${idx}`}
+                    >
+                      <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <div>
+                          <div className="text-xs text-[#667085] uppercase tracking-wide">Name</div>
+                          <div className="text-sm font-medium text-[#0B1220]">{phase.name || '—'}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-[#667085] uppercase tracking-wide">Start</div>
+                          <div className="text-sm text-[#475467]">{safeFormatDate(phase.start_date)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-[#667085] uppercase tracking-wide">End</div>
+                          <div className="text-sm text-[#475467]">{safeFormatDate(phase.end_date)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-[#667085] uppercase tracking-wide">Budgeted Hours</div>
+                          <div className="text-sm text-[#475467]">{phase.budgeted_hours ?? '—'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {(editedPhases || []).map((phase, idx) => (
+                  <div
+                    key={phase.id || idx}
+                    className="p-4 border border-[#E6E8EC] rounded-md bg-white"
+                    data-testid={`phase-edit-row-overview-${idx}`}
+                  >
+                    <div className="grid grid-cols-12 gap-3 items-end">
+                      <div className="col-span-4">
+                        <Label className="text-xs text-[#667085] uppercase tracking-wide mb-1 block">Phase Name</Label>
+                        <Input
+                          value={phase.name || ''}
+                          onChange={(e) => handleUpdatePhaseInSettings(idx, 'name', e.target.value)}
+                          placeholder="e.g., Discovery"
+                          data-testid={`phase-name-input-overview-${idx}`}
+                        />
+                      </div>
+                      <div className="col-span-3">
+                        <Label className="text-xs text-[#667085] uppercase tracking-wide mb-1 block">Start Date</Label>
+                        <WeekdayDateInput
+                          value={phase.start_date ? String(phase.start_date).slice(0, 10) : ''}
+                          onChange={(e) => handleUpdatePhaseInSettings(idx, 'start_date', e.target.value)}
+                          data-testid={`phase-start-input-overview-${idx}`}
+                        />
+                      </div>
+                      <div className="col-span-3">
+                        <Label className="text-xs text-[#667085] uppercase tracking-wide mb-1 block">End Date</Label>
+                        <WeekdayDateInput
+                          value={phase.end_date ? String(phase.end_date).slice(0, 10) : ''}
+                          onChange={(e) => handleUpdatePhaseInSettings(idx, 'end_date', e.target.value)}
+                          data-testid={`phase-end-input-overview-${idx}`}
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <Label className="text-xs text-[#667085] uppercase tracking-wide mb-1 block">Hours</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={phase.budgeted_hours ?? ''}
+                          onChange={(e) => handleUpdatePhaseInSettings(idx, 'budgeted_hours', e.target.value)}
+                          placeholder="0"
+                          data-testid={`phase-hours-input-overview-${idx}`}
+                        />
+                      </div>
+                      <div className="col-span-1 flex justify-end">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-[#EF4444] hover:bg-red-50 hover:text-[#EF4444]"
+                          onClick={() => handleDeletePhaseInSettings(idx)}
+                          data-testid={`delete-phase-overview-${idx}`}
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <Button
+                  variant="outline"
+                  onClick={handleAddPhaseInSettings}
+                  className="w-full border-dashed"
+                  data-testid="add-phase-button-overview"
+                >
+                  <Plus size={14} className="mr-2" />
+                  Add Phase
+                </Button>
               </div>
             )}
           </div>
@@ -2681,164 +2901,36 @@ const ProjectDetail = () => {
             </div>
           </div>
 
-          {/* Phase Management */}
+          {/* Phase Management - Now on Overview tab */}
           <div className="bg-white border border-[#E6E8EC] rounded-lg p-6" data-testid="phase-manager-card">
-            <div className="flex items-center justify-between mb-4">
-              <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-[#1570EF]/10 flex items-center justify-center">
+                <Calendar size={20} className="text-[#1570EF]" />
+              </div>
+              <div className="flex-1">
                 <h3 className="text-lg font-semibold" style={{ fontFamily: 'Space Grotesk' }}>
-                  Project Phases
+                  Project Phases & Schedule
                 </h3>
                 <p className="text-sm text-[#667085] mt-1">
-                  Add, edit, or remove phases. Each phase can have its own budget and dates.
+                  Phase management has been moved to the <strong>Overview</strong> tab for easier access
                 </p>
               </div>
-              {!isEditingPhases && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleEditPhases}
-                  data-testid="edit-phases-button"
-                >
-                  <Edit2 size={14} className="mr-2" />
-                  Edit Phases
-                </Button>
-              )}
-              {isEditingPhases && (
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCancelEditPhases}
-                    disabled={updatePhasesMutation.isPending}
-                    data-testid="cancel-phase-edits-button"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleSavePhases}
-                    disabled={updatePhasesMutation.isPending}
-                    className="bg-[#1570EF] hover:bg-[#1570EF]/90"
-                    data-testid="save-phase-edits-button"
-                  >
-                    {updatePhasesMutation.isPending ? (
-                      <><Loader2 size={14} className="mr-2 animate-spin" />Saving...</>
-                    ) : (
-                      <><Save size={14} className="mr-2" />Save Phases</>
-                    )}
-                  </Button>
-                </div>
-              )}
             </div>
-
-            {/* Phase List */}
-            {!isEditingPhases ? (
-              <div className="space-y-2">
-                {(project.phases || []).length === 0 ? (
-                  <p className="text-sm text-[#667085] italic py-4 text-center">
-                    No phases defined. Click &ldquo;Edit Phases&rdquo; to add some.
-                  </p>
-                ) : (
-                  (project.phases || []).map((phase, idx) => (
-                    <div
-                      key={phase.id || idx}
-                      className="flex items-center justify-between p-3 border border-[#E6E8EC] rounded-md bg-[#F8FAFC]"
-                      data-testid={`phase-view-row-${idx}`}
-                    >
-                      <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <div>
-                          <div className="text-xs text-[#667085] uppercase tracking-wide">Name</div>
-                          <div className="text-sm font-medium text-[#0B1220]">{phase.name || '—'}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-[#667085] uppercase tracking-wide">Start</div>
-                          <div className="text-sm text-[#475467]">{safeFormatDate(phase.start_date)}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-[#667085] uppercase tracking-wide">End</div>
-                          <div className="text-sm text-[#475467]">{safeFormatDate(phase.end_date)}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-[#667085] uppercase tracking-wide">Budgeted Hours</div>
-                          <div className="text-sm text-[#475467]">{phase.budgeted_hours ?? '—'}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {(editedPhases || []).map((phase, idx) => (
-                  <div
-                    key={phase.id || idx}
-                    className="p-4 border border-[#E6E8EC] rounded-md bg-white"
-                    data-testid={`phase-edit-row-${idx}`}
-                  >
-                    <div className="grid grid-cols-12 gap-3 items-end">
-                      <div className="col-span-4">
-                        <Label className="text-xs text-[#667085] uppercase tracking-wide mb-1 block">Phase Name</Label>
-                        <Input
-                          value={phase.name || ''}
-                          onChange={(e) => handleUpdatePhaseInSettings(idx, 'name', e.target.value)}
-                          placeholder="e.g., Discovery"
-                          data-testid={`phase-name-input-${idx}`}
-                        />
-                      </div>
-                      <div className="col-span-3">
-                        <Label className="text-xs text-[#667085] uppercase tracking-wide mb-1 block">Start Date</Label>
-                        <WeekdayDateInput
-                          value={phase.start_date ? String(phase.start_date).slice(0, 10) : ''}
-                          onChange={(e) => handleUpdatePhaseInSettings(idx, 'start_date', e.target.value)}
-                          data-testid={`phase-start-input-${idx}`}
-                        />
-                      </div>
-                      <div className="col-span-3">
-                        <Label className="text-xs text-[#667085] uppercase tracking-wide mb-1 block">End Date</Label>
-                        <WeekdayDateInput
-                          value={phase.end_date ? String(phase.end_date).slice(0, 10) : ''}
-                          onChange={(e) => handleUpdatePhaseInSettings(idx, 'end_date', e.target.value)}
-                          data-testid={`phase-end-input-${idx}`}
-                        />
-                      </div>
-                      <div className="col-span-1">
-                        <Label className="text-xs text-[#667085] uppercase tracking-wide mb-1 block">Hours</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={phase.budgeted_hours ?? ''}
-                          onChange={(e) => handleUpdatePhaseInSettings(idx, 'budgeted_hours', e.target.value)}
-                          placeholder="0"
-                          data-testid={`phase-hours-input-${idx}`}
-                        />
-                      </div>
-                      <div className="col-span-1 flex justify-end">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-[#EF4444] hover:bg-red-50 hover:text-[#EF4444]"
-                          onClick={() => handleDeletePhaseInSettings(idx)}
-                          data-testid={`delete-phase-${idx}`}
-                        >
-                          <Trash2 size={16} />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                <Button
-                  variant="outline"
-                  onClick={handleAddPhaseInSettings}
-                  className="w-full border-dashed"
-                  data-testid="add-phase-button"
-                >
-                  <Plus size={14} className="mr-2" />
-                  Add Phase
-                </Button>
-              </div>
-            )}
+            <div className="bg-[#F0F9FF] border border-[#BAE6FD] rounded-lg p-4">
+              <p className="text-sm text-[#0369A1] mb-3">
+                You can now view and edit project phases, dates, and budgeted hours directly from the Overview tab.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setActiveTab('overview')}
+                className="border-[#1570EF] text-[#1570EF] hover:bg-[#1570EF]/10"
+                data-testid="go-to-overview-phases-btn"
+              >
+                <Calendar size={14} className="mr-2" />
+                Go to Overview Tab
+              </Button>
+            </div>
           </div>
 
           {/* AI Instructions Panel */}

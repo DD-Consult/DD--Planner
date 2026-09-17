@@ -88,6 +88,7 @@ const WBSTaskDialog = ({
     labels: [],
     is_milestone: false,
     milestone_date: '',
+    progress_percentage: 0,
   });
 
   const [depToAdd, setDepToAdd] = useState('__none__');
@@ -112,6 +113,7 @@ const WBSTaskDialog = ({
         labels: task.labels || [],
         is_milestone: task.is_milestone || false,
         milestone_date: task.milestone_date || '',
+        progress_percentage: task.progress_percentage != null ? Number(task.progress_percentage) : 0,
       });
     } else {
       setFormData({
@@ -130,6 +132,7 @@ const WBSTaskDialog = ({
         labels: [],
         is_milestone: false,
         milestone_date: '',
+        progress_percentage: 0,
       });
     }
     setDepToAdd('__none__');
@@ -193,6 +196,7 @@ const WBSTaskDialog = ({
       labels: formData.labels,
       is_milestone: formData.is_milestone,
       milestone_date: formData.is_milestone ? formData.milestone_date : null,
+      progress_percentage: formData.is_milestone ? (formData.status === 'done' ? 100 : 0) : (formData.progress_percentage != null ? Number(formData.progress_percentage) : 0),
     };
 
     await onSubmit(payload);
@@ -345,6 +349,52 @@ const WBSTaskDialog = ({
               </Select>
             </div>
           </div>
+
+          {/* Progress Percentage (only for non-milestones) */}
+          {!formData.is_milestone && (
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <Label htmlFor="progress-percentage" className="text-sm font-medium mb-2 block">
+                % Complete
+              </Label>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <Input
+                    id="progress-percentage"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={formData.progress_percentage}
+                    onChange={e => {
+                      const val = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                      handleChange('progress_percentage', val);
+                      if (val === 100 && formData.status !== 'done') {
+                        // Hint: consider marking as done
+                      }
+                    }}
+                    className="w-24"
+                  />
+                  <span className="text-sm font-medium text-blue-700">{formData.progress_percentage}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div
+                    className="bg-blue-500 h-3 rounded-full transition-all"
+                    style={{ width: `${formData.progress_percentage}%` }}
+                  />
+                </div>
+                {formData.progress_percentage === 100 && formData.status !== 'done' && (
+                  <p className="text-xs text-blue-600 flex items-center gap-1">
+                    💡 Tip: Task is 100% complete — consider updating status to &ldquo;Done&rdquo;
+                  </p>
+                )}
+                {formData.status === 'done' && formData.progress_percentage < 100 && (
+                  <p className="text-xs text-amber-600 flex items-center gap-1">
+                    ⚠️ Status is &ldquo;Done&rdquo; but progress is {formData.progress_percentage}%
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Parent Task */}
           <div>

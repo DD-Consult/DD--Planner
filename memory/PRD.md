@@ -12,6 +12,42 @@ DD Planner is a full-stack resource planning and project management application 
 
 ## Completed Features (This Session)
 
+### Production Core Enhancements & Bug Fixes (Multi-Tenant Core Build)
+1. **Timesheet Pre-fill in Production (Core Fix)**:
+   - Fixed `POST /api/timesheets/auto-fill` with robust date coercion via `coerce_date()`.
+   - Prevented TypeErrors between string and date types in Python when querying or computing overlaps.
+   - Handled projects without defined phases by automatically defaulting to a "General" phase rather than silently skipping allocations.
+   - Passed `standard_capacity` into `allocation_weekly_hours` for accurate hour calculations.
+   - Displayed "General" phase name on timesheet history instead of "—".
+   - Verified via automated backend and frontend tests.
+
+2. **Allocations Display & Project Lookup (Core Fix)**:
+   - Fixed project name and client name resolution in `GET /api/allocations` and `GET /api/my-allocations` by querying both ObjectId `_id` and string `id` fields.
+   - Enriched `create_allocation` and `update_allocation` return payloads with `project_name`, `client_name`, `resource_name`, and `resource_role`.
+   - Updated `Allocations.js` with client-side fallback `projects?.find(...)?.name` if backend returns "Unknown" or blank.
+   - Broadened project selector in Add/Edit Allocation dialog to include Active and Pipeline projects.
+   - Fixed `POST /api/projects/create-full` schema (`allocations` array and optional dates).
+
+3. **WBS Percentage Updates**:
+   - Added `progress_percentage: Optional[float] = 0` to `WBSTaskCreate`, `WBSTaskUpdate`, and `WBSTaskResponse`.
+   - Added bi-directional synchronization in `update_wbs_task`: setting `progress_percentage=100` auto-sets `status='done'`, and setting `status='done'` auto-sets `progress_percentage=100`.
+   - Implemented hierarchical rollup calculation of `progress_percentage` for parent tasks in `get_project_wbs`.
+   - Added `% Complete` section to `WBSTaskDialog.js` with number input, visual progress bar/slider, and status hints.
+   - Added `% Complete` column to both List View and Plan View in `WBSView.js`.
+
+4. **Phase Updates & Schedules Relocated to Main Overview Tab**:
+   - Relocated full "Project Phases & Schedule" management card (view, add, edit, delete phases, dates, budgeted hours, save/cancel) from Settings tab to the Overview tab in `ProjectDetail.js`.
+   - Replaced phase section in Settings tab with an informative card and a "Go to Overview Tab" navigation button.
+
+5. **View-Only Project Information on Overview Tab**:
+   - Created a comprehensive view-only "Project Information" card on the Overview tab displaying all project attributes without requiring edit mode: Project Name, Status, Client, Timeline, Duration in business days, Budgeted Hours, Project Lead, Google Drive link, Monospace Project ID, Created Date, Customer Contact details, and Project Objective.
+
+6. **AI Multi-Step Actions & Chaining Consistency**:
+   - Resolved placeholder injection (`<step_N_id>`) in `/api/ai/chat/execute-plan` so dependent actions (e.g. `create_allocation` referencing `<step_0_id>`) resolve to actual project IDs.
+   - Flattened nested `params` structures inside `dispatch_action`.
+   - Included both `results` and `steps` in `execute_action_plan` response.
+   - Supported flexible name-based lookups and date parsing in `execute_ai_action` (`create_project` and `create_allocation`).
+
 ### Bug Fixes
 1. **Frontend Compilation Error (P0)** — Missing `</div>` in Risks tab JSX in `ProjectDetail.js`. The risk card JSX had 7 div opens but only 6 closes.
 2. **Team Tab Runtime Crash (P1)** — `PhaseAllocationEditor.js` had `<SelectItem value="">` which crashes Radix UI. Changed to `value="default"`.
