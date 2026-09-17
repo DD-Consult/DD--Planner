@@ -999,7 +999,7 @@ const ProjectDetail = () => {
   }
 
   return (
-    <div className="space-y-6 overflow-x-hidden" data-testid="project-detail">
+    <div className="space-y-4 overflow-x-hidden" data-testid="project-detail">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -1078,7 +1078,7 @@ const ProjectDetail = () => {
       )}
 
       {/* Project Header */}
-      <div className="bg-white border border-[#E6E8EC] rounded-lg p-6">
+      <div className="bg-white border border-[#E6E8EC] rounded-lg p-4 sm:p-5">
         {isEditingProject ? (
           /* EDIT MODE (FIX #5) */
           <div className="space-y-4">
@@ -1269,7 +1269,7 @@ const ProjectDetail = () => {
                 <h1 className="text-3xl font-semibold mb-2" style={{ fontFamily: 'Space Grotesk' }}>
                   {project.name}
                 </h1>
-                <p className="text-[#667085]">Client: {project.client_name}</p>
+                <p className="text-[#667085]">Client: {project.client_name || 'No client specified'}</p>
                 
                 {/* Main Contact Info Display */}
                 {(project.main_contact_name || project.main_contact_email || project.main_contact_phone) && (
@@ -1387,10 +1387,10 @@ const ProjectDetail = () => {
       </div>
 
       {/* DASHBOARD WIDGETS - Computed Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* 1. Schedule Health */}
-        <div className="bg-white border border-[#E6E8EC] rounded-lg p-6" data-testid="metric-schedule">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white border border-[#E6E8EC] rounded-lg p-3.5 sm:p-4" data-testid="metric-schedule">
+          <div className="flex items-center justify-between mb-2">
             <div className="w-10 h-10 rounded-lg bg-[#F7F7F8] flex items-center justify-center">
               <TrendingUp size={20} className="text-[#1570EF]" />
             </div>
@@ -1401,8 +1401,8 @@ const ProjectDetail = () => {
         </div>
 
         {/* 2. Avg Team Member Load */}
-        <div className="bg-white border border-[#E6E8EC] rounded-lg p-6" data-testid="metric-load">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white border border-[#E6E8EC] rounded-lg p-3.5 sm:p-4" data-testid="metric-load">
+          <div className="flex items-center justify-between mb-2">
             <div className="w-10 h-10 rounded-lg bg-[#F7F7F8] flex items-center justify-center">
               <Users size={20} className="text-[#1570EF]" />
             </div>
@@ -1415,8 +1415,8 @@ const ProjectDetail = () => {
         </div>
 
         {/* 3. Risk Profile */}
-        <div className="bg-white border border-[#E6E8EC] rounded-lg p-6" data-testid="metric-risks">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white border border-[#E6E8EC] rounded-lg p-3.5 sm:p-4" data-testid="metric-risks">
+          <div className="flex items-center justify-between mb-2">
             <div className="w-10 h-10 rounded-lg bg-[#F7F7F8] flex items-center justify-center">
               <Shield size={20} className="text-[#EF4444]" />
             </div>
@@ -1432,8 +1432,8 @@ const ProjectDetail = () => {
         </div>
 
         {/* 4. Total Effort */}
-        <div className="bg-white border border-[#E6E8EC] rounded-lg p-6" data-testid="metric-effort">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white border border-[#E6E8EC] rounded-lg p-3.5 sm:p-4" data-testid="metric-effort">
+          <div className="flex items-center justify-between mb-2">
             <div className="w-10 h-10 rounded-lg bg-[#F7F7F8] flex items-center justify-center">
               <Clock size={20} className="text-[#1570EF]" />
             </div>
@@ -1460,7 +1460,7 @@ const ProjectDetail = () => {
       </div>
 
       {/* TABBED CONTENT AREA */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
           <TabsList className="inline-flex w-auto min-w-full lg:min-w-0">
             <TabsTrigger value="overview" data-testid="tab-overview" className="whitespace-nowrap">
@@ -1495,48 +1495,9 @@ const ProjectDetail = () => {
         </div>
 
         {/* TAB 1: OVERVIEW */}
-        <TabsContent value="overview" className="space-y-6">
-          {/* AI Insights — Health Score + Predictions */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ProjectHealthScore projectId={id} />
-            <ProjectPredictions projectId={id} />
-          </div>
-
-          {/* Budget Reconciliation — at-a-glance 4-number alignment */}
-          <div className="bg-white border border-[#E6E8EC] rounded-lg p-6">
-            <BudgetReconciliation projectId={id} canEdit={true} />
-          </div>
-
-          <div className="bg-white border border-[#E6E8EC] rounded-lg p-6">
-            <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: 'Space Grotesk' }}>
-              Project Status
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <div className="text-sm text-[#667085] mb-2">Current Status</div>
-                <Badge className={getStatusColor(project.status)}>
-                  {project.status}
-                </Badge>
-              </div>
-              <div>
-                <div className="text-sm text-[#667085] mb-2">Schedule Health</div>
-                <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${getHealthColor(scheduleHealth)}`} />
-                  <span className="font-medium capitalize">{scheduleHealth}</span>
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-[#667085] mb-2">Overall Progress</div>
-                <div className="flex items-center gap-3">
-                  <Progress value={progress} className="flex-1 h-2" />
-                  <span className="font-semibold">{progress}%</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Read-only Project Details Card - Enhanced with all information */}
-          <div className="bg-white border border-[#E6E8EC] rounded-lg p-6">
+        <TabsContent value="overview" className="space-y-4">
+          {/* 1. FIRST: Read-only Project Details Card - Enhanced with all information */}
+          <div className="bg-white border border-[#E6E8EC] rounded-lg p-4 sm:p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold" style={{ fontFamily: 'Space Grotesk' }}>
                 Project Information
@@ -1545,7 +1506,7 @@ const ProjectDetail = () => {
                 Use <strong>Edit Project</strong> button above to modify these details
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {/* Project Name & Status */}
               <div>
                 <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Project Name</div>
@@ -1566,7 +1527,7 @@ const ProjectDetail = () => {
                 <div className="text-xs text-[#667085] uppercase tracking-wide mb-1">Client</div>
                 <div className="text-sm text-[#0B1220] flex items-center gap-1">
                   <Building2 size={14} className="text-[#94A3B8]" />
-                  {project.client_name || '—'}
+                  {project.client_name || 'No client specified'}
                 </div>
               </div>
               
@@ -1697,7 +1658,7 @@ const ProjectDetail = () => {
             </div>
           </div>
 
-          {/* Phase Management - Moved from Settings tab */}
+          {/* 2. SECOND: Phase Management - Moved from Settings tab */}
           <div className="bg-white border border-[#E6E8EC] rounded-lg p-6" data-testid="phase-manager-card-overview">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -1857,7 +1818,47 @@ const ProjectDetail = () => {
             )}
           </div>
 
-          {/* AI-Generated Status Summary */}
+          {/* 3. THIRD: Project Status */}
+          <div className="bg-white border border-[#E6E8EC] rounded-lg p-6">
+            <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: 'Space Grotesk' }}>
+              Project Status
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <div className="text-sm text-[#667085] mb-2">Current Status</div>
+                <Badge className={getStatusColor(project.status)}>
+                  {project.status}
+                </Badge>
+              </div>
+              <div>
+                <div className="text-sm text-[#667085] mb-2">Schedule Health</div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full ${getHealthColor(scheduleHealth)}`} />
+                  <span className="font-medium capitalize">{scheduleHealth}</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-sm text-[#667085] mb-2">Overall Progress</div>
+                <div className="flex items-center gap-3">
+                  <Progress value={progress} className="flex-1 h-2" />
+                  <span className="font-semibold">{progress}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 4. FOURTH: Budget Reconciliation — at-a-glance 4-number alignment */}
+          <div className="bg-white border border-[#E6E8EC] rounded-lg p-6">
+            <BudgetReconciliation projectId={id} canEdit={true} />
+          </div>
+
+          {/* 5. FIFTH: AI Insights — Health Score + Predictions */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <ProjectHealthScore projectId={id} />
+            <ProjectPredictions projectId={id} />
+          </div>
+
+          {/* 6. SIXTH: AI-Generated Status Summary */}
           <div className="bg-white border border-[#E6E8EC] rounded-lg p-6" data-testid="ai-summary-section">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold flex items-center gap-2" style={{ fontFamily: 'Space Grotesk' }}>

@@ -40,17 +40,14 @@ import {
   X
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { format, addDays } from 'date-fns';
+import { format, addDays, startOfWeek } from 'date-fns';
 
 const TimesheetWeeklyCheckin = () => {
   const queryClient = useQueryClient();
   
-  // Get current week start (Monday) - safer implementation
+  // Get current week start (Monday) - canonical startOfWeek
   const currentWeekStart = useMemo(() => {
-    const today = new Date();
-    const day = today.getDay();
-    const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-    const monday = new Date(today.setDate(diff));
+    const monday = startOfWeek(new Date(), { weekStartsOn: 1 });
     return format(monday, 'yyyy-MM-dd');
   }, []);
   
@@ -147,12 +144,22 @@ const TimesheetWeeklyCheckin = () => {
   // Auto-fill mutation
   const autoFillMutation = useMutation({
     mutationFn: () => autoFillTimesheets(currentWeekStart),
-    onSuccess: (data) => {
-      toast.success(`Auto-filled ${data.created + data.updated} timesheet entries`);
-      queryClient.invalidateQueries(['myWeekTimesheets']);
+    onSuccess: (res) => {
+      const created = res.data?.created ?? res.data?.entries_created ?? 0;
+      const updated = res.data?.updated ?? 0;
+      const total = created + updated;
+      if (total === 0) {
+        toast.info(res.data?.message || 'Timesheets are already up to date with your allocations');
+      } else {
+        toast.success(`Auto-filled ${total} timesheet ${total === 1 ? 'entry' : 'entries'} (${created} new, ${updated} updated)`);
+      }
+      queryClient.invalidateQueries({ queryKey: ['myWeekTimesheets'] });
+      queryClient.invalidateQueries({ queryKey: ['myTimesheetHistory'] });
+      queryClient.invalidateQueries({ queryKey: ['timesheets'] });
     },
-    onError: () => {
-      toast.error('Failed to auto-fill timesheets');
+    onError: (err) => {
+      const msg = err?.response?.data?.detail || 'Failed to auto-fill timesheets';
+      toast.error(msg);
     },
   });
 
@@ -548,7 +555,7 @@ const TimesheetWeeklyCheckin = () => {
           <div className="text-center py-12 text-gray-500">
             <Calendar className="w-12 h-12 mx-auto mb-3 opacity-40" />
             <p className="font-medium">No timesheets for this week</p>
-            <p className="text-sm mt-1">Click "Pre-fill" to auto-generate from your allocations, or "Add Entry" to log time manually</p>
+            <p className="text-sm mt-1">Click &ldquo;Pre-fill&rdquo; to auto-generate from your allocations, or &ldquo;Add Entry&rdquo; to log time manually</p>
           </div>
         ) : (
           <div className="space-y-3">

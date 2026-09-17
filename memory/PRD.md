@@ -23,6 +23,15 @@ DD Planner is a full-stack resource planning and project management application 
 
    - **Intelligent Phase Detection for Timesheet Pre-fill & Manual Entry**:
      - Pre-fill now automatically resolves which project phase an allocation belongs to using a cascading heuristic:
+   - **Dashboard Timesheet Pre-fill & Error Handling**:
+     - Fixed `_phase_overlaps_week` in `backend/routes/timesheets.py` to use `coerce_date()`, completely eliminating TypeErrors on string-formatted phase dates.
+     - Updated `TimesheetWeeklyCheckin.js` on the Dashboard to compute `currentWeekStart` using `startOfWeek(new Date(), { weekStartsOn: 1 })`.
+     - Corrected Axios response unwrapping (`res.data?.created`) so toast notifications show accurate counts without `NaN` or uninformative errors.
+   - **Project Details Visibility on Overview Tab**:
+     - Elevated the complete "Project Information" card to the very top of the Overview tab content area.
+     - Streamlined page header and widget margins/padding so the full card is immediately visible upon landing on the Overview tab.
+     - Added `'No client specified'` fallbacks across header and project details card when client name is omitted.
+
        1) Specific allocation `phase_allocations` with positive percentage/hours.
        2) Explicit allocation `phase_ids` or `phase_names` (case-insensitive).
        3) Active WBS tasks assigned to the resource for the project.

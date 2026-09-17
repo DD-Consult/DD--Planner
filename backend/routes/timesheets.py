@@ -520,18 +520,8 @@ async def auto_fill_timesheets(week_start: str, current_user: dict = Depends(get
             p = next((ph for ph in phases if ph.get("id") == pid), None)
             if not p:
                 return True
-            ps, pe = p.get("start_date"), p.get("end_date")
-            try:
-                if isinstance(ps, str):
-                    ps = datetime.fromisoformat(ps.replace('Z', '+00:00')).date()
-                elif isinstance(ps, datetime):
-                    ps = ps.date()
-                if isinstance(pe, str):
-                    pe = datetime.fromisoformat(pe.replace('Z', '+00:00')).date()
-                elif isinstance(pe, datetime):
-                    pe = pe.date()
-            except Exception:
-                return True
+            ps = coerce_date(p.get("start_date"))
+            pe = coerce_date(p.get("end_date"))
             if not ps or not pe:
                 return True
             return ps <= week_end_date and pe >= week_start_date
