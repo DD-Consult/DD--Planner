@@ -21,6 +21,16 @@ DD Planner is a full-stack resource planning and project management application 
    - Displayed "General" phase name on timesheet history instead of "—".
    - Verified via automated backend and frontend tests.
 
+   - **Intelligent Phase Detection for Timesheet Pre-fill & Manual Entry**:
+     - Pre-fill now automatically resolves which project phase an allocation belongs to using a cascading heuristic:
+       1) Specific allocation `phase_allocations` with positive percentage/hours.
+       2) Explicit allocation `phase_ids` or `phase_names` (case-insensitive).
+       3) Active WBS tasks assigned to the resource for the project.
+       4) Date-overlap scoring measuring business day overlap between phase dates and timesheet week.
+       5) Status-based matching for phases marked 'Active' or 'In Progress'.
+       6) Upcoming active phase or default project phase.
+     - In the manual "Add Entry" dialog, selecting a project now automatically pre-selects the best matching active phase for that project.
+
 2. **Allocations Display & Project Lookup (Core Fix)**:
    - Fixed project name and client name resolution in `GET /api/allocations` and `GET /api/my-allocations` by querying both ObjectId `_id` and string `id` fields.
    - Enriched `create_allocation` and `update_allocation` return payloads with `project_name`, `client_name`, `resource_name`, and `resource_role`.

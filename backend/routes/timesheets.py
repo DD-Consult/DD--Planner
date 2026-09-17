@@ -392,58 +392,124 @@ async def auto_fill_timesheets(week_start: str, current_user: dict = Depends(get
                 "end_date": project.get("end_date")
             }]
         
-        # Determine which phases this allocation applies to
+        # ========== ENHANCED PHASE-PICKING LOGIC ==========
+        # Determine which phases this allocation applies to with intelligent matching
         phase_ids_to_process = []
-        phase_names = allocation.get("phase_names", [])
-        phase_ids = allocation.get("phase_ids", [])
         
-        if phase_ids:
-            # Use phase_ids if available (specific phases selected)
-            phase_ids_to_process = phase_ids
-        elif phase_names:
-            # Resolve phase names to IDs
-            for phase in phases:
-                if phase.get("name") in phase_names:
-                    phase_ids_to_process.append(phase.get("id"))
+        # Step 1: Support phase_allocations (percentage > 0 or hours > 0)
+        phase_allocs = allocation.get("phase_allocations", [])
+        active_phase_alloc_ids = [
+            pa["phase_id"] for pa in phase_allocs 
+            if pa.get("phase_id") and (pa.get("percentage", 0) > 0 or pa.get("hours", 0) > 0)
+        ]
+        
+        if active_phase_alloc_ids:
+            # Use phase_allocations if present and active
+            phase_ids_to_process = active_phase_alloc_ids
         else:
-            # No phase filter - allocation applies to whole project
-            # Create ONE timesheet for the first/current active phase, not all phases
-            current_phase = None
+            # Step 2: Check allocation.get("phase_ids") and allocation.get("phase_names")
+            phase_ids = allocation.get("phase_ids", [])
+            phase_names = allocation.get("phase_names", [])
             
-            # Find the current active phase based on dates
-            for phase in phases:
-                phase_start = phase.get('start_date')
-                phase_end = phase.get('end_date')
-                
-                if phase_start and phase_end:
-                    if isinstance(phase_start, str):
-                        phase_start = datetime.fromisoformat(phase_start.replace('Z', '+00:00')).date()
-                    elif isinstance(phase_start, datetime):
-                        phase_start = phase_start.date()
-                    
-                    if isinstance(phase_end, str):
-                        phase_end = datetime.fromisoformat(phase_end.replace('Z', '+00:00')).date()
-                    elif isinstance(phase_end, datetime):
-                        phase_end = phase_end.date()
-                    
-                    # Check if week overlaps with this phase
-                    if phase_start <= week_end_date and phase_end >= week_start_date:
-                        current_phase = phase
-                        break
-            
-            # Use current phase, or fallback to first phase
-            if current_phase and current_phase.get("id"):
-                phase_ids_to_process = [current_phase["id"]]
-            elif phases and phases[0].get("id"):
-                phase_ids_to_process = [phases[0]["id"]]
+            if phase_ids:
+                # Use phase_ids if available (specific phases selected)
+                phase_ids_to_process = phase_ids
+            elif phase_names:
+                # Resolve phase names to IDs with case-insensitive matching
+                phase_names_lower = [pn.lower() if isinstance(pn, str) else pn for pn in phase_names]
+                for phase in phases:
+                    phase_name = phase.get("name", "")
+                    if isinstance(phase_name, str) and phase_name.lower() in phase_names_lower:
+                        phase_ids_to_process.append(phase.get("id"))
             else:
-                continue  # Skip if no valid phases
+                # Step 3: Check active WBS tasks for this resource & project
+                try:
+                    wbs_tasks = await wbs_tasks_collection.find({
+                        "project_id": project_id,
+                        "assigned_to": resource_id,
+                        "status": {"$in": ["todo", "in_progress"]}
+                    }).to_list(length=100)
+                    
+                    # Collect phase_ids from active tasks
+                    task_phase_ids = set()
+                    for task in wbs_tasks:
+                        task_phase_id = task.get("phase_id")
+                        if task_phase_id:
+                            # Verify this phase_id exists in project phases
+                            if any(p.get("id") == task_phase_id for p in phases):
+                                task_phase_ids.add(task_phase_id)
+                    
+                    if task_phase_ids:
+                        phase_ids_to_process = list(task_phase_ids)
+                except Exception as e:
+                    print(f"[Auto-fill] WBS task query for phase detection failed: {e}")
+                
+                # Step 4: Date-overlap scoring - pick phase with highest overlap with current week
+                if not phase_ids_to_process:
+                    phase_overlap_scores = []
+                    for phase in phases:
+                        phase_id = phase.get("id")
+                        if not phase_id:
+                            continue
+                        
+                        phase_start = coerce_date(phase.get("start_date"))
+                        phase_end = coerce_date(phase.get("end_date"))
+                        
+                        if phase_start and phase_end:
+                            # Calculate overlap between phase and current week
+                            overlap_start = max(phase_start, week_start_date)
+                            overlap_end = min(phase_end, week_end_date)
+                            
+                            if overlap_start <= overlap_end:
+                                # Count business days in overlap
+                                overlap_days = count_business_days(overlap_start, overlap_end)
+                                phase_overlap_scores.append((phase_id, overlap_days, phase_start, phase_end))
+                    
+                    if phase_overlap_scores:
+                        # Sort by overlap days (descending), then by phase start date (ascending)
+                        phase_overlap_scores.sort(key=lambda x: (-x[1], x[2]))
+                        # Pick the phase with highest overlap
+                        phase_ids_to_process = [phase_overlap_scores[0][0]]
+                
+                # Step 5: Status-based matching - check for active/in_progress/current phases
+                if not phase_ids_to_process:
+                    for phase in phases:
+                        phase_status = (phase.get("status") or "").lower()
+                        if phase_status in ("active", "in_progress", "current"):
+                            phase_id = phase.get("id")
+                            if phase_id:
+                                phase_ids_to_process.append(phase_id)
+                                break  # Take first active phase
+                
+                # Step 6: Next upcoming phase or first phase fallback
+                if not phase_ids_to_process:
+                    # Find next upcoming phase (phase_end >= week_start_date)
+                    upcoming_phases = []
+                    for phase in phases:
+                        phase_id = phase.get("id")
+                        if not phase_id:
+                            continue
+                        phase_end = coerce_date(phase.get("end_date"))
+                        phase_start = coerce_date(phase.get("start_date"))
+                        if phase_end and phase_end >= week_start_date:
+                            upcoming_phases.append((phase_id, phase_start or week_start_date))
+                    
+                    if upcoming_phases:
+                        # Sort by start date and pick the earliest upcoming phase
+                        upcoming_phases.sort(key=lambda x: x[1])
+                        phase_ids_to_process = [upcoming_phases[0][0]]
+                    elif phases and phases[0].get("id"):
+                        # Final fallback: use first phase
+                        phase_ids_to_process = [phases[0]["id"]]
+                    else:
+                        continue  # Skip if no valid phases
         
-        # Filter out any None values
-        phase_ids_to_process = [pid for pid in phase_ids_to_process if pid]
+        # Filter out any None values and validate phase IDs exist in project
+        valid_phase_ids = {p.get("id") for p in phases if p.get("id")}
+        phase_ids_to_process = [pid for pid in phase_ids_to_process if pid and pid in valid_phase_ids]
         
         if not phase_ids_to_process:
-            # Fallback: use first phase
+            # Final fallback: use first phase
             if phases and phases[0].get("id"):
                 phase_ids_to_process = [phases[0]["id"]]
             else:

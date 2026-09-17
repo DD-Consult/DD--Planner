@@ -445,6 +445,44 @@ const MyTimesheets = () => {
     return proj?.phases || [];
   }, [addForm.project_id, allProjectsData]);
 
+  // Helper function to determine the best matching phase for a project
+  const getBestPhaseForProject = (projectId) => {
+    if (!projectId || !allProjectsData) return '';
+    const proj = allProjectsData.find(p => p.id === projectId);
+    const phases = proj?.phases || [];
+    if (phases.length === 0) return '';
+
+    // 1. Check if any phase overlaps with current week
+    const overlappingPhase = phases.find(phase => {
+      if (!phase.start_date || !phase.end_date) return false;
+      return phase.start_date <= currentWeekEnd && phase.end_date >= currentWeekStart;
+    });
+    if (overlappingPhase) return overlappingPhase.id;
+
+    // 2. Check if any phase has status === 'active'
+    const activePhase = phases.find(phase => 
+      (phase.status || '').toLowerCase() === 'active'
+    );
+    if (activePhase) return activePhase.id;
+
+    // 3. Check if user's allocation for this project has a phase specified
+    const allocation = myAllocsData?.allocations?.find(a => a.project_id === projectId);
+    if (allocation) {
+      // Check phase_ids array first
+      if (allocation.phase_ids && allocation.phase_ids.length > 0) {
+        return allocation.phase_ids[0];
+      }
+      // Check phase_allocations
+      if (allocation.phase_allocations && allocation.phase_allocations.length > 0) {
+        const allocatedPhase = allocation.phase_allocations.find(pa => pa.percentage > 0);
+        if (allocatedPhase?.phase_id) return allocatedPhase.phase_id;
+      }
+    }
+
+    // 4. Fallback to first phase
+    return phases[0]?.id || '';
+  };
+
   const handleAddEntry = () => {
     if (!resource) {
       toast.error('No resource profile linked to your account');
@@ -485,6 +523,55 @@ const MyTimesheets = () => {
     return null;
   }, [addForm.actual_hours, allocationForProject]);
 
+  // Pre-select project and phase if user has only 1 allocation when dialog opens
+  useEffect(() => {
+    if (showAddDialog && myAllocsData?.allocations && allProjectsData) {
+      const allocations = myAllocsData.allocations;
+      if (allocations.length === 1 && !addForm.project_id) {
+        const singleAllocation = allocations[0];
+        const projectId = singleAllocation.project_id;
+        const proj = allProjectsData.find(p => p.id === projectId);
+        const phases = proj?.phases || [];
+        
+        let bestPhase = '';
+        if (phases.length > 0) {
+          // 1. Check if any phase overlaps with current week
+          const overlappingPhase = phases.find(phase => {
+            if (!phase.start_date || !phase.end_date) return false;
+            return phase.start_date <= currentWeekEnd && phase.end_date >= currentWeekStart;
+          });
+          if (overlappingPhase) {
+            bestPhase = overlappingPhase.id;
+          } else {
+            // 2. Check if any phase has status === 'active'
+            const activePhase = phases.find(phase => 
+              (phase.status || '').toLowerCase() === 'active'
+            );
+            if (activePhase) {
+              bestPhase = activePhase.id;
+            } else {
+              // 3. Check if user's allocation has a phase specified
+              if (singleAllocation.phase_ids && singleAllocation.phase_ids.length > 0) {
+                bestPhase = singleAllocation.phase_ids[0];
+              } else if (singleAllocation.phase_allocations && singleAllocation.phase_allocations.length > 0) {
+                const allocatedPhase = singleAllocation.phase_allocations.find(pa => pa.percentage > 0);
+                if (allocatedPhase?.phase_id) bestPhase = allocatedPhase.phase_id;
+              }
+              // 4. Fallback to first phase
+              if (!bestPhase) bestPhase = phases[0]?.id || '';
+            }
+          }
+        }
+        
+        setAddForm(prev => ({
+          ...prev,
+          project_id: projectId,
+          phase_id: bestPhase
+        }));
+      }
+    }
+  }, [showAddDialog, myAllocsData, allProjectsData, addForm.project_id, currentWeekEnd, currentWeekStart]);
+
   return (
     <div className="max-w-4xl mx-auto space-y-6" data-testid="my-timesheets-page">
       {/* Header */}
@@ -513,7 +600,7 @@ const MyTimesheets = () => {
         <div className="flex items-center gap-2 mb-2">
           <Sparkles size={16} className="text-purple-600" />
           <h3 className="text-sm font-semibold text-[#0B1220]">Quick log with AI</h3>
-          <span className="text-xs text-[#667085]">— describe what you did, we'll fill in the rest</span>
+          <span className="text-xs text-[#667085]">— describe what you did, we&apos;ll fill in the rest</span>
         </div>
         <div className="flex gap-2">
           <Input
@@ -647,7 +734,10 @@ const MyTimesheets = () => {
               <Label className="text-sm font-medium mb-1.5 block">Project *</Label>
               <Select
                 value={addForm.project_id}
-                onValueChange={(v) => setAddForm({ ...addForm, project_id: v, phase_id: '' })}
+                onValueChange={(v) => {
+                  const bestPhase = getBestPhaseForProject(v);
+                  setAddForm({ ...addForm, project_id: v, phase_id: bestPhase });
+                }}
               >
                 <SelectTrigger data-testid="ts-project-select">
                   <SelectValue placeholder="Select a project" />
