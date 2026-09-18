@@ -85,6 +85,18 @@ api.interceptors.response.use(
   }
 );
 
+// Request interceptor - attach X-Tenant-Slug header for multi-tenant routing
+api.interceptors.request.use((config) => {
+  // Check for tenant slug from localStorage or query param
+  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const tenantFromUrl = urlParams?.get('tenant');
+  const tenantSlug = tenantFromUrl || (typeof window !== 'undefined' ? localStorage.getItem('tenant_slug') : null);
+  if (tenantSlug && tenantSlug !== 'undefined' && tenantSlug !== 'null') {
+    config.headers['X-Tenant-Slug'] = tenantSlug;
+  }
+  return config;
+});
+
 export const setAuthToken = (token) => {
   if (token) {
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`;

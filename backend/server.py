@@ -84,8 +84,9 @@ app.add_middleware(
 # ============================================================================
 @app.middleware("http")
 async def tenant_context_middleware(request: Request, call_next):
-    if not MULTI_TENANT_ENABLED:
-        # Backward-compat fast path: never touch ContextVar
+    has_override = bool(request.headers.get("x-tenant-slug") or request.query_params.get("tenant"))
+    if not MULTI_TENANT_ENABLED and not has_override:
+        # Backward-compat fast path: never touch ContextVar when no override present
         return await call_next(request)
 
     # Platform admin portal & platform APIs use platform_db directly.

@@ -23,6 +23,14 @@ DD Planner is a full-stack resource planning and project management application 
 
    - **Intelligent Phase Detection for Timesheet Pre-fill & Manual Entry**:
      - Pre-fill now automatically resolves which project phase an allocation belongs to using a cascading heuristic:
+   - **Cloud Run / Default Domain Multi-Tenant Resolution & Login URL Fix**:
+     - Identified root cause of client `404 Page not found` on `neonsnow.australia-southeast1.run.app/login`: Google Cloud Run's default `*.run.app` domains do not support dynamic wildcard subdomains. The signup generator was replacing the service subdomain with the tenant slug.
+     - Updated `_login_url_for()` in `tenant_signup.py` to recognize non-subdomain environments (`.run.app`, `.a.run.app`, `.emergentagent.com`, `localhost`) and generate safe `{scheme}://{host}/login?tenant={slug}` URLs, reserving `{slug}.domain` exclusively for custom domains with wildcard DNS configured (e.g. `*.ddplanner.io`).
+     - Added `.run.app` and `.a.run.app` to dev host suffixes in `tenant_resolver.py`.
+     - Enabled explicit tenant resolution via `X-Tenant-Slug` header and `?tenant=<slug>` query parameter in middleware, allowing multi-tenant workspace separation on any domain.
+     - Added Axios request interceptor in `api.js` to automatically attach `X-Tenant-Slug` based on URL or localStorage.
+     - Added workspace identification badge with "Switch workspace" option on `Login.js`.
+
    - **Dashboard Timesheet Pre-fill & Error Handling**:
      - Fixed `_phase_overlaps_week` in `backend/routes/timesheets.py` to use `coerce_date()`, completely eliminating TypeErrors on string-formatted phase dates.
      - Updated `TimesheetWeeklyCheckin.js` on the Dashboard to compute `currentWeekStart` using `startOfWeek(new Date(), { weekStartsOn: 1 })`.

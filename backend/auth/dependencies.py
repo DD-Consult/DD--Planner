@@ -121,6 +121,14 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         if token_type == TOKEN_TYPE_TENANT:
             jwt_slug = payload.get("tenant_slug")
             current_slug = current_tenant.get("slug") if current_tenant else None
+            # If no tenant in request.state but JWT has tenant_slug, try to resolve it
+            if jwt_slug and not current_tenant:
+                from middleware.tenant_resolver import _lookup_tenant_by_slug
+                tenant = await _lookup_tenant_by_slug(jwt_slug)
+                if tenant:
+                    request.state.tenant = tenant
+                    current_tenant = tenant
+                    current_slug = tenant.get("slug")
             if jwt_slug and current_slug and jwt_slug != current_slug:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,

@@ -63,6 +63,8 @@ _DEV_HOST_SUFFIXES = (
     ".cluster.local",          # k8s internal service DNS
     ".svc.cluster.local",      # k8s services
     ".preview.emergentcf.cloud",  # preview cluster ingress
+    ".run.app",                # Cloud Run default URLs
+    ".a.run.app",              # Cloud Run regional URLs
 )
 
 # --- Simple in-memory cache: {slug: (tenant_doc, expires_at)} ---
@@ -192,7 +194,7 @@ async def resolve_tenant_from_request(request: Request) -> Dict[str, Any]:
           "tenant": <tenant doc or None>,   # None only for platform portal (admin.*)
           "subdomain": <str or None>,       # Raw subdomain extracted
           "is_platform": <bool>,            # True if admin.* subdomain
-          "resolution_mode": <str>,          # 'flag_off' | 'subdomain' | 'default_fallback' | 'platform'
+          "resolution_mode": <str>,          # 'flag_off' | 'subdomain' | 'default_fallback' | 'platform' | 'header_or_query_override'
         }
 
     Behaviour:
@@ -204,6 +206,19 @@ async def resolve_tenant_from_request(request: Request) -> Dict[str, Any]:
           * no subdomain -> default tenant (marketing / dev)
           * subdomain doesn't match -> 404
     """
+    # Check for explicit tenant override via header or query parameter (before flag check)
+    override_slug = request.headers.get("x-tenant-slug") or request.query_params.get("tenant")
+    if override_slug and override_slug not in ("undefined", "null", ""):
+        override_slug = override_slug.strip().lower()
+        tenant = await _lookup_tenant_by_slug(override_slug)
+        if tenant:
+            return {
+                "tenant": tenant,
+                "subdomain": override_slug,
+                "is_platform": False,
+                "resolution_mode": "header_or_query_override",
+            }
+    
     host = _resolve_incoming_host(request)
     subdomain = extract_subdomain(host)
 

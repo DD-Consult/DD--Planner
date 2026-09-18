@@ -117,18 +117,12 @@ def get_current_db() -> AsyncIOMotorDatabase:
     """Return the DB for the current request context.
     
     Resolution:
-      1. If MULTI_TENANT_ENABLED and contextvar is set -> tenant DB
-      2. Otherwise -> the default (legacy) DB
-    
-    This is called by LazyCollection on every attribute access. Its behaviour
-    is what makes the transition backward-compatible: when the flag is off or
-    no tenant is bound (e.g. during startup seeding), everything falls back to
-    the current `_default_db` — which is `resource_planner`.
+      1. If contextvar is set (via subdomain, header, or query param) -> tenant DB
+      2. Otherwise -> the default (legacy) DB (resource_planner)
     """
-    if MULTI_TENANT_ENABLED:
-        tenant_db = _current_tenant_db.get()
-        if tenant_db is not None:
-            return tenant_db
+    tenant_db = _current_tenant_db.get()
+    if tenant_db is not None:
+        return tenant_db
     return _default_db
 
 

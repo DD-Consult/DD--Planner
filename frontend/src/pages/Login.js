@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login, setAuthToken } from '../api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Building2, X } from 'lucide-react';
 
 const Login = ({ onLogin }) => {
   const navigate = useNavigate();
@@ -13,6 +13,31 @@ const Login = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [tenantParam, setTenantParam] = useState(null);
+
+  // Read tenant from URL or localStorage on mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tenantFromUrl = urlParams.get('tenant');
+    
+    if (tenantFromUrl) {
+      // Store in localStorage if coming from URL
+      localStorage.setItem('tenant_slug', tenantFromUrl);
+      setTenantParam(tenantFromUrl);
+    } else {
+      // Check localStorage
+      const stored = localStorage.getItem('tenant_slug');
+      if (stored && stored !== 'undefined' && stored !== 'null') {
+        setTenantParam(stored);
+      }
+    }
+  }, []);
+
+  const handleSwitchWorkspace = () => {
+    localStorage.removeItem('tenant_slug');
+    setTenantParam(null);
+    navigate('/login');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -81,6 +106,30 @@ const Login = ({ onLogin }) => {
               alt="DD Consulting"
               className="h-12 w-auto mx-auto mb-6"
             />
+            
+            {/* Workspace badge - displayed when tenant is detected */}
+            {tenantParam && (
+              <div 
+                className="mb-4 p-3 bg-[#141C2B] border border-[#334155] rounded-lg flex items-center justify-between gap-2"
+                data-testid="tenant-badge"
+              >
+                <div className="flex items-center gap-2 flex-1">
+                  <Building2 className="w-4 h-4 text-[#4A90E2]" />
+                  <div className="text-left">
+                    <div className="text-xs text-[#94A3B8]">Workspace</div>
+                    <div className="font-mono text-sm text-[#F8FAFC] font-semibold">{tenantParam}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSwitchWorkspace}
+                  className="text-xs text-[#4A90E2] hover:text-[#3A7BC8] flex items-center gap-1 whitespace-nowrap"
+                  data-testid="switch-workspace-btn"
+                >
+                  <X className="w-3 h-3" /> Switch
+                </button>
+              </div>
+            )}
             
             {/* Micro label */}
             <div className="text-[#4A90E2] text-xs uppercase tracking-widest font-mono mb-3 opacity-70">

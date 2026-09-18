@@ -149,7 +149,7 @@ export default function Signup() {
             <p className="text-[#94A3B8] mb-6">
               Your workspace <strong className="text-[#CBD5E1]">{signupResult.tenant_name}</strong> is ready.
             </p>
-            <div className="bg-[#141C2B] border border-[#334155] rounded-lg p-4 mb-6 text-left space-y-2 text-sm">
+            <div className="bg-[#141C2B] border border-[#334155] rounded-lg p-4 mb-6 text-left space-y-3 text-sm">
               <div>
                 <span className="text-[#94A3B8]">Workspace:</span>{' '}
                 <span className="font-mono text-[#F8FAFC]">{signupResult.tenant_slug}</span>
@@ -157,6 +157,12 @@ export default function Signup() {
               <div>
                 <span className="text-[#94A3B8]">Admin email:</span>{' '}
                 <span className="font-mono text-[#F8FAFC]">{signupResult.admin_email}</span>
+              </div>
+              <div className="pt-2 border-t border-[#334155]">
+                <div className="text-xs text-[#94A3B8] mb-1">Workspace URL:</div>
+                <div className="font-mono text-[#F8FAFC] break-all bg-[#1F2937] px-2 py-1 rounded border border-[#334155]">
+                  {signupResult.login_url}
+                </div>
               </div>
             </div>
             <a
@@ -241,7 +247,7 @@ export default function Signup() {
             <div>
               <Label htmlFor="slug" className="text-[#CBD5E1]">
                 Workspace URL{' '}
-                <span className="text-[#64748B] text-xs">(you can't change this later)</span>
+                <span className="text-[#64748B] text-xs">(you can&apos;t change this later)</span>
               </Label>
               <div className="flex items-center gap-2">
                 <div className="flex-1 relative">

@@ -24,6 +24,7 @@ from datetime import datetime, timezone, timedelta
 import uuid
 import re
 import logging
+import os
 
 from platform_db import (
     tenants_collection,
@@ -147,28 +148,48 @@ def _login_url_for(request: Request, slug: str) -> str:
     """Build a login URL for the newly-created tenant.
     
     In production this points to `https://<slug>.ddplanner.io/login`.
+    For Cloud Run / preview URLs, uses query parameter fallback.
     In dev (no subdomain routing), uses the current origin with a hint header.
     """
-    # Prefer X-Forwarded-Proto/Host for accuracy behind Cloud Load Balancer
     scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
     forwarded_host = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
     host = forwarded_host or request.headers.get("host", "")
 
-    # If the host looks like a top-level ddplanner-style domain, swap subdomain
     parts = host.split(":")
-    hostname = parts[0]
+    hostname = parts[0].lower()
     port_suffix = f":{parts[1]}" if len(parts) > 1 else ""
 
-    # If hostname already has 3+ dot-parts (i.e., looks like a subdomain),
-    # replace the first segment with the new tenant slug.
-    if hostname.count(".") >= 2:
-        segments = hostname.split(".")
-        segments[0] = slug
-        new_host = ".".join(segments)
-        return f"{scheme}://{new_host}{port_suffix}/login"
+    NON_SUBDOMAIN_SUFFIXES = (
+        "run.app",
+        "a.run.app",
+        "emergentagent.com",
+        "emergentcf.cloud",
+        "emergent.host",
+        "localhost",
+        "127.0.0.1",
+        "0.0.0.0",
+    )
 
-    # Fallback: same host + login (dev/preview flow)
-    return f"{scheme}://{host}/login"
+    is_non_subdomain = any(
+        hostname == s or hostname.endswith("." + s)
+        for s in NON_SUBDOMAIN_SUFFIXES
+    )
+
+    base_domain = os.environ.get("BASE_DOMAIN", "").strip().lower()
+
+    if not is_non_subdomain:
+        if base_domain and (hostname == base_domain or hostname.endswith("." + base_domain)):
+            return f"{scheme}://{slug}.{base_domain}{port_suffix}/login"
+        elif hostname.endswith(".ddplanner.io") or hostname == "ddplanner.io":
+            return f"{scheme}://{slug}.ddplanner.io{port_suffix}/login"
+        elif hostname.count(".") >= 2:
+            segments = hostname.split(".")
+            segments[0] = slug
+            new_host = ".".join(segments)
+            return f"{scheme}://{new_host}{port_suffix}/login"
+
+    # Fallback for Cloud Run default .run.app, preview URLs, and dev:
+    return f"{scheme}://{host}/login?tenant={slug}"
 
 
 @router.post("", response_model=SignupResponse, status_code=201)

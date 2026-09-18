@@ -38,6 +38,18 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     users collection is consulted (via LazyCollection + tenant_context_middleware).
     JWT is issued with tenant claims so it can only be replayed on the same tenant.
     """
+    # Check for tenant override via header or query param
+    override_slug = request.headers.get("x-tenant-slug") or request.query_params.get("tenant")
+    tenant = getattr(request.state, "tenant", None)
+    
+    # If override provided and no tenant resolved yet, try to resolve it
+    if override_slug and override_slug not in ("undefined", "null", "") and not tenant:
+        from middleware.tenant_resolver import _lookup_tenant_by_slug
+        override_slug = override_slug.strip().lower()
+        tenant = await _lookup_tenant_by_slug(override_slug)
+        if tenant:
+            request.state.tenant = tenant
+    
     user = await users_collection.find_one({"email": form_data.username})
     if not user or not verify_password(form_data.password, user["password_hash"]):
         raise HTTPException(
@@ -417,7 +429,7 @@ async def update_client(
                         "id": str(project["_id"]),
                         "name": project["name"]
                     })
-            except:
+            except Exception:
                 continue
     
     updated_user["projects"] = project_details
