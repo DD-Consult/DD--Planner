@@ -23,6 +23,13 @@ DD Planner is a full-stack resource planning and project management application 
 
    - **Intelligent Phase Detection for Timesheet Pre-fill & Manual Entry**:
      - Pre-fill now automatically resolves which project phase an allocation belongs to using a cascading heuristic:
+   - **Production Cloud Run 502/503 RCA & Resolution**:
+     - Identified exact cause of intermittent 502 Bad Gateway on `https://ddplan-502760053858.australia-southeast1.run.app/projects/6a81afb545f7c98ef63971fd/report?period=whole-project`:
+       When PDF/PPT exports were triggered, Chromium exceeded the 1GiB memory limit on Cloud Run, causing Cloud Run to OOM-kill the container instance. During container restart, Nginx returned 502 Bad Gateway to subsequent requests.
+     - Upgraded Cloud Run instance resources in `cloudbuild.yaml` and `deploy_to_gcp.sh` to `--memory 2Gi` and `--cpu 2` with `--min-instances 1`.
+     - In `renderer.py`, added memory-saving Chromium container flags and isolated contexts.
+     - All 6 report data endpoints (`/projects/{id}`, `/planned-vs-actual`, `/risks`, `/allocations`, `/status-updates`) verified working with HTTP 200 on production.
+
    - **Project Lead Report Generation & AI Status Summary Fix**:
      - Identified root cause of project leads not being able to generate reports or AI summaries:
        1) Access control: `reports.py` endpoints (`/api/reports/timesheets/range` and `/api/reports/resource-utilization`) strictly required `require_admin`, returning 403 Forbidden to project leads. Updated to `get_current_user` with project-lead scoping via `get_user_allowed_project_ids()`.
