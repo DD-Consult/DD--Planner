@@ -18,14 +18,16 @@ async def get_ai_config() -> dict:
     Get the app-wide AI configuration.
     Priority:
       1) Per-tenant/app settings from DB (Settings → AI)
-      2) EMERGENT_LLM_KEY (if present)
+      2) EMERGENT_LLM_KEY (if present, checked dynamically)
       3) Env GEMINI_API_KEY default (so a key set in backend .env works everywhere)
     """
     settings = await settings_collection.find_one({"type": "ai_config"})
     if settings and settings.get("ai_provider") and settings.get("ai_api_key"):
         return {"provider": settings["ai_provider"], "api_key": settings["ai_api_key"]}
-    if EMERGENT_LLM_KEY:
-        return {"provider": "emergent", "api_key": EMERGENT_LLM_KEY}
+    # Check EMERGENT_LLM_KEY dynamically from environment
+    emergent_key = os.environ.get("EMERGENT_LLM_KEY", "")
+    if emergent_key:
+        return {"provider": "emergent", "api_key": emergent_key}
     if GEMINI_API_KEY:
         return {"provider": "gemini", "api_key": GEMINI_API_KEY}
     return {"provider": None, "api_key": None}

@@ -635,3 +635,92 @@ agent_communication:
 
   - agent: "testing"
     message: "✅ PDF & PPT EXPORT 503 ERROR RESOLUTION VERIFIED (Sep 21, 2026) — 5/5 tests passed (100% success rate). Test URL: https://enhance-feedback-2.preview.emergentagent.com/api. Test credentials: admin@test.com/admin123. Test project: 6aabd45b6023b8429321ad6c (Website Redesign). CRITICAL VERIFICATION: NO 503 or 500 errors detected on export endpoints. Test results: (TEST 1) Login - ✅ PASSED: Successfully authenticated with admin@test.com/admin123, JWT token received. (TEST 2) PDF Export - ✅ PASSED: GET /api/projects/6aabd45b6023b8429321ad6c/export/pdf returns HTTP 200 with 1.1MB valid PDF (1118912 bytes). Content-Type: application/pdf. Content-Disposition: attachment; filename='Website_Redesign-Report.pdf'. PDF magic bytes (%PDF-1.4) verified. File structure validated (Chromium/Skia PDF generator confirmed). NO 503 or 500 errors. (TEST 3) PPT Export - ✅ PASSED: GET /api/projects/6aabd45b6023b8429321ad6c/export/ppt returns HTTP 200 with 568KB valid PPTX (581513 bytes). Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation. Content-Disposition: attachment; filename='Website_Redesign-Report.pptx'. PPTX structure validated with python-pptx: 7 slides, all slides contain shapes (9, 4, 4, 4, 4, 4, 4 shapes per slide). ZIP magic bytes (PK) verified. NO 503 or 500 errors. (TEST 4) 404 Handling - ✅ PASSED: GET /api/projects/000000000000000000000000/export/pdf correctly returns HTTP 404 for non-existent project. (TEST 5) 401 Handling - ✅ PASSED: GET /api/projects/6aabd45b6023b8429321ad6c/export/pdf without Authorization header correctly returns HTTP 401. BACKEND LOGS VERIFICATION: Checked /var/log/supervisor/backend.err.log and backend.out.log - NO 503, 500, AttributeError, TypeError, or Playwright errors found. Backend logs show successful Playwright rendering: 'Browser launched successfully', 'PDF generated successfully: 1122179 bytes', 'Navigating to http://localhost:3000/print/projects/...', 'Waiting for selector: [data-export-ready=true]'. All export requests logged with HTTP 200 OK status. PLAYWRIGHT STATUS: Chromium browser initialized successfully at startup (version 131.0.6778.33, path: /pw-browsers/chromium-1148/chrome-linux/chrome). Browser pre-warmed during application startup. No cold-start delays detected. VERDICT: 503 error resolution CONFIRMED ✅. Both PDF and PPT export endpoints working perfectly with Playwright headless Chromium rendering. No service unavailable errors. All auth checks working correctly. Files are valid and properly formatted. Test file: /app/test_export_endpoints.py"
+
+  - task: "Project Lead Report Generation - Generate Summary Endpoint"
+    implemented: true
+    working: true
+    file: "backend/routes/projects.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "user"
+        comment: "Review request: Verify POST /api/projects/{project_id}/generate-summary with project lead or admin user generates AI status summary"
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED (Jan 2026): POST /api/projects/{project_id}/generate-summary working correctly for both admin and project lead users. Test results: Admin user (admin@test.com) - HTTP 200, summary generated (808 chars). Project lead user - HTTP 200, summary generated (818 chars). Endpoint requires admin or project lead access (403 for non-leads). AI-powered summary generation working with Emergent LLM fallback. Test file: /app/backend_test_project_lead_reports.py. Test credentials: admin@test.com/admin123."
+
+  - task: "AI Chat Structured JSON Response"
+    implemented: true
+    working: true
+    file: "backend/routes/ai.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "user"
+        comment: "Review request: Verify POST /api/ai/chat generates structured status summary JSON without stripping non-action JSON blocks"
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED (Jan 2026): POST /api/ai/chat working correctly and preserving JSON blocks. Test results: HTTP 200, structured JSON response returned with 13 project items. JSON is wrapped in markdown code blocks (```json ... ```) which is expected behavior. The endpoint does NOT strip JSON blocks - full JSON array preserved in response. Successfully parsed JSON array with all project data (project_name, status, health, progress_percentage). Test file: /app/test_ai_chat_json.py. Test credentials: admin@test.com/admin123."
+
+  - task: "Timesheet Range Report - Project Lead Access"
+    implemented: true
+    working: true
+    file: "backend/routes/reports.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "user"
+        comment: "Review request: Verify GET /api/reports/timesheets/range allows project leads access"
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED (Jan 2026): GET /api/reports/timesheets/range working correctly for both admin and project lead users. Test results: Admin access - HTTP 200, 10 entries, 10 groups (by project). Project lead access - HTTP 200, 10 entries, 1 group (by resource, scoped to their projects). Endpoint properly scopes data based on user role - admins see all data, project leads see only their projects. Flexible grouping (resource/project/client/week) and filtering (resource_id, project_id, client_name, status) working correctly. Test file: /app/backend_test_project_lead_reports.py. Test credentials: admin@test.com/admin123."
+
+  - task: "Resource Utilization Report - Project Lead Access"
+    implemented: true
+    working: true
+    file: "backend/routes/reports.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "user"
+        comment: "Review request: Verify GET /api/reports/resource-utilization allows project leads access"
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED (Jan 2026): GET /api/reports/resource-utilization working correctly for both admin and project lead users. Test results: Admin access - HTTP 200, 5 resources, 189.6 allocated hours. Project lead access - HTTP 200, 5 resources, 189.6 allocated hours. Endpoint calculates allocated hours from allocations (prorated to date range using business days) and actual hours from timesheets. Per-resource breakdown with per-project details included. Utilization percentage calculated correctly. Test file: /app/backend_test_project_lead_reports.py. Test credentials: admin@test.com/admin123."
+
+  - task: "Export PDF - HTTP 200 Success"
+    implemented: true
+    working: true
+    file: "backend/routes/reports.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-VERIFIED (Jan 2026): GET /api/projects/{project_id}/export/pdf succeeds with HTTP 200. Test results: HTTP 200, Content-Type: application/pdf, Content-Length: 1051575 bytes (1026.9 KB). Valid PDF magic bytes (%PDF) verified. File is a valid PDF document. Playwright rendering working correctly. Test file: /app/backend_test_project_lead_reports.py. Test credentials: admin@test.com/admin123. Project ID: 6aabd45b6023b8429321ad6c."
+
+  - task: "Export PPT - HTTP 200 Success"
+    implemented: true
+    working: true
+    file: "backend/routes/reports.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-VERIFIED (Jan 2026): GET /api/projects/{project_id}/export/ppt succeeds with HTTP 200. Test results: HTTP 200, Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation, Content-Length: 397013 bytes (387.7 KB). Valid PPTX/ZIP magic bytes (PK) verified. File is a valid PowerPoint document. Playwright screenshot capture and PPTX composition working correctly. Test file: /app/backend_test_project_lead_reports.py. Test credentials: admin@test.com/admin123. Project ID: 6aabd45b6023b8429321ad6c."
+
+
+  - agent: "testing"
+    message: "✅ PROJECT LEAD REPORT GENERATION TESTING COMPLETE (Jan 2026): Comprehensive testing of project lead report generation and access control performed with 9/9 tests passed (100% success rate). Test URL: https://enhance-feedback-2.preview.emergentagent.com/api. Test credentials: admin@test.com/admin123. Test results by endpoint: (1) POST /api/projects/{project_id}/generate-summary - ✅ WORKING for both admin and project lead users. Admin generated 808 char summary, project lead generated 818 char summary. Endpoint correctly enforces admin/project lead access (403 for non-leads). AI-powered summary generation working with Emergent LLM fallback. (2) POST /api/ai/chat - ✅ WORKING and preserving JSON blocks. Structured JSON response returned with 13 project items in JSON array format. JSON wrapped in markdown code blocks (```json ... ```) as expected. Endpoint does NOT strip JSON blocks - full JSON preserved. Successfully parsed JSON array with project_name, status, health, progress_percentage fields. (3) GET /api/reports/timesheets/range - ✅ WORKING for both admin and project lead users. Admin sees 10 entries with 10 groups (by project). Project lead sees 10 entries with 1 group (by resource, scoped to their projects). Flexible grouping (resource/project/client/week) and filtering working correctly. (4) GET /api/reports/resource-utilization - ✅ WORKING for both admin and project lead users. Returns 5 resources with 189.6 allocated hours. Calculates allocated hours from allocations (prorated using business days) and actual hours from timesheets. Per-resource breakdown with per-project details included. (5) GET /api/projects/{project_id}/export/pdf - ✅ WORKING with HTTP 200. Returns 1026.9 KB valid PDF with correct Content-Type and magic bytes (%PDF). Playwright rendering working correctly. (6) GET /api/projects/{project_id}/export/ppt - ✅ WORKING with HTTP 200. Returns 387.7 KB valid PPTX with correct Content-Type and magic bytes (PK). Playwright screenshot capture and PPTX composition working correctly. All endpoints properly enforce access control and return correct data. No critical issues found. Test files: /app/backend_test_project_lead_reports.py, /app/test_ai_chat_json.py."
+

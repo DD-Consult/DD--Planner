@@ -1850,6 +1850,11 @@ async def edit_status_update(
 @router.post("/api/projects/{project_id}/generate-summary")
 async def generate_project_summary(project_id: str, current_user: dict = Depends(get_current_user)):
     """Generate AI-powered project status summary"""
+    from utils import user_leads_project
+    
+    # Check if user is admin or project lead
+    if not await user_leads_project(current_user, project_id):
+        raise HTTPException(status_code=403, detail="Admin or project lead access required")
     
     # Fetch project data
     project = await projects_collection.find_one({"_id": ObjectId(project_id)})
@@ -1922,34 +1927,59 @@ Risks ({len(risks)} identified):
 
 Current Date: {today}"""
 
-    # Try to generate summary using AI (with Emergent fallback)
+    # Try to generate summary using AI (with multi-provider support)
+    generated_summary = None
     try:
-        # Use emergent integration directly for text response
-        import uuid as uuid_module
-        import re
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        config = await get_ai_config()
+        provider = config.get("provider")
+        api_key = config.get("api_key")
         
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"summary-{uuid_module.uuid4()}",
-            system_message=system_prompt
-        ).with_model("openai", "gpt-4o-mini")
-        
-        user_msg = UserMessage(text=user_message)
-        response = await chat.send_message(user_msg)
-        
-        # Clean response - remove markdown formatting if present
-        if isinstance(response, str):
-            # Remove markdown code blocks if present
-            cleaned = re.sub(r'^```(?:\w+)?\s*', '', response.strip())
-            cleaned = re.sub(r'\s*```$', '', cleaned)
-            generated_summary = cleaned.strip()
-        else:
-            generated_summary = str(response) if response else None
+        if not provider or not api_key:
+            print("No AI configuration found, using fallback template")
+        elif provider == "emergent":
+            # Use emergent integration
+            import uuid as uuid_module
+            import re
+            from emergentintegrations.llm.chat import LlmChat, UserMessage
             
+            chat = LlmChat(
+                api_key=api_key,
+                session_id=f"summary-{uuid_module.uuid4()}",
+                system_message=system_prompt
+            ).with_model("openai", "gpt-4o-mini")
+            
+            user_msg = UserMessage(text=user_message)
+            response = await chat.send_message(user_msg)
+            
+            # Clean response - remove markdown formatting if present
+            if isinstance(response, str):
+                cleaned = re.sub(r'^```(?:\w+)?\s*', '', response.strip())
+                cleaned = re.sub(r'\s*```$', '', cleaned)
+                generated_summary = cleaned.strip()
+            else:
+                generated_summary = str(response) if response else None
+        
+        elif provider == "openai":
+            # Use OpenAI API
+            response = await call_openai_api(api_key, system_prompt, user_message)
+            if response.status_code == 200:
+                result = response.json()
+                generated_summary = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            else:
+                print(f"OpenAI API error: {response.status_code} - {response.text}")
+        
+        elif provider == "gemini":
+            # Use Gemini API
+            response = await call_gemini_api(api_key, system_prompt, user_message)
+            if response.status_code == 200:
+                from services.ai_providers import extract_gemini_text
+                result = response.json()
+                generated_summary = extract_gemini_text(result).strip()
+            else:
+                print(f"Gemini API error: {response.status_code} - {response.text}")
+        
     except Exception as e:
         print(f"AI summary generation error: {type(e).__name__}: {str(e)}")
-        generated_summary = None
     
     if not generated_summary:
         # Fallback to template-based summary

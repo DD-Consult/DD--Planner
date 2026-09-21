@@ -452,13 +452,26 @@ async def get_timesheet_range_report(
     project_id: Optional[str] = Query(None, description="Filter by project ID"),
     client_name: Optional[str] = Query(None, description="Filter by client name (exact match)"),
     status: Optional[str] = Query(None, description="Filter by status: Draft, Submitted, or Approved"),
-    current_user: dict = Depends(require_admin)
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get timesheet range report with flexible grouping and filtering.
-    Admin and super_admin only.
+    Admins see all data; project leads see only their projects.
     Returns summary stats, grouped data, and detailed entries (max 500).
     """
+    from utils import get_user_allowed_project_ids
+    
+    # Check if user is admin or has project access
+    role = (current_user.get("role") or "").lower()
+    if role not in ("admin", "super_admin"):
+        allowed_pids = await get_user_allowed_project_ids(current_user)
+        if allowed_pids is not None:
+            if not allowed_pids:
+                # User has no projects - return empty report
+                return {"summary": {}, "groups": [], "entries": [], "total_entries": 0}
+            if project_id and project_id not in allowed_pids:
+                # User requesting a specific project they don't have access to
+                raise HTTPException(status_code=403, detail="Access denied to this project")
     
     # Validate group_by parameter
     valid_group_by = ["resource", "project", "client", "week"]
@@ -489,6 +502,13 @@ async def get_timesheet_range_report(
         "week_start_date": {"$gte": start_dt},
         "week_end_date": {"$lte": end_dt}
     }
+    
+    # Apply project access control for non-admins
+    if role not in ("admin", "super_admin"):
+        allowed_pids = await get_user_allowed_project_ids(current_user)
+        if allowed_pids is not None and not project_id:
+            # Restrict to user's allowed projects if not requesting a specific project
+            query["project_id"] = {"$in": list(allowed_pids)}
     
     # Apply optional filters
     if resource_id:
@@ -667,7 +687,7 @@ async def get_timesheet_range_report(
 async def get_resource_utilization(
     start_date: str = Query(..., description="Start date YYYY-MM-DD"),
     end_date: str = Query(..., description="End date YYYY-MM-DD"),
-    current_user: dict = Depends(require_admin)
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Resource Utilization Report: Allocated hours vs Actual hours per resource.
@@ -675,8 +695,17 @@ async def get_resource_utilization(
     Allocated hours are computed from the allocations collection,
     prorated to the requested date range using business days (Mon-Fri).
     Actual hours come from timesheet entries in the date range.
+    Admins and project leads can access this report.
     """
-    from utils import count_business_days
+    from utils import count_business_days, get_user_allowed_project_ids
+    
+    # Check access - allow admins and project leads
+    role = (current_user.get("role") or "").lower()
+    if role not in ("admin", "super_admin"):
+        allowed_pids = await get_user_allowed_project_ids(current_user)
+        if allowed_pids is not None and not allowed_pids:
+            # User has no projects - return empty report
+            raise HTTPException(status_code=403, detail="Access denied: No project access")
     
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()

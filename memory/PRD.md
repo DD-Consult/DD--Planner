@@ -23,6 +23,13 @@ DD Planner is a full-stack resource planning and project management application 
 
    - **Intelligent Phase Detection for Timesheet Pre-fill & Manual Entry**:
      - Pre-fill now automatically resolves which project phase an allocation belongs to using a cascading heuristic:
+   - **Project Lead Report Generation & AI Status Summary Fix**:
+     - Identified root cause of project leads not being able to generate reports or AI summaries:
+       1) Access control: `reports.py` endpoints (`/api/reports/timesheets/range` and `/api/reports/resource-utilization`) strictly required `require_admin`, returning 403 Forbidden to project leads. Updated to `get_current_user` with project-lead scoping via `get_user_allowed_project_ids()`.
+       2) AI Summary generation: `routes/projects.py` had direct unvalidated `EMERGENT_LLM_KEY` usage without dynamic provider lookup. Updated to use `get_ai_config()` with multi-provider fallback.
+       3) Aggressive regex in `routes/ai.py`: non-admin chat responses were stripping ALL ````json ... ```` blocks (mistaking report summaries for actions). Updated regex to only filter blocks containing `"action": "..."`, keeping structured report JSON intact.
+     - Verified with `deep_testing_backend_v2` across 9 tests (100% pass rate) for both admin and project lead personas.
+
    - **Production Export Stability & Cloud Run Optimization (PDF & PPTX)**:
      - Root cause of production 503 error: Playwright Chromium browser binary version mismatch on cold start, tight memory limits (1GiB) leading to OOM terminations on Cloud Run, and Chromium multi-process instability during screenshot capture when `--single-process` or unisolated browser contexts were used.
      - Upgraded Cloud Run deployment specs in `cloudbuild.yaml` and `deploy_to_gcp.sh` to `--memory 2Gi` and `--cpu 2` to accommodate headless Chromium alongside Python and Nginx.

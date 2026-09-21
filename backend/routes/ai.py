@@ -1886,10 +1886,13 @@ Guidelines:
         detected_plan = None  # action_plan blocks are held for user confirmation
 
         if not can_act:
-            # Defense in depth: strip any action block a non-admin response may contain
-            _stripped = re.sub(r"```(?:action|json)\s*\{[\s\S]*?\}\s*```", "", ai_response_text)
-            if _stripped != ai_response_text:
-                ai_response_text = _stripped.rstrip() + "\n\n🔒 Making changes needs an admin account — happy to draft the details for you to pass along."
+            # Defense in depth: strip only action blocks from non-admin responses
+            def _filter_action_blocks(m):
+                content = m.group(0)
+                if '"action"' in content:
+                    return "\n\n🔒 Making changes needs an admin account — happy to draft the details for you to pass along."
+                return content
+            ai_response_text = re.sub(r"```(?:action|json)\s*\{[\s\S]*?\}\s*```", _filter_action_blocks, ai_response_text)
         try:
             action_match = None
             raw_json = None
