@@ -53,9 +53,9 @@ steps:
       - "--port"
       - "8080"                  # MUST match nginx listen port and EXPOSE in Dockerfile
       - "--memory"
-      - "1Gi"
+      - "2Gi"
       - "--cpu"
-      - "1"
+      - "2"
       - "--min-instances"
       - "1"                     # Keep 1 instance warm — prevents cold-start 502 on login
       - "--max-instances"

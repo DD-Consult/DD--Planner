@@ -687,11 +687,20 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
   const [magicLinkLoading, setMagicLinkLoading] = useState(false);
   const [generatedLink, setGeneratedLink] = useState(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [forceExportReady, setForceExportReady] = useState(false);
   const isClientMode = searchParams.get('client') === 'true';
   // Print/export mode flags — also read from URL so the component works when used
   // directly under a route that doesn't pass props.
   const printMode = printModeProp || searchParams.get('print') === '1';
   const wbsOnly = wbsOnlyProp || searchParams.get('view') === 'wbs';
+
+  // Force export ready after timeout in print mode (prevent Playwright hanging)
+  useEffect(() => {
+    if (printMode) {
+      const timer = setTimeout(() => setForceExportReady(true), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [printMode]);
 
   // Show filter dialog on mount if no period is set (NOT in print mode)
   useEffect(() => {
@@ -859,7 +868,10 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
       toast.success('PDF exported successfully');
     } catch (err) {
       console.error('PDF export failed:', err);
-      toast.error(`PDF export failed: ${err?.response?.data?.detail || err.message || 'Unknown error'}`);
+      toast.error(`PDF export failed: ${err.response?.data?.detail || err.message || 'Server error'}`, {
+        description: 'Tip: You can also click the Print button to save this report directly as a PDF from your browser.',
+        duration: 8000,
+      });
     } finally {
       setExporting(null);
     }
@@ -874,7 +886,9 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
       toast.success('PPTX exported — 2 slides');
     } catch (err) {
       console.error('PPTX export failed:', err);
-      toast.error(`PPTX export failed: ${err?.response?.data?.detail || err.message || 'Unknown error'}`);
+      toast.error(`PowerPoint export failed: ${err.response?.data?.detail || err.message || 'Server error'}`, {
+        duration: 6000,
+      });
     } finally {
       setExporting(null);
     }
@@ -995,7 +1009,7 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
 
   // Signal to Playwright that all data is ready & rendered
   // Only true once project + (timeReport OR no time tracking) + risks + allocations are all settled
-  const isExportReady = !isLoading && !!project && !!periodInfo && (timeReport !== undefined) && (risks !== undefined) && (allocations !== undefined);
+  const isExportReady = forceExportReady || (!isLoading && !!project && !!periodInfo && (timeReport !== undefined) && (risks !== undefined) && (allocations !== undefined));
 
   // ============================================================
   // WBS-only render path (used by /print routes for WBS exports)

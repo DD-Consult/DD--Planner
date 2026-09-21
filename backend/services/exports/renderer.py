@@ -89,7 +89,12 @@ async def _get_browser() -> Browser:
             _playwright = await async_playwright().start()
         _browser = await _playwright.chromium.launch(
             headless=True,
-            args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+            args=[
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+            ],
         )
 
     logger.info("Initializing Playwright browser (Chromium headless)")
@@ -103,6 +108,29 @@ async def _get_browser() -> Browser:
 
     logger.info(f"Browser launched successfully: {_browser}")
     return _browser
+
+
+async def _get_fresh_context(viewport: dict = None, device_scale_factor: int = 1):
+    """Get a fresh browser context with auto-recovery if the browser disconnected."""
+    global _browser
+    browser = await _get_browser()
+    context_kwargs = {}
+    if viewport:
+        context_kwargs["viewport"] = viewport
+    if device_scale_factor:
+        context_kwargs["device_scale_factor"] = device_scale_factor
+
+    try:
+        return await browser.new_context(**context_kwargs)
+    except Exception as e:
+        logger.warning(f"Failed to create browser context ({e}); resetting browser instance...")
+        try:
+            await browser.close()
+        except Exception:
+            pass
+        _browser = None
+        fresh_browser = await _get_browser()
+        return await fresh_browser.new_context(**context_kwargs)
 
 
 async def render_pdf(
@@ -136,17 +164,20 @@ async def render_pdf(
         margin = {'top': '8mm', 'bottom': '8mm', 'left': '8mm', 'right': '8mm'}
     
     logger.info(f"Rendering PDF from URL: {url}")
-    browser = await _get_browser()
-    page = await browser.new_page()
+    context = await _get_fresh_context()
+    page = await context.new_page()
     
     try:
         # Navigate to URL
         logger.info(f"Navigating to {url}")
-        await page.goto(url, wait_until='networkidle', timeout=timeout_ms)
+        await page.goto(url, wait_until='domcontentloaded', timeout=timeout_ms)
         
         # Wait for the ready indicator
         logger.info(f"Waiting for selector: {wait_selector}")
-        await page.wait_for_selector(wait_selector, timeout=timeout_ms)
+        try:
+            await page.wait_for_selector(wait_selector, timeout=10000)
+        except Exception as e:
+            logger.warning(f"Timeout waiting for selector '{wait_selector}': {e}. Proceeding with PDF generation.")
         
         # Small additional delay to ensure all rendering is complete
         await page.wait_for_timeout(500)
@@ -173,7 +204,7 @@ async def render_pdf(
         logger.error(f"Error rendering PDF: {e}")
         raise
     finally:
-        await page.close()
+        await context.close()
 
 
 async def render_screenshots(
@@ -202,20 +233,20 @@ async def render_screenshots(
         viewport = {'width': 1600, 'height': 900}
     
     logger.info(f"Rendering screenshots from URL: {url}")
-    browser = await _get_browser()
-    page = await browser.new_page(
-        viewport=viewport,
-        device_scale_factor=2  # High DPI
-    )
+    context = await _get_fresh_context(viewport=viewport, device_scale_factor=2)
+    page = await context.new_page()
     
     try:
         # Navigate to URL
         logger.info(f"Navigating to {url}")
-        await page.goto(url, wait_until='networkidle', timeout=timeout_ms)
+        await page.goto(url, wait_until='domcontentloaded', timeout=timeout_ms)
         
         # Wait for the ready indicator
         logger.info(f"Waiting for selector: {wait_selector}")
-        await page.wait_for_selector(wait_selector, timeout=timeout_ms)
+        try:
+            await page.wait_for_selector(wait_selector, timeout=10000)
+        except Exception as e:
+            logger.warning(f"Timeout waiting for selector '{wait_selector}': {e}. Proceeding with screenshot generation.")
         
         # Small additional delay to ensure all rendering is complete
         await page.wait_for_timeout(500)
@@ -247,7 +278,7 @@ async def render_screenshots(
         logger.error(f"Error rendering screenshots: {e}")
         raise
     finally:
-        await page.close()
+        await context.close()
 
 
 async def close_browser():

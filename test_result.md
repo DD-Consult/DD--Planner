@@ -197,6 +197,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ RE-VERIFIED (Sep 21, 2026): 503 error resolution confirmed. Comprehensive testing performed with 5/5 tests passed. GET /api/projects/6aabd45b6023b8429321ad6c/export/pdf returns HTTP 200 with 1.1MB valid PDF (verified with python-pptx). Content-Type: application/pdf, Content-Disposition header present. PDF magic bytes (%PDF-1.4) verified. No 503 or 500 errors detected. Auth checks passed: 404 for non-existent projects, 401 for missing auth. Backend logs show successful Playwright rendering. Test credentials: admin@test.com/admin123."
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-VERIFIED AGAIN (Sep 21, 2026 - Post Renderer Fixes): Export endpoint working perfectly after renderer fixes (isolated contexts, safe browser flags, auto-recovery). Test results: HTTP 200, Content-Type: application/pdf, Content-Length: 1118447 bytes (1.1MB), Content-Disposition: attachment; filename='Website_Redesign-Report.pdf'. PDF magic bytes verified (%PDF-1.4). Backend logs show successful Playwright rendering with browser launched successfully, PDF generated: 1118447 bytes. NO 503 or 500 errors in recent logs. Previous 500 errors in older logs confirm the fix is working. Test credentials: admin@test.com/admin123. Test file: /app/backend_test_export_reverify.py"
 
   - task: "Export Project PPT Endpoint"
     implemented: true
@@ -215,6 +218,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ RE-VERIFIED (Sep 21, 2026): 503 error resolution confirmed. Comprehensive testing performed with 5/5 tests passed. GET /api/projects/6aabd45b6023b8429321ad6c/export/ppt returns HTTP 200 with 568KB valid PPTX containing 7 slides (verified with python-pptx). Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation, Content-Disposition header present. PPTX structure validated (ZIP magic bytes PK verified, all slides contain shapes). No 503 or 500 errors detected. Auth checks passed: 404 for non-existent projects, 401 for missing auth. Backend logs show successful Playwright screenshot capture and PPTX composition. Test credentials: admin@test.com/admin123."
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-VERIFIED AGAIN (Sep 21, 2026 - Post Renderer Fixes): Export endpoint working perfectly after renderer fixes (isolated contexts, safe browser flags, auto-recovery). Test results: HTTP 200, Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation, Content-Length: 581282 bytes (568KB), Content-Disposition: attachment; filename='Website_Redesign-Report.pptx'. PPTX validated with python-pptx: 7 slides, all slides contain shapes (9, 4, 4, 4, 4, 4, 4 shapes respectively). ZIP magic bytes verified (PK). Backend logs show successful Playwright screenshot capture (6 screenshots: header, summary, timeline, overview, budget, wbs) and PPTX composition. NO 503 or 500 errors in recent logs. Previous 500 errors in older logs confirm the fix is working. Test credentials: admin@test.com/admin123. Test file: /app/backend_test_export_reverify.py"
 
   - task: "Export WBS PDF Endpoint"
     implemented: true

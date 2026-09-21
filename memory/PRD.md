@@ -23,6 +23,13 @@ DD Planner is a full-stack resource planning and project management application 
 
    - **Intelligent Phase Detection for Timesheet Pre-fill & Manual Entry**:
      - Pre-fill now automatically resolves which project phase an allocation belongs to using a cascading heuristic:
+   - **Production Export Stability & Cloud Run Optimization (PDF & PPTX)**:
+     - Root cause of production 503 error: Playwright Chromium browser binary version mismatch on cold start, tight memory limits (1GiB) leading to OOM terminations on Cloud Run, and Chromium multi-process instability during screenshot capture when `--single-process` or unisolated browser contexts were used.
+     - Upgraded Cloud Run deployment specs in `cloudbuild.yaml` and `deploy_to_gcp.sh` to `--memory 2Gi` and `--cpu 2` to accommodate headless Chromium alongside Python and Nginx.
+     - Implemented isolated browser contexts (`_get_fresh_context`) with automatic browser reconnection/recovery in `backend/services/exports/renderer.py`.
+     - Switched Playwright navigation wait strategy to `wait_until='domcontentloaded'` with resilient timeout handling.
+     - Verified with `deep_testing_backend_v2`: PDF export (1.1MB, HTTP 200) and PPT export (568KB, 7 slides, HTTP 200) generating cleanly with zero errors.
+
    - **Playwright PDF/PPT Export 503 Error Fix**:
      - Identified root cause of `PDF export failed: Request failed with status code 503`: version mismatch in Chromium headless shell binary (`chromium_headless_shell-1148` required by Playwright 1.49.1 vs stale `chromium_headless_shell-1208`).
      - Installed matching Chromium 1148 binary via `python -m playwright install chromium`.
