@@ -23,6 +23,12 @@ DD Planner is a full-stack resource planning and project management application 
 
    - **Intelligent Phase Detection for Timesheet Pre-fill & Manual Entry**:
      - Pre-fill now automatically resolves which project phase an allocation belongs to using a cascading heuristic:
+   - **Playwright PDF/PPT Export 503 Error Fix**:
+     - Identified root cause of `PDF export failed: Request failed with status code 503`: version mismatch in Chromium headless shell binary (`chromium_headless_shell-1148` required by Playwright 1.49.1 vs stale `chromium_headless_shell-1208`).
+     - Installed matching Chromium 1148 binary via `python -m playwright install chromium`.
+     - Hardened `_ensure_chromium_installed(force: bool = False)` in `backend/services/exports/renderer.py` to support forced re-installation on launch failure, preventing silent fallback loops.
+     - Verified with `deep_testing_backend_v2`: PDF export (1.1MB, HTTP 200) and PPT export (568KB, HTTP 200) fully functional.
+
    - **Cloud Run / Default Domain Multi-Tenant Resolution & Login URL Fix**:
      - Identified root cause of client `404 Page not found` on `neonsnow.australia-southeast1.run.app/login`: Google Cloud Run's default `*.run.app` domains do not support dynamic wildcard subdomains. The signup generator was replacing the service subdomain with the tenant slug.
      - Updated `_login_url_for()` in `tenant_signup.py` to recognize non-subdomain environments (`.run.app`, `.a.run.app`, `.emergentagent.com`, `localhost`) and generate safe `{scheme}://{host}/login?tenant={slug}` URLs, reserving `{slug}.domain` exclusively for custom domains with wildcard DNS configured (e.g. `*.ddplanner.io`).

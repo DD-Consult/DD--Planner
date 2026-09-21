@@ -23,13 +23,13 @@ if not _PW_PATH:
         logger.info("Set PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright (default)")
 
 
-def _ensure_chromium_installed() -> None:
+def _ensure_chromium_installed(force: bool = False) -> None:
     """Best-effort check that Playwright's chromium is installed. If the
     expected executable is missing (e.g. container rebuild wiped /pw-browsers),
     try to install it on demand. Safe to call repeatedly — does nothing if
     chromium is already present."""
     pw_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")
-    if pw_path and os.path.isdir(pw_path):
+    if not force and pw_path and os.path.isdir(pw_path):
         # Look for any chromium_headless_shell-* directory
         try:
             for name in os.listdir(pw_path):
@@ -40,7 +40,7 @@ def _ensure_chromium_installed() -> None:
         except OSError:
             pass
 
-    logger.warning("Chromium headless shell not found — installing on demand...")
+    logger.warning("Chromium headless shell not found or force install requested — installing on demand...")
     try:
         subprocess.run(
             [sys.executable, "-m", "playwright", "install", "chromium"],
@@ -97,8 +97,8 @@ async def _get_browser() -> Browser:
         await _do_launch()
     except Exception as e:
         # Last-ditch: force re-install and retry once
-        logger.warning(f"Browser launch failed ({e}); re-installing chromium and retrying...")
-        _ensure_chromium_installed()
+        logger.warning(f"Browser launch failed ({e}); force re-installing chromium and retrying...")
+        _ensure_chromium_installed(force=True)
         await _do_launch()
 
     logger.info(f"Browser launched successfully: {_browser}")

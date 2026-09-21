@@ -16,6 +16,7 @@ from routes.reports import export_project_pdf
 
 async def test_pdf_export():
     """Test PDF export with a real project"""
+    from unittest.mock import MagicMock
     
     # Find an active project
     project = await projects_collection.find_one({"status": "Active"})
@@ -34,9 +35,13 @@ async def test_pdf_export():
         "allowed_project_ids": []
     }
     
+    # Create a mock request object
+    mock_request = MagicMock()
+    mock_request.headers = {"authorization": ""}
+    
     try:
         # Call the endpoint
-        response = await export_project_pdf(project_id, mock_user)
+        response = await export_project_pdf(project_id, mock_request, mock_user)
         
         # Check response
         if response.media_type == "application/pdf":
