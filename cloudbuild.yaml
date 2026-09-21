@@ -43,7 +43,7 @@ steps:
     args:
       - "run"
       - "deploy"
-      - "dd-planner"
+      - "ddplan"
       - "--image"
       - "australia-southeast1-docker.pkg.dev/$PROJECT_ID/dd-planner/dd-planner:$SHORT_SHA"
       - "--region"

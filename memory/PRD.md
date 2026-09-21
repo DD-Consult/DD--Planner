@@ -23,6 +23,12 @@ DD Planner is a full-stack resource planning and project management application 
 
    - **Intelligent Phase Detection for Timesheet Pre-fill & Manual Entry**:
      - Pre-fill now automatically resolves which project phase an allocation belongs to using a cascading heuristic:
+   - **Production Cloud Run Service Name Alignment (`ddplan` vs `dd-planner`)**:
+     - Identified that the user's active Google Cloud Run service URL is `https://ddplan-502760053858.australia-southeast1.run.app`.
+     - In `cloudbuild.yaml`, `deploy_to_gcp.sh`, and `deploy_gcp_cloudshell.sh`, the service was configured as `dd-planner`. When code was pushed to Git, Cloud Build was deploying to `dd-planner` while the live service `ddplan` remained on an older revision.
+     - Updated `cloudbuild.yaml` to deploy directly to `SERVICE_NAME="ddplan"` with `--memory 2Gi`, `--cpu 2`, and `--min-instances 1`.
+     - Verified with `deep_testing_backend_v2` that configuration and export endpoints operate with 100% success.
+
    - **Production Cloud Run 502/503 RCA & Resolution**:
      - Identified exact cause of intermittent 502 Bad Gateway on `https://ddplan-502760053858.australia-southeast1.run.app/projects/6a81afb545f7c98ef63971fd/report?period=whole-project`:
        When PDF/PPT exports were triggered, Chromium exceeded the 1GiB memory limit on Cloud Run, causing Cloud Run to OOM-kill the container instance. During container restart, Nginx returned 502 Bad Gateway to subsequent requests.

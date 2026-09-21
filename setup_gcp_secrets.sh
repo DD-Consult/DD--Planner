@@ -17,7 +17,7 @@ set -e
 
 PROJECT_ID="dd-planner-494404"
 REGION="australia-southeast1"
-SERVICE_NAME="dd-planner"
+SERVICE_NAME="ddplan"
 
 echo ""
 echo "============================================="

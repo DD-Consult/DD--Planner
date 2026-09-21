@@ -10,7 +10,7 @@ set -e
 
 PROJECT_ID="dd-planner-494404"
 REGION="australia-southeast1"
-SERVICE_NAME="dd-planner"
+SERVICE_NAME="ddplan"
 REPO_URL="https://github.com/DD-Consult/Project-planner.git"
 BRANCH="Main_V2"
 

@@ -16,7 +16,7 @@ set -e  # Stop on any error
 # ---- Configuration ----
 PROJECT_ID="dd-planner-494404"
 REGION="australia-southeast1"
-SERVICE_NAME="dd-planner"
+SERVICE_NAME="ddplan"
 REPO_NAME="dd-planner"
 
 # MongoDB Atlas (your cluster — already migrated)
