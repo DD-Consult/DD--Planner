@@ -6,6 +6,41 @@
 
 ---
 
+## ⚑ Pending Release — Customer Report PDF Clean-Layout Fix (Jul 2025)
+
+**What it fixes:** The exported project customer report PDF was clipping content
+at the right edge (Project Timeline dates, WBS table "ACTUALS VS EST." / "DEPS"
+columns), splitting sections/tables awkwardly across pages, and producing a
+near-blank trailing page.
+
+**Files changed (both must ship together):**
+- `backend/services/exports/renderer.py` — `render_pdf()` now sets
+  `prefer_css_page_size=True` and zeroes Playwright margins when an explicit
+  16:9 width/height is supplied, so `print.css`'s `@page` rule is authoritative
+  and content width is clamped to the printable area (no right-edge clipping).
+- `frontend/src/styles/print.css` — `@media print` width-clamping for the report
+  body, Gantt timeline and WBS table (`table-layout:fixed` + `word-break`), the
+  Gantt now allowed to break across pages (it is taller than one page), and the
+  footer no longer forced onto a blank trailing page.
+
+**Why a full redeploy is required:** the CSS half of the fix is compiled INTO the
+React frontend bundle at `yarn build` time (Dockerfile stage 1). It only reaches
+production when the image is rebuilt and deployed to Cloud Run service `ddplan`.
+Clearing a browser/CDN cache is NOT enough.
+
+**Verification before/after:**
+- Before: 5 pages, WBS "ACTUALS VS EST." clipped, blank page 5.
+- After (verified in preview by the testing agent): clean 16:9 pages
+  (960×540 pts), all WBS columns fully visible, Timeline not clipped, risk items
+  not split mid-item, no blank trailing page.
+- Post-deploy check: regenerate a report PDF from prod and confirm the WBS
+  rightmost columns are fully visible and there is no blank final page.
+
+**Note:** the PDF export does NOT depend on any AI/LLM key — it renders the report
+HTML. (The AI "Status Summary" block is separate and needs the LLM key configured.)
+
+---
+
 ## Architecture Overview
 
 ```
