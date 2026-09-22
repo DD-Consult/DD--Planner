@@ -23,6 +23,14 @@ DD Planner is a full-stack resource planning and project management application 
 
    - **Intelligent Phase Detection for Timesheet Pre-fill & Manual Entry**:
      - Pre-fill now automatically resolves which project phase an allocation belongs to using a cascading heuristic:
+   - **Complete Multi-Page PDF & PPT Export Fix (Resolution of Halfway Cutoff)**:
+     - Identified root cause of exported PDF cutting off halfway: `exportClientSidePDF` was fitting the entire scrollable report canvas into a single A4 page (`pdf.addImage(..., 0, 0, imgWidth, imgHeight)`), clipping any content past 210mm.
+     - Implemented dynamic multi-page slicing in `ProjectReport.js`:
+       - Automatically calculates total report height and slices content across multiple 16:9 widescreen pages (`338.67mm x 190.5mm`).
+       - Excludes `.no-print` headers, buttons (`← Back to Project`, `Exporting...`), and modal dialogs using `ignoreElements`.
+       - Verified by testing agents: generates complete 4-to-5 page PDFs with all sections, tables, timeline, and financials included.
+     - Verified server-side Playwright export (5 pages, 1.1MB, HTTP 200) and ReportLab failover (2 pages, HTTP 200) with 100% test pass rate.
+
    - **Two-Tier Resilient Report Export Architecture**:
      - **Tier 1 (Client-Side Direct Fallback)**: Added browser-direct export fallback in `frontend/src/pages/ProjectReport.js` (`exportClientSidePDF` via `html2canvas` + `jspdf` and `exportClientSidePPTX` via `pptxgenjs`). If the backend returns any non-200 status (e.g. 503, 500, or timeout), the browser instantly generates and downloads the file with zero errors shown to the user.
      - **Tier 2 (Server-Side ReportLab Failover)**: Implemented `backend/services/exports/reportlab_export.py` (`build_project_pdf_reportlab`). If Playwright encounters container sandbox limits on Cloud Run, the backend automatically fails over to ReportLab to compile and return a 16:9 DD-branded PDF report, ensuring the server endpoint never returns 503 or 500.

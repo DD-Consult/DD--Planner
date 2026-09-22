@@ -272,6 +272,17 @@ const ProjectGanttChart = ({ project, phases }) => {
   );
 };
 
+// SectionBox component for displaying summary sections
+const SectionBox = ({ icon: Icon, title, colorClasses, children }) => (
+  <div className={`rounded-lg border ${colorClasses.border} ${colorClasses.bg} overflow-hidden flex flex-col`}>
+    <div className={`px-4 py-2.5 border-b ${colorClasses.border} ${colorClasses.headerBg} flex items-center gap-2`}>
+      <Icon className={`w-4 h-4 ${colorClasses.icon}`} />
+      <h4 className={`text-sm font-bold ${colorClasses.title} uppercase tracking-wide`}>{title}</h4>
+    </div>
+    <div className="p-4 flex-1">{children}</div>
+  </div>
+);
+
 // Client-facing Status Summary with 4 structured sections
 const AIStatusSummary = ({ project, periodInfo, statusUpdates = [], risks = [] }) => {
   const [sections, setSections] = useState(null); // { executive_summary, project_objective, achievements, next_period_focus }
@@ -392,7 +403,6 @@ Rules:
     if (project?.id) {
       generateSummary();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.id, periodInfo?.label]);
 
   const handleSaveSummary = async () => {
@@ -467,16 +477,6 @@ Rules:
       </>
     );
   };
-
-  const SectionBox = ({ icon: Icon, title, colorClasses, children }) => (
-    <div className={`rounded-lg border ${colorClasses.border} ${colorClasses.bg} overflow-hidden flex flex-col`}>
-      <div className={`px-4 py-2.5 border-b ${colorClasses.border} ${colorClasses.headerBg} flex items-center gap-2`}>
-        <Icon className={`w-4 h-4 ${colorClasses.icon}`} />
-        <h4 className={`text-sm font-bold ${colorClasses.title} uppercase tracking-wide`}>{title}</h4>
-      </div>
-      <div className="p-4 flex-1">{children}</div>
-    </div>
-  );
 
   // Render loading / error / empty states at the top-level wrapper
   const wrapperClass = "bg-white rounded-lg border border-gray-200 p-4";
@@ -866,37 +866,67 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
       const { jsPDF } = await import('jspdf');
       const html2canvas = (await import('html2canvas')).default;
       
-      // Find the export-ready element or fallback
-      const element = document.querySelector('[data-export-ready]') || document.getElementById('report-root');
+      // Find the report container (prioritize data-export-ready or max-w container)
+      const element = document.querySelector('.max-w-\\[1600px\\]') || 
+                      document.querySelector('[data-export-ready]') || 
+                      document.body;
       
       if (!element) {
         throw new Error('No exportable content found');
       }
       
-      // Capture the element as canvas
+      // Capture the element as canvas with ignoreElements to exclude navigation/buttons/dialogs
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
+        ignoreElements: (el) => {
+          return el.classList.contains('no-print') || 
+                 el.getAttribute('role') === 'dialog' || 
+                 el.tagName === 'NAV' ||
+                 el.classList.contains('dropdown-menu');
+        }
       });
       
-      // Create landscape PDF (16:9 aspect ratio)
-      const imgWidth = 297; // A4 landscape width in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      // Use 16:9 widescreen page size (or A4 landscape 297 x 210 mm)
+      const pageWidth = 338.67; // 16:9 widescreen width in mm
+      const pageHeight = 190.5; // 16:9 widescreen height in mm
+      // Alternative: Use A4 landscape
+      // const pageWidth = 297; // A4 landscape width in mm
+      // const pageHeight = 210; // A4 landscape height in mm
       
       const pdf = new jsPDF({
         orientation: 'landscape',
         unit: 'mm',
-        format: 'a4',
+        format: [pageWidth, pageHeight],
       });
       
       const imgData = canvas.toDataURL('image/jpeg', 0.85);
-      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
+      
+      // Calculate image dimensions to fit page width
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      // Multi-page pagination logic
+      let heightLeft = imgHeight;
+      let position = 0;
+      
+      // Page 1
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      
+      // Subsequent pages
+      while (heightLeft > 5) {
+        position -= pageHeight;
+        pdf.addPage([pageWidth, pageHeight], 'landscape');
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
       
       // Save the PDF
       pdf.save(`${safeFileName()}.pdf`);
-      toast.success('PDF exported successfully');
+      toast.success('Complete multi-page PDF exported successfully');
     } catch (err) {
       console.error('Client-side PDF export failed:', err);
       // Final fallback to browser print

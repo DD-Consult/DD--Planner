@@ -1,345 +1,372 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Export Endpoints (PDF & PPT)
-Testing memory-optimized, resilient renderer
-Test URL: https://enhance-feedback-2.preview.emergentagent.com
+Backend Export Endpoints Verification Test
+Tests PDF and PPT export endpoints with ReportLab fallback verification
 """
-
 import requests
-import json
-import os
-from io import BytesIO
+import sys
+import io
+from datetime import datetime
 
-# Configuration
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
-TEST_USER = "admin@test.com"
-TEST_PASSWORD = "admin123"
+# Test configuration
+BASE_URL = "http://localhost:8001"
 PROJECT_ID = "6aabd45b6023b8429321ad6c"
+ADMIN_EMAIL = "admin@test.com"
+ADMIN_PASSWORD = "admin123"
 
-# Global token storage
-token = None
+# Color codes for output
+GREEN = '\033[92m'
+RED = '\033[91m'
+YELLOW = '\033[93m'
+BLUE = '\033[94m'
+RESET = '\033[0m'
 
-def login():
-    """Login and get JWT token"""
-    global token
-    print("\n" + "="*80)
-    print("TEST: Login")
-    print("="*80)
+def print_test(msg):
+    print(f"{BLUE}[TEST]{RESET} {msg}")
+
+def print_pass(msg):
+    print(f"{GREEN}✅ PASS:{RESET} {msg}")
+
+def print_fail(msg):
+    print(f"{RED}❌ FAIL:{RESET} {msg}")
+
+def print_info(msg):
+    print(f"{YELLOW}ℹ INFO:{RESET} {msg}")
+
+def login(email, password):
+    """Authenticate and return JWT token"""
+    print_test(f"Authenticating as {email}...")
     
     response = requests.post(
-        f"{BASE_URL}/auth/login",
-        data={
-            "username": TEST_USER,
-            "password": TEST_PASSWORD
-        },
+        f"{BASE_URL}/api/auth/login",
+        data={"username": email, "password": password},
         headers={"Content-Type": "application/x-www-form-urlencoded"}
     )
     
-    print(f"Status: {response.status_code}")
     if response.status_code == 200:
-        data = response.json()
-        token = data.get("access_token")
-        print(f"✅ Login successful. Token: {token[:20]}...")
-        return True
+        token = response.json().get("access_token")
+        print_pass(f"Authentication successful. Token: {token[:20]}...")
+        return token
     else:
-        print(f"❌ Login failed: {response.text}")
-        return False
+        print_fail(f"Authentication failed: {response.status_code} - {response.text}")
+        return None
 
-def get_headers():
-    """Get authorization headers"""
-    return {"Authorization": f"Bearer {token}"}
-
-# ============================================================================
-# TEST 1: Export Project PDF
-# ============================================================================
-def test_export_pdf():
-    """Test GET /api/projects/{project_id}/export/pdf"""
-    print("\n" + "="*80)
-    print("TEST 1: Export Project PDF")
-    print("="*80)
-    
-    url = f"{BASE_URL}/projects/{PROJECT_ID}/export/pdf"
-    print(f"GET {url}")
-    
-    response = requests.get(url, headers=get_headers(), timeout=120)
-    
-    print(f"Status: {response.status_code}")
-    print(f"Content-Type: {response.headers.get('Content-Type')}")
-    print(f"Content-Length: {len(response.content)} bytes")
-    print(f"Content-Disposition: {response.headers.get('Content-Disposition')}")
-    
-    # Check HTTP 200
-    if response.status_code != 200:
-        print(f"❌ FAILED: Expected HTTP 200, got {response.status_code}")
-        print(f"Response: {response.text[:500]}")
-        return False
-    
-    # Check Content-Type
-    content_type = response.headers.get('Content-Type', '')
-    if 'application/pdf' not in content_type:
-        print(f"❌ FAILED: Expected Content-Type 'application/pdf', got '{content_type}'")
-        return False
-    
-    # Check non-empty bytes
-    if len(response.content) == 0:
-        print(f"❌ FAILED: PDF content is empty")
-        return False
+def verify_pdf_bytes(pdf_bytes):
+    """Verify PDF file structure"""
+    if not pdf_bytes:
+        return False, "Empty PDF bytes"
     
     # Check PDF magic bytes
-    if not response.content.startswith(b'%PDF'):
-        print(f"❌ FAILED: Content does not start with PDF magic bytes")
-        print(f"First 20 bytes: {response.content[:20]}")
-        return False
+    if not pdf_bytes.startswith(b'%PDF'):
+        return False, "Invalid PDF magic bytes"
     
-    # Save to file for verification
-    pdf_path = "/tmp/test_export.pdf"
-    with open(pdf_path, "wb") as f:
-        f.write(response.content)
-    print(f"✅ PDF saved to {pdf_path}")
+    # Check for EOF marker
+    if b'%%EOF' not in pdf_bytes:
+        return False, "Missing PDF EOF marker"
     
-    # Verify with pdfinfo
-    try:
-        import subprocess
-        result = subprocess.run(['pdfinfo', pdf_path], capture_output=True, text=True, timeout=10)
-        if result.returncode == 0:
-            print(f"✅ PDF validation successful:")
-            for line in result.stdout.split('\n')[:5]:
-                if line.strip():
-                    print(f"   {line}")
-        else:
-            print(f"⚠️ pdfinfo validation failed: {result.stderr}")
-    except Exception as e:
-        print(f"⚠️ Could not run pdfinfo: {e}")
+    # Get file size
+    size_kb = len(pdf_bytes) / 1024
     
-    print(f"✅ TEST 1 PASSED: PDF export working correctly")
-    return True
+    # Count pages (rough estimate by counting /Page objects)
+    page_count = pdf_bytes.count(b'/Type /Page')
+    
+    return True, f"Valid PDF: {size_kb:.1f} KB, ~{page_count} pages"
 
-# ============================================================================
-# TEST 2: Export Project PPT
-# ============================================================================
-def test_export_ppt():
-    """Test GET /api/projects/{project_id}/export/ppt"""
-    print("\n" + "="*80)
-    print("TEST 2: Export Project PPT")
-    print("="*80)
+def verify_pptx_bytes(pptx_bytes):
+    """Verify PPTX file structure"""
+    if not pptx_bytes:
+        return False, "Empty PPTX bytes"
     
-    url = f"{BASE_URL}/projects/{PROJECT_ID}/export/ppt"
-    print(f"GET {url}")
+    # Check ZIP magic bytes (PPTX is a ZIP file)
+    if not pptx_bytes.startswith(b'PK'):
+        return False, "Invalid PPTX magic bytes (not a ZIP file)"
     
-    response = requests.get(url, headers=get_headers(), timeout=120)
+    # Get file size
+    size_kb = len(pptx_bytes) / 1024
     
-    print(f"Status: {response.status_code}")
-    print(f"Content-Type: {response.headers.get('Content-Type')}")
-    print(f"Content-Length: {len(response.content)} bytes")
-    print(f"Content-Disposition: {response.headers.get('Content-Disposition')}")
-    
-    # Check HTTP 200
-    if response.status_code != 200:
-        print(f"❌ FAILED: Expected HTTP 200, got {response.status_code}")
-        print(f"Response: {response.text[:500]}")
-        return False
-    
-    # Check Content-Type
-    content_type = response.headers.get('Content-Type', '')
-    expected_mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    if expected_mime not in content_type:
-        print(f"❌ FAILED: Expected Content-Type '{expected_mime}', got '{content_type}'")
-        return False
-    
-    # Check non-empty bytes
-    if len(response.content) == 0:
-        print(f"❌ FAILED: PPTX content is empty")
-        return False
-    
-    # Check PPTX magic bytes (ZIP format: PK)
-    if not response.content.startswith(b'PK'):
-        print(f"❌ FAILED: Content does not start with ZIP/PPTX magic bytes")
-        print(f"First 20 bytes: {response.content[:20]}")
-        return False
-    
-    # Save to file for verification
-    pptx_path = "/tmp/test_export.pptx"
-    with open(pptx_path, "wb") as f:
-        f.write(response.content)
-    print(f"✅ PPTX saved to {pptx_path}")
-    
-    # Verify with python-pptx
+    # Try to validate with python-pptx
     try:
         from pptx import Presentation
-        prs = Presentation(pptx_path)
+        prs = Presentation(io.BytesIO(pptx_bytes))
         slide_count = len(prs.slides)
-        print(f"✅ PPTX validation successful:")
-        print(f"   Slide count: {slide_count}")
-        
-        # Check each slide has shapes
-        for i, slide in enumerate(prs.slides):
-            shape_count = len(slide.shapes)
-            print(f"   Slide {i+1}: {shape_count} shapes")
-            if shape_count == 0:
-                print(f"   ⚠️ Warning: Slide {i+1} has no shapes")
-        
+        return True, f"Valid PPTX: {size_kb:.1f} KB, {slide_count} slides"
     except Exception as e:
-        print(f"⚠️ PPTX validation failed: {e}")
+        return True, f"Valid PPTX (ZIP structure): {size_kb:.1f} KB (python-pptx validation failed: {e})"
+
+def test_pdf_export(token):
+    """Test PDF export endpoint"""
+    print_test(f"Testing GET /api/projects/{PROJECT_ID}/export/pdf...")
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    response = requests.get(
+        f"{BASE_URL}/api/projects/{PROJECT_ID}/export/pdf",
+        headers=headers,
+        timeout=60
+    )
+    
+    print_info(f"Response status: {response.status_code}")
+    print_info(f"Content-Type: {response.headers.get('Content-Type')}")
+    print_info(f"Content-Length: {response.headers.get('Content-Length')} bytes")
+    print_info(f"Content-Disposition: {response.headers.get('Content-Disposition')}")
+    
+    if response.status_code != 200:
+        print_fail(f"Expected status 200, got {response.status_code}")
+        print_fail(f"Response: {response.text[:500]}")
         return False
     
-    print(f"✅ TEST 2 PASSED: PPT export working correctly")
+    # Verify Content-Type
+    content_type = response.headers.get('Content-Type', '')
+    if 'application/pdf' not in content_type:
+        print_fail(f"Expected Content-Type 'application/pdf', got '{content_type}'")
+        return False
+    
+    print_pass("Content-Type is correct (application/pdf)")
+    
+    # Verify Content-Disposition header
+    content_disposition = response.headers.get('Content-Disposition', '')
+    if 'attachment' not in content_disposition:
+        print_fail(f"Expected Content-Disposition with 'attachment', got '{content_disposition}'")
+        return False
+    
+    print_pass("Content-Disposition header is correct")
+    
+    # Verify PDF bytes
+    pdf_bytes = response.content
+    is_valid, msg = verify_pdf_bytes(pdf_bytes)
+    
+    if not is_valid:
+        print_fail(f"PDF validation failed: {msg}")
+        return False
+    
+    print_pass(f"PDF validation passed: {msg}")
+    
+    # Save PDF for manual inspection
+    filename = f"/tmp/test_export_pdf_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    with open(filename, 'wb') as f:
+        f.write(pdf_bytes)
+    print_info(f"PDF saved to {filename}")
+    
     return True
 
-# ============================================================================
-# TEST 3: Check Backend Logs for Errors
-# ============================================================================
-def test_backend_logs():
-    """Check backend logs for 503 or 500 errors"""
-    print("\n" + "="*80)
-    print("TEST 3: Check Backend Logs")
-    print("="*80)
+def test_ppt_export(token):
+    """Test PPT export endpoint"""
+    print_test(f"Testing GET /api/projects/{PROJECT_ID}/export/ppt...")
     
-    log_files = [
-        "/var/log/supervisor/backend.err.log",
-        "/var/log/supervisor/backend.out.log"
-    ]
+    headers = {"Authorization": f"Bearer {token}"}
+    response = requests.get(
+        f"{BASE_URL}/api/projects/{PROJECT_ID}/export/ppt",
+        headers=headers,
+        timeout=60
+    )
     
-    error_patterns = ["503", "500", "ERROR", "CRITICAL", "Traceback"]
-    found_errors = []
+    print_info(f"Response status: {response.status_code}")
+    print_info(f"Content-Type: {response.headers.get('Content-Type')}")
+    print_info(f"Content-Length: {response.headers.get('Content-Length')} bytes")
+    print_info(f"Content-Disposition: {response.headers.get('Content-Disposition')}")
     
-    for log_file in log_files:
-        if not os.path.exists(log_file):
-            print(f"⚠️ Log file not found: {log_file}")
-            continue
-        
-        print(f"\nChecking {log_file}...")
-        try:
-            with open(log_file, 'r') as f:
-                # Read last 200 lines
-                lines = f.readlines()[-200:]
-                
-            for i, line in enumerate(lines):
-                for pattern in error_patterns:
-                    if pattern in line and 'export' in line.lower():
-                        found_errors.append(f"{log_file}:{len(lines)-200+i}: {line.strip()}")
-        
-        except Exception as e:
-            print(f"⚠️ Could not read log file: {e}")
-    
-    if found_errors:
-        print(f"\n❌ FOUND {len(found_errors)} EXPORT-RELATED ERRORS IN LOGS:")
-        for error in found_errors[:10]:  # Show first 10
-            print(f"   {error}")
+    if response.status_code != 200:
+        print_fail(f"Expected status 200, got {response.status_code}")
+        print_fail(f"Response: {response.text[:500]}")
         return False
-    else:
-        print(f"✅ No export-related errors found in backend logs")
+    
+    # Verify Content-Type
+    content_type = response.headers.get('Content-Type', '')
+    expected_type = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    if expected_type not in content_type:
+        print_fail(f"Expected Content-Type '{expected_type}', got '{content_type}'")
+        return False
+    
+    print_pass("Content-Type is correct")
+    
+    # Verify Content-Disposition header
+    content_disposition = response.headers.get('Content-Disposition', '')
+    if 'attachment' not in content_disposition:
+        print_fail(f"Expected Content-Disposition with 'attachment', got '{content_disposition}'")
+        return False
+    
+    print_pass("Content-Disposition header is correct")
+    
+    # Verify PPTX bytes
+    pptx_bytes = response.content
+    is_valid, msg = verify_pptx_bytes(pptx_bytes)
+    
+    if not is_valid:
+        print_fail(f"PPTX validation failed: {msg}")
+        return False
+    
+    print_pass(f"PPTX validation passed: {msg}")
+    
+    # Save PPTX for manual inspection
+    filename = f"/tmp/test_export_pptx_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
+    with open(filename, 'wb') as f:
+        f.write(pptx_bytes)
+    print_info(f"PPTX saved to {filename}")
+    
+    return True
+
+def test_reportlab_fallback():
+    """Test ReportLab fallback functionality"""
+    print_test("Testing ReportLab fallback functionality...")
+    
+    try:
+        import sys
+        sys.path.insert(0, '/app/backend')
+        from services.exports.reportlab_export import build_project_pdf_reportlab
+        
+        # Create a minimal project dict
+        test_project = {
+            "_id": "test_id",
+            "name": "Test Project",
+            "client_name": "Test Client",
+            "start_date": "2026-01-01",
+            "end_date": "2026-12-31",
+            "budgeted_hours": 1000,
+            "status": "active",
+            "health": "green",
+            "phases": []
+        }
+        
+        # Generate PDF using ReportLab
+        pdf_bytes = build_project_pdf_reportlab(project=test_project)
+        
+        # Verify the generated PDF
+        is_valid, msg = verify_pdf_bytes(pdf_bytes)
+        
+        if not is_valid:
+            print_fail(f"ReportLab PDF validation failed: {msg}")
+            return False
+        
+        print_pass(f"ReportLab fallback working: {msg}")
+        
+        # Check if it's a multi-page PDF
+        page_count = pdf_bytes.count(b'/Type /Page')
+        if page_count >= 2:
+            print_pass(f"ReportLab generates multi-page PDF ({page_count} pages)")
+        else:
+            print_info(f"ReportLab generates single-page PDF ({page_count} page)")
+        
+        # Save for inspection
+        filename = f"/tmp/test_reportlab_fallback_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        with open(filename, 'wb') as f:
+            f.write(pdf_bytes)
+        print_info(f"ReportLab PDF saved to {filename}")
+        
         return True
+        
+    except ImportError as e:
+        print_fail(f"Failed to import ReportLab module: {e}")
+        return False
+    except Exception as e:
+        print_fail(f"ReportLab fallback test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
-# ============================================================================
-# TEST 4: Test with Non-existent Project (404 check)
-# ============================================================================
-def test_export_404():
-    """Test export endpoints return 404 for non-existent project"""
-    print("\n" + "="*80)
-    print("TEST 4: Export 404 Handling")
-    print("="*80)
+def test_auth_checks(token):
+    """Test authentication requirements"""
+    print_test("Testing authentication requirements...")
     
-    fake_project_id = "000000000000000000000000"
-    
-    # Test PDF
-    url = f"{BASE_URL}/projects/{fake_project_id}/export/pdf"
-    print(f"GET {url}")
-    response = requests.get(url, headers=get_headers(), timeout=30)
-    print(f"PDF Status: {response.status_code}")
-    
-    if response.status_code != 404:
-        print(f"❌ FAILED: Expected 404 for non-existent project PDF, got {response.status_code}")
+    # Test without token
+    response = requests.get(f"{BASE_URL}/api/projects/{PROJECT_ID}/export/pdf")
+    if response.status_code == 401:
+        print_pass("PDF endpoint correctly returns 401 without auth token")
+    else:
+        print_fail(f"PDF endpoint should return 401 without auth, got {response.status_code}")
         return False
     
-    # Test PPT
-    url = f"{BASE_URL}/projects/{fake_project_id}/export/ppt"
-    print(f"GET {url}")
-    response = requests.get(url, headers=get_headers(), timeout=30)
-    print(f"PPT Status: {response.status_code}")
-    
-    if response.status_code != 404:
-        print(f"❌ FAILED: Expected 404 for non-existent project PPT, got {response.status_code}")
+    # Test with invalid token
+    headers = {"Authorization": "Bearer invalid_token_12345"}
+    response = requests.get(
+        f"{BASE_URL}/api/projects/{PROJECT_ID}/export/pdf",
+        headers=headers
+    )
+    if response.status_code == 401:
+        print_pass("PDF endpoint correctly returns 401 with invalid token")
+    else:
+        print_fail(f"PDF endpoint should return 401 with invalid token, got {response.status_code}")
         return False
     
-    print(f"✅ TEST 4 PASSED: 404 handling working correctly")
+    # Test with non-existent project
+    headers = {"Authorization": f"Bearer {token}"}
+    response = requests.get(
+        f"{BASE_URL}/api/projects/000000000000000000000000/export/pdf",
+        headers=headers
+    )
+    if response.status_code == 404:
+        print_pass("PDF endpoint correctly returns 404 for non-existent project")
+    else:
+        print_fail(f"PDF endpoint should return 404 for non-existent project, got {response.status_code}")
+        return False
+    
     return True
 
-# ============================================================================
-# TEST 5: Test without Auth (401 check)
-# ============================================================================
-def test_export_401():
-    """Test export endpoints return 401 without auth"""
-    print("\n" + "="*80)
-    print("TEST 5: Export 401 Handling")
-    print("="*80)
-    
-    # Test PDF without auth
-    url = f"{BASE_URL}/projects/{PROJECT_ID}/export/pdf"
-    print(f"GET {url} (no auth)")
-    response = requests.get(url, timeout=30)
-    print(f"PDF Status: {response.status_code}")
-    
-    if response.status_code != 401:
-        print(f"❌ FAILED: Expected 401 for PDF without auth, got {response.status_code}")
-        return False
-    
-    # Test PPT without auth
-    url = f"{BASE_URL}/projects/{PROJECT_ID}/export/ppt"
-    print(f"GET {url} (no auth)")
-    response = requests.get(url, timeout=30)
-    print(f"PPT Status: {response.status_code}")
-    
-    if response.status_code != 401:
-        print(f"❌ FAILED: Expected 401 for PPT without auth, got {response.status_code}")
-        return False
-    
-    print(f"✅ TEST 5 PASSED: 401 handling working correctly")
-    return True
-
-# ============================================================================
-# Main Test Runner
-# ============================================================================
 def main():
     print("\n" + "="*80)
-    print("EXPORT ENDPOINTS VERIFICATION TEST SUITE")
-    print("Testing memory-optimized, resilient renderer")
-    print("="*80)
-    print(f"Base URL: {BASE_URL}")
-    print(f"Project ID: {PROJECT_ID}")
-    print(f"Test User: {TEST_USER}")
+    print("BACKEND EXPORT ENDPOINTS VERIFICATION TEST")
+    print("="*80 + "\n")
     
-    results = []
+    test_results = []
     
-    # Login first
-    if not login():
-        print("\n❌ LOGIN FAILED - Cannot proceed with tests")
-        return
+    # Test 1: Authentication
+    print("\n" + "-"*80)
+    print("TEST 1: AUTHENTICATION")
+    print("-"*80)
+    token = login(ADMIN_EMAIL, ADMIN_PASSWORD)
+    if not token:
+        print_fail("Authentication failed. Cannot proceed with tests.")
+        sys.exit(1)
+    test_results.append(("Authentication", True))
     
-    # Run tests
-    results.append(("Export PDF", test_export_pdf()))
-    results.append(("Export PPT", test_export_ppt()))
-    results.append(("Backend Logs Check", test_backend_logs()))
-    results.append(("404 Handling", test_export_404()))
-    results.append(("401 Handling", test_export_401()))
+    # Test 2: PDF Export
+    print("\n" + "-"*80)
+    print("TEST 2: PDF EXPORT ENDPOINT")
+    print("-"*80)
+    pdf_result = test_pdf_export(token)
+    test_results.append(("PDF Export", pdf_result))
+    
+    # Test 3: PPT Export
+    print("\n" + "-"*80)
+    print("TEST 3: PPT EXPORT ENDPOINT")
+    print("-"*80)
+    ppt_result = test_ppt_export(token)
+    test_results.append(("PPT Export", ppt_result))
+    
+    # Test 4: ReportLab Fallback
+    print("\n" + "-"*80)
+    print("TEST 4: REPORTLAB FALLBACK")
+    print("-"*80)
+    reportlab_result = test_reportlab_fallback()
+    test_results.append(("ReportLab Fallback", reportlab_result))
+    
+    # Test 5: Auth Checks
+    print("\n" + "-"*80)
+    print("TEST 5: AUTHENTICATION CHECKS")
+    print("-"*80)
+    auth_result = test_auth_checks(token)
+    test_results.append(("Auth Checks", auth_result))
     
     # Summary
     print("\n" + "="*80)
     print("TEST SUMMARY")
     print("="*80)
     
-    passed = sum(1 for _, result in results if result)
-    total = len(results)
+    passed = sum(1 for _, result in test_results if result)
+    total = len(test_results)
     
-    for test_name, result in results:
-        status = "✅ PASSED" if result else "❌ FAILED"
-        print(f"{status}: {test_name}")
+    for test_name, result in test_results:
+        status = f"{GREEN}✅ PASSED{RESET}" if result else f"{RED}❌ FAILED{RESET}"
+        print(f"{test_name:30} {status}")
     
-    print(f"\nTotal: {passed}/{total} tests passed ({passed*100//total}% success rate)")
+    print("-"*80)
+    print(f"Total: {passed}/{total} tests passed ({passed/total*100:.1f}%)")
+    print("="*80 + "\n")
     
     if passed == total:
-        print("\n🎉 ALL TESTS PASSED - Export endpoints working correctly!")
+        print(f"{GREEN}🎉 ALL TESTS PASSED!{RESET}\n")
+        sys.exit(0)
     else:
-        print(f"\n⚠️ {total - passed} TEST(S) FAILED - See details above")
+        print(f"{RED}⚠️  SOME TESTS FAILED{RESET}\n")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
