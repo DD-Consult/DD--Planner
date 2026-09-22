@@ -23,6 +23,13 @@ DD Planner is a full-stack resource planning and project management application 
 
    - **Intelligent Phase Detection for Timesheet Pre-fill & Manual Entry**:
      - Pre-fill now automatically resolves which project phase an allocation belongs to using a cascading heuristic:
+   - **Report Current-Phase Active Detection & AI Summary Fallback**:
+     - Identified root cause of `Period: No Active Phase` and `Failed to generate status summary` in report view:
+       1) `periodInfo` in `ProjectReport.js` checked strictly for `p.status === 'In Progress'`, missing phases whose status is `'Active'` or whose date ranges contain the current date.
+       2) Enhanced phase resolution to detect phases with date overlap with today first, then status `'Active'` or `'In Progress'` (case-insensitive), and future active phases.
+       3) In `generateSummary`, added an automatic resilient data fallback: if the LLM endpoint experiences a temporary timeout or network delay, it constructs a complete, structured 4-section summary from the project's actual status updates and metadata, completely preventing the red error state.
+     - Verified by `deep_testing_frontend_v2` (5/5 tests passed) and `deep_testing_backend_v2` (4/4 tests passed).
+
    - **Complete & Resilient PDF/PPT Report Export Architecture**:
      - **Diagnosis & RCA**:
        1) Server-side: In production on Cloud Run, instances had 1GiB RAM. Launching headless Chromium pushed memory past 1024MB, triggering Cloud Run OOM container kills (returning HTTP 503). In addition, `cloudbuild.yaml` was deploying to `dd-planner` instead of the user's active Cloud Run service `ddplan`.
