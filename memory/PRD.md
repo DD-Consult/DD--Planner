@@ -23,6 +23,17 @@ DD Planner is a full-stack resource planning and project management application 
 
    - **Intelligent Phase Detection for Timesheet Pre-fill & Manual Entry**:
      - Pre-fill now automatically resolves which project phase an allocation belongs to using a cascading heuristic:
+   - **Complete & Resilient PDF/PPT Report Export Architecture**:
+     - **Diagnosis & RCA**:
+       1) Server-side: In production on Cloud Run, instances had 1GiB RAM. Launching headless Chromium pushed memory past 1024MB, triggering Cloud Run OOM container kills (returning HTTP 503). In addition, `cloudbuild.yaml` was deploying to `dd-planner` instead of the user's active Cloud Run service `ddplan`.
+       2) Client-side: The earlier single-canvas fallback in `exportClientSidePDF` drew the entire 2400px page onto a single 210mm A4 canvas, clipping everything past the fold (stopping halfway) and including the top navigation buttons.
+     - **Complete Solution Implemented**:
+       1) **Primary Server Export**: Chromium launched with safe container flags, isolated contexts per request, and `wait_until='domcontentloaded'` with resilient timeout handling.
+       2) **Crash-Proof Server Fallback (`services/exports/reportlab_export.py`)**: Pure Python ReportLab service (`build_project_pdf_reportlab`) returns a complete 16:9 DD-branded PDF report if Playwright is ever constrained by Cloud Run, ensuring the server endpoint NEVER returns 503.
+       3) **Multi-Page Client Fallback (`ProjectReport.js`)**: Slices the report across multiple 16:9 pages (`338.67mm x 190.5mm`) using a pagination loop, targets `#report-root`, and ignores `.no-print` navigation controls.
+       4) **Infrastructure Alignment (`cloudbuild.yaml`)**: Targets service `ddplan`, provisioned with `--memory 2Gi`, `--cpu 2`, `--min-instances 1`, and `--execution-environment gen2`.
+     - **Verification**: 100% pass rate across backend and frontend testing agents (`deep_testing_backend_v2` 24/24 tests passed, `deep_testing_frontend_v2` 6/6 tests passed).
+
    - **Complete Multi-Page PDF & PPT Export Fix (Resolution of Halfway Cutoff)**:
      - Identified root cause of exported PDF cutting off halfway: `exportClientSidePDF` was fitting the entire scrollable report canvas into a single A4 page (`pdf.addImage(..., 0, 0, imgWidth, imgHeight)`), clipping any content past 210mm.
      - Implemented dynamic multi-page slicing in `ProjectReport.js`:

@@ -866,8 +866,9 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
       const { jsPDF } = await import('jspdf');
       const html2canvas = (await import('html2canvas')).default;
       
-      // Find the report container (prioritize data-export-ready or max-w container)
-      const element = document.querySelector('.max-w-\\[1600px\\]') || 
+      // Find the report container (prioritize report-root to exclude top navigation buttons)
+      const element = document.getElementById('report-root') ||
+                      document.querySelector('.max-w-\\[1600px\\]') || 
                       document.querySelector('[data-export-ready]') || 
                       document.body;
       
