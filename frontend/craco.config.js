@@ -61,6 +61,17 @@ const webpackConfig = {
         crypto: false,
       };
 
+      // Handle node: protocol imports by stripping node: prefix so resolve.fallback handles them
+      webpackConfig.plugins = webpackConfig.plugins || [];
+      webpackConfig.plugins.push(
+        new (require('webpack').NormalModuleReplacementPlugin)(
+          /^node:/,
+          (resource) => {
+            resource.request = resource.request.replace(/^node:/, '');
+          }
+        )
+      );
+
       // Add ignored patterns to reduce watched directories
         webpackConfig.watchOptions = {
           ...webpackConfig.watchOptions,

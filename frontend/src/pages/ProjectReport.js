@@ -859,6 +859,243 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
     URL.revokeObjectURL(url);
   };
 
+  // Client-side PDF export using jsPDF + html2canvas
+  const exportClientSidePDF = async () => {
+    try {
+      // Dynamic imports
+      const { jsPDF } = await import('jspdf');
+      const html2canvas = (await import('html2canvas')).default;
+      
+      // Find the export-ready element or fallback
+      const element = document.querySelector('[data-export-ready]') || document.getElementById('report-root');
+      
+      if (!element) {
+        throw new Error('No exportable content found');
+      }
+      
+      // Capture the element as canvas
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+      });
+      
+      // Create landscape PDF (16:9 aspect ratio)
+      const imgWidth = 297; // A4 landscape width in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4',
+      });
+      
+      const imgData = canvas.toDataURL('image/jpeg', 0.85);
+      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
+      
+      // Save the PDF
+      pdf.save(`${safeFileName()}.pdf`);
+      toast.success('PDF exported successfully');
+    } catch (err) {
+      console.error('Client-side PDF export failed:', err);
+      // Final fallback to browser print
+      window.print();
+      toast.info('Opening print dialog as fallback');
+    }
+  };
+
+  // Client-side PPTX export using pptxgenjs
+  const exportClientSidePPTX = async () => {
+    try {
+      // Dynamic import
+      const pptxgen = (await import('pptxgenjs')).default;
+      
+      const pptx = new pptxgen();
+      
+      // Brand colors
+      const DD_NAVY = '1B2A47';
+      const DD_BLUE = '4A9CC7';
+      const DD_GOLD = 'C9A84C';
+      const DD_WHITE = 'FFFFFF';
+      const DD_MUTED = '718096';
+      
+      // Slide 1: Cover Slide
+      const slide1 = pptx.addSlide();
+      slide1.background = { color: DD_NAVY };
+      
+      // Cover title
+      slide1.addText('PROJECT STATUS REPORT', {
+        x: 0.5,
+        y: 1.5,
+        w: 9,
+        h: 0.5,
+        fontSize: 16,
+        color: DD_GOLD,
+        bold: true,
+        align: 'center',
+      });
+      
+      // Project name
+      slide1.addText(project?.name || 'Project Report', {
+        x: 0.5,
+        y: 2.5,
+        w: 9,
+        h: 1.2,
+        fontSize: 44,
+        color: DD_WHITE,
+        bold: true,
+        align: 'center',
+      });
+      
+      // Client name
+      if (project?.client_name) {
+        slide1.addText(`For ${project.client_name}`, {
+          x: 0.5,
+          y: 4.0,
+          w: 9,
+          h: 0.5,
+          fontSize: 20,
+          color: DD_BLUE,
+          align: 'center',
+        });
+      }
+      
+      // Date
+      slide1.addText(format(new Date(), 'MMMM d, yyyy'), {
+        x: 0.5,
+        y: 4.8,
+        w: 9,
+        h: 0.4,
+        fontSize: 14,
+        color: DD_WHITE,
+        align: 'center',
+      });
+      
+      // Footer
+      slide1.addText('Prepared by DD Consulting | CONFIDENTIAL', {
+        x: 0.5,
+        y: 5.3,
+        w: 9,
+        h: 0.3,
+        fontSize: 10,
+        color: DD_WHITE,
+        align: 'center',
+      });
+      
+      // Slide 2: Executive Summary & Achievements
+      const slide2 = pptx.addSlide();
+      slide2.background = { color: DD_WHITE };
+      
+      // Header bar
+      slide2.addShape(pptx.ShapeType.rect, {
+        x: 0,
+        y: 0,
+        w: 10,
+        h: 0.8,
+        fill: { color: DD_NAVY },
+      });
+      
+      slide2.addText(project?.name || 'Project Report', {
+        x: 0.3,
+        y: 0.15,
+        w: 9,
+        h: 0.5,
+        fontSize: 24,
+        color: DD_WHITE,
+        bold: true,
+      });
+      
+      // Executive Summary Section
+      slide2.addText('Executive Summary', {
+        x: 0.5,
+        y: 1.2,
+        w: 9,
+        h: 0.4,
+        fontSize: 18,
+        color: DD_NAVY,
+        bold: true,
+      });
+      
+      const summaryText = latestStatusUpdate?.health 
+        ? `Project Health: ${latestStatusUpdate.health} • Status: ${project?.status || 'Active'}\n${periodInfo?.label || 'Current Period'}`
+        : `Status: ${project?.status || 'Active'}\n${periodInfo?.label || 'Current Period'}`;
+      
+      slide2.addText(summaryText, {
+        x: 0.5,
+        y: 1.8,
+        w: 9,
+        h: 1.0,
+        fontSize: 12,
+        color: '2D3748',
+      });
+      
+      // Achievements Section
+      slide2.addText('Key Achievements', {
+        x: 0.5,
+        y: 3.2,
+        w: 9,
+        h: 0.4,
+        fontSize: 18,
+        color: DD_NAVY,
+        bold: true,
+      });
+      
+      // Build achievements list
+      const achievements = [];
+      if (periodStatusUpdates && periodStatusUpdates.length > 0) {
+        periodStatusUpdates.slice(0, 3).forEach(update => {
+          if (update.accomplishments) {
+            achievements.push(update.accomplishments);
+          }
+        });
+      }
+      
+      if (achievements.length === 0) {
+        achievements.push('Project progressing according to plan');
+        achievements.push('Team collaboration and delivery on track');
+      }
+      
+      const achievementsText = achievements.slice(0, 5).map(a => `• ${a}`).join('\n');
+      
+      slide2.addText(achievementsText, {
+        x: 0.5,
+        y: 3.8,
+        w: 9,
+        h: 1.5,
+        fontSize: 11,
+        color: '2D3748',
+      });
+      
+      // Footer
+      slide2.addText('DD Consulting', {
+        x: 0.3,
+        y: 5.4,
+        w: 4,
+        h: 0.3,
+        fontSize: 9,
+        color: DD_MUTED,
+      });
+      
+      slide2.addText(format(new Date(), 'MMM d, yyyy'), {
+        x: 5.5,
+        y: 5.4,
+        w: 4,
+        h: 0.3,
+        fontSize: 9,
+        color: DD_MUTED,
+        align: 'right',
+      });
+      
+      // Save the presentation
+      await pptx.writeFile({ fileName: `${safeFileName()}.pptx` });
+      toast.success('PowerPoint exported successfully');
+    } catch (err) {
+      console.error('Client-side PPTX export failed:', err);
+      toast.error(`PowerPoint export failed: ${err.message || 'Unknown error'}`);
+    }
+  };
+
   const exportToPDF = async () => {
     setExporting('pdf');
     try {
@@ -868,10 +1105,15 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
       toast.success('PDF exported successfully');
     } catch (err) {
       console.error('PDF export failed:', err);
-      toast.error(`PDF export failed: ${err.response?.data?.detail || err.message || 'Server error'}`, {
-        description: 'Tip: You can also click the Print button to save this report directly as a PDF from your browser.',
-        duration: 8000,
-      });
+      // Fallback to client-side PDF generation
+      try {
+        await exportClientSidePDF();
+      } catch (clientErr) {
+        console.error('Client-side PDF fallback also failed:', clientErr);
+        // Final fallback to print
+        window.print();
+        toast.info('Opening print dialog as final fallback');
+      }
     } finally {
       setExporting(null);
     }
@@ -886,9 +1128,8 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
       toast.success('PPTX exported — 2 slides');
     } catch (err) {
       console.error('PPTX export failed:', err);
-      toast.error(`PowerPoint export failed: ${err.response?.data?.detail || err.message || 'Server error'}`, {
-        duration: 6000,
-      });
+      // Fallback to client-side PPTX generation
+      await exportClientSidePPTX();
     } finally {
       setExporting(null);
     }

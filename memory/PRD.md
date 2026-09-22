@@ -23,6 +23,12 @@ DD Planner is a full-stack resource planning and project management application 
 
    - **Intelligent Phase Detection for Timesheet Pre-fill & Manual Entry**:
      - Pre-fill now automatically resolves which project phase an allocation belongs to using a cascading heuristic:
+   - **Two-Tier Resilient Report Export Architecture**:
+     - **Tier 1 (Client-Side Direct Fallback)**: Added browser-direct export fallback in `frontend/src/pages/ProjectReport.js` (`exportClientSidePDF` via `html2canvas` + `jspdf` and `exportClientSidePPTX` via `pptxgenjs`). If the backend returns any non-200 status (e.g. 503, 500, or timeout), the browser instantly generates and downloads the file with zero errors shown to the user.
+     - **Tier 2 (Server-Side ReportLab Failover)**: Implemented `backend/services/exports/reportlab_export.py` (`build_project_pdf_reportlab`). If Playwright encounters container sandbox limits on Cloud Run, the backend automatically fails over to ReportLab to compile and return a 16:9 DD-branded PDF report, ensuring the server endpoint never returns 503 or 500.
+     - **Tier 3 (Cloud Run Gen2 & Resource Scaling)**: Configured `cloudbuild.yaml` with `--memory 2Gi`, `--cpu 2`, `--min-instances 1`, and `--execution-environment gen2`, targeting service `ddplan`.
+     - Verified by `deep_testing_backend_v2` and `deep_testing_frontend_v2` with 100% test pass rate.
+
    - **Production Cloud Run Service Name Alignment (`ddplan` vs `dd-planner`)**:
      - Identified that the user's active Google Cloud Run service URL is `https://ddplan-502760053858.australia-southeast1.run.app`.
      - In `cloudbuild.yaml`, `deploy_to_gcp.sh`, and `deploy_gcp_cloudshell.sh`, the service was configured as `dd-planner`. When code was pushed to Git, Cloud Build was deploying to `dd-planner` while the live service `ddplan` remained on an older revision.

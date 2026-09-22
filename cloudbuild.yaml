@@ -63,9 +63,11 @@ steps:
       - "--timeout"
       - "300"
       - "--cpu-boost"           # Give container extra CPU during startup — reduces cold-start time (Cloud Run 2nd-gen feature)
+      - "--execution-environment"
+      - "gen2"
       - "--allow-unauthenticated"
       - "--set-env-vars"
-      - "DB_NAME=resource_planner,MULTI_TENANT_ENABLED=false,PLATFORM_DB_NAME=platform_db,TENANT_DB_PREFIX=tenant_"
+      - "DB_NAME=resource_planner,MULTI_TENANT_ENABLED=false,PLATFORM_DB_NAME=platform_db,TENANT_DB_PREFIX=tenant_,PLAYWRIGHT_BROWSERS_PATH=/pw-browsers"
       - "--update-secrets"
       - "MONGO_URL=MONGO_URL:latest,SECRET_KEY=SECRET_KEY:latest,EMERGENT_LLM_KEY=EMERGENT_LLM_KEY:latest,EXPORT_API_KEY=EXPORT_API_KEY:latest"
 

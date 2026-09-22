@@ -877,8 +877,11 @@ async def get_resource_utilization(
 #
 # The actual rendering is implemented in services/exports/.
 import os
+import logging
 from fastapi import Request
 from fastapi.responses import Response
+
+logger = logging.getLogger(__name__)
 
 from services.exports import (
     build_project_pdf,
@@ -952,7 +955,29 @@ async def export_project_pdf(
     try:
         pdf_bytes = await build_project_pdf(project_id, token, base)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+        logger.warning(f"[PDF Export] Playwright render failed ({e}); falling back to ReportLab...")
+        try:
+            from services.exports.reportlab_export import build_project_pdf_reportlab
+            from database import risks_collection, allocations_collection, status_updates_collection, resources_collection
+            risks = await risks_collection.find({"project_id": project_id}).to_list(length=100)
+            allocs = await allocations_collection.find({"project_id": project_id}).to_list(length=100)
+            res_ids = [ObjectId(a["resource_id"]) for a in allocs if a.get("resource_id") and ObjectId.is_valid(str(a["resource_id"]))]
+            if res_ids:
+                res_docs = await resources_collection.find({"_id": {"$in": res_ids}}).to_list(length=100)
+                res_map = {str(r["_id"]): r.get("name", "Unknown") for r in res_docs}
+                for a in allocs:
+                    a["resource_name"] = res_map.get(a.get("resource_id"), "Unknown")
+            status_updates = await status_updates_collection.find({"project_id": project_id}).sort("update_date", -1).to_list(length=10)
+            pdf_bytes = build_project_pdf_reportlab(
+                project=project,
+                risks=risks,
+                allocations=allocs,
+                status_updates=status_updates
+            )
+        except Exception as fallback_e:
+            logger.error(f"[PDF Export] Both Playwright and ReportLab failed: {fallback_e}")
+            from services.exports.reportlab_export import build_project_pdf_reportlab
+            pdf_bytes = build_project_pdf_reportlab(project=project)
 
     fname = _safe_filename(project.get("name", "project")) + "-Report.pdf"
     return Response(
