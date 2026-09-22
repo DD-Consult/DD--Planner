@@ -16,7 +16,7 @@ import sys
 from datetime import datetime, timedelta
 
 # Backend URL from environment
-BACKEND_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
+BACKEND_URL = "https://base-product-check.preview.emergentagent.com/api"
 
 # Test credentials - using admin@test.com which has been working in previous tests
 SUPER_ADMIN_EMAIL = "admin@test.com"

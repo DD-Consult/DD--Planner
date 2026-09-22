@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timedelta
 
 # Backend URL from review request
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
+BASE_URL = "https://base-product-check.preview.emergentagent.com/api"
 
 # Test credentials
 ADMIN_EMAIL = "admin@test.com"

@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 # Test configuration
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
+BASE_URL = "https://base-product-check.preview.emergentagent.com/api"
 TEST_EMAIL = "admin@test.com"
 TEST_PASSWORD = "admin123"
 PROJECT_ID = "6aabd45b6023b8429321ad6c"

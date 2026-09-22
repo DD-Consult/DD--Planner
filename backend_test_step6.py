@@ -9,7 +9,7 @@ import json
 import sys
 
 # Configuration
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com"
+BASE_URL = "https://base-product-check.preview.emergentagent.com"
 API_URL = f"{BASE_URL}/api"
 
 # Credentials

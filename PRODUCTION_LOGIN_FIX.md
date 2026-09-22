@@ -151,7 +151,7 @@ baseURL = '/api' ✓
 
 ### 2. Preview Environment
 
-The preview environment at `https://enhance-feedback-2.preview.emergentagent.com` also uses relative URLs and will work correctly.
+The preview environment at `https://base-product-check.preview.emergentagent.com` also uses relative URLs and will work correctly.
 
 ---
 

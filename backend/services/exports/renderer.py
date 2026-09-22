@@ -186,15 +186,24 @@ async def render_pdf(
         logger.info("Generating PDF")
         pdf_kwargs = {
             "print_background": True,
-            "margin": margin,
-            "prefer_css_page_size": False,
         }
         if width and height:
+            # When explicit page dimensions are supplied we want the CSS
+            # @page rule (in print.css) to own the margins so the content
+            # width is clamped to the printable area — this prevents the
+            # right-edge clipping seen on the Timeline / WBS table. Passing
+            # Playwright margins here on top of CSS @page margins double-counts
+            # and shrinks the content box inconsistently, so we zero them and
+            # let CSS drive spacing.
             pdf_kwargs["width"] = width
             pdf_kwargs["height"] = height
+            pdf_kwargs["prefer_css_page_size"] = True
+            pdf_kwargs["margin"] = {"top": "0", "bottom": "0", "left": "0", "right": "0"}
         else:
             pdf_kwargs["format"] = format
             pdf_kwargs["landscape"] = landscape
+            pdf_kwargs["margin"] = margin
+            pdf_kwargs["prefer_css_page_size"] = False
         pdf_bytes = await page.pdf(**pdf_kwargs)
         
         logger.info(f"PDF generated successfully: {len(pdf_bytes)} bytes")

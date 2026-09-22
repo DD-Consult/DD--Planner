@@ -3,7 +3,7 @@
 Step 7 Regression + New Platform Endpoints Testing
 Platform Admin Portal Backend - Tenant CRUD, Impersonation, Audit Log, Dashboard Stats
 
-Test URL: https://enhance-feedback-2.preview.emergentagent.com
+Test URL: https://base-product-check.preview.emergentagent.com
 Feature flag: MULTI_TENANT_ENABLED=false (DO NOT change)
 Credentials:
   - Tenant admin: admin@test.com / admin123
@@ -16,7 +16,7 @@ import jwt
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
+BASE_URL = "https://base-product-check.preview.emergentagent.com/api"
 TENANT_ADMIN_EMAIL = "admin@test.com"
 TENANT_ADMIN_PASSWORD = "admin123"
 PLATFORM_ADMIN_EMAIL = "don@ddconsult.tech"

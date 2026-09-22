@@ -6,7 +6,7 @@ Test AI Chat JSON Response - Verify that structured JSON is not stripped
 import requests
 import json
 
-BACKEND_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
+BACKEND_URL = "https://base-product-check.preview.emergentagent.com/api"
 ADMIN_EMAIL = "admin@test.com"
 ADMIN_PASSWORD = "admin123"
 

@@ -10,7 +10,7 @@ import json
 from typing import Dict, Any, Optional, List
 
 # Configuration
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com"
+BASE_URL = "https://base-product-check.preview.emergentagent.com"
 API_BASE = f"{BASE_URL}/api"
 
 # Test credentials

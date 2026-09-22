@@ -16,7 +16,7 @@ import requests
 import sys
 from typing import Dict, Any
 
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
+BASE_URL = "https://base-product-check.preview.emergentagent.com/api"
 
 # Test credentials
 TENANT_ADMIN = {"username": "admin@test.com", "password": "admin123"}

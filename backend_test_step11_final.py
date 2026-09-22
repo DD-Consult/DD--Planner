@@ -10,7 +10,7 @@ import jwt
 import secrets
 from datetime import datetime
 
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
+BASE_URL = "https://base-product-check.preview.emergentagent.com/api"
 
 # Test credentials
 TENANT_ADMIN_EMAIL = "admin@test.com"

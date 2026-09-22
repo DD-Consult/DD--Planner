@@ -121,10 +121,63 @@
   /* Tighten the outer report container */
   #report-root {
     max-width: 100% !important;
+    width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
+    padding-bottom: 0 !important;
     box-shadow: none !important;
     border-radius: 0 !important;
+    overflow: visible !important;
+  }
+  #report-body {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  /* ────────────────────────────────────────────────────────
+   * WIDTH CLAMP — fixes right-edge clipping of the Timeline &
+   * WBS table. Any container that scrolls horizontally on
+   * screen must instead fit within the printable page width.
+   * ──────────────────────────────────────────────────────── */
+  .overflow-x-auto,
+  .overflow-auto,
+  .overflow-x-scroll {
+    overflow: visible !important;
+  }
+
+  /* Gantt / Timeline: fit page width, allow flex children to shrink */
+  #report-gantt,
+  #report-gantt-inner {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+  #report-gantt * {
+    min-width: 0 !important;
+  }
+
+  /* WBS section + its table: fit page width, wrap long cell text so the
+   * rightmost column ("Actuals vs Est.") is never clipped. */
+  [data-export-section="wbs"],
+  [data-print-section="wbs"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+  [data-export-section="wbs"] table,
+  [data-print-section="wbs"] table {
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
+  }
+  [data-export-section="wbs"] td,
+  [data-export-section="wbs"] th,
+  [data-print-section="wbs"] td,
+  [data-print-section="wbs"] th {
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    white-space: normal !important;
   }
 
   /* Tighten the header */
@@ -194,17 +247,22 @@
     break-before: auto !important;
   }
 
-  /* The Gantt chart should not be split */
+  /* The Gantt chart is frequently TALLER than one 7.5in page. Using
+   * break-inside:avoid on an oversized element forces it to overflow the
+   * page and get clipped, so we ALLOW it to break across pages instead.
+   * Individual small cards/rows inside still avoid breaking (rules above). */
   #report-gantt,
   #report-gantt-inner {
-    page-break-inside: avoid;
-    break-inside: avoid;
+    page-break-inside: auto;
+    break-inside: auto;
   }
 
-  /* Footer stays whole */
+  /* Footer stays whole and does NOT get pushed to its own blank page */
   .report-footer {
     page-break-inside: avoid;
     break-inside: avoid;
+    page-break-before: avoid !important;
+    break-before: avoid !important;
   }
 
   /* ────────────────────────────────────────────────────────
@@ -221,9 +279,10 @@
   .p-5  { padding: 8pt !important; }
   .p-4  { padding: 6pt !important; }
 
-  /* Footer pinned at the bottom of last page only */
+  /* Footer pinned close to the last content — small top margin so it does
+   * not overflow onto an otherwise-blank trailing page. */
   .report-footer {
-    margin-top: 16pt !important;
+    margin-top: 10pt !important;
     padding-top: 8pt !important;
   }
 

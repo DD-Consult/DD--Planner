@@ -10,7 +10,7 @@ Tests 32 scenarios:
 - E. Basic public endpoints (3 tests) - no auth required
 - F. Backend error log check (1 test) - check for errors
 
-Backend URL: https://enhance-feedback-2.preview.emergentagent.com
+Backend URL: https://base-product-check.preview.emergentagent.com
 Feature flag: MULTI_TENANT_ENABLED=false (DO NOT change)
 
 Test credentials:
@@ -25,7 +25,7 @@ import base64
 from typing import Dict, Any, Optional
 
 # Backend URL
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com"
+BASE_URL = "https://base-product-check.preview.emergentagent.com"
 
 # Test credentials
 TENANT_ADMIN = {"username": "admin@test.com", "password": "admin123"}

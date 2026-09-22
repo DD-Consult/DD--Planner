@@ -13,7 +13,7 @@ Tests:
 - G. Cleanup (1 test) - Drop test tenant
 - H. Sanity checks (3 tests) - No bloat/regression
 
-Backend URL: https://enhance-feedback-2.preview.emergentagent.com
+Backend URL: https://base-product-check.preview.emergentagent.com
 Feature flag: MULTI_TENANT_ENABLED=false (DO NOT change)
 Credentials:
   - Tenant admin: admin@test.com / admin123
@@ -25,7 +25,7 @@ import sys
 from typing import Dict, Optional
 
 # Configuration
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com"
+BASE_URL = "https://base-product-check.preview.emergentagent.com"
 TENANT_ADMIN_EMAIL = "admin@test.com"
 TENANT_ADMIN_PASSWORD = "admin123"
 PLATFORM_ADMIN_EMAIL = "don@ddconsult.tech"

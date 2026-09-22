@@ -268,6 +268,23 @@ DD Planner is a full-stack resource planning and project management application 
 - **Service Layer**: `services/ai_instructions.py` helper fetches applicable instructions and formats them for prompt injection
 - Files: `services/ai_instructions.py`, `routes/ai_instructions.py`, `AIInstructionsPanel.js`, `AIFeedbackButtons.js`, `risk_ai.py`, `ai.py`, `wbs.py`, `projects.py`, `ProjectDetail.js`, `AIRescheduleDialog.js`
 
+## Session: Customer Report PDF Clean-Layout Fix + Magic Link Verification (Jul 2025)
+
+### Bug Fix: Customer Report PDF exported unclean across several pages (VERIFIED)
+- **Reported:** Project customer report PDF had content clipped at the right edge (Project Timeline dates, WBS table "ACTUALS VS EST." column), awkward page breaks splitting Risks/WBS mid-item, and a near-blank trailing page.
+- **Root cause:** Server-side Playwright rendered the tall report at a fixed 13.333in×7.5in page with `prefer_css_page_size=False` (so the CSS `@page` was ignored) AND passed its own margins on top → conflicting geometry; wide elements (Gantt, WBS plan-view table) overflowed the narrow printable width → right-edge clipping; Gantt used `break-inside:avoid` despite being taller than a page.
+- **Fix:**
+  1. `backend/services/exports/renderer.py` — `render_pdf` now sets `prefer_css_page_size=True` and zeroes Playwright margins when explicit width/height are supplied, so `print.css` `@page{size:13.333in 7.5in; margin:6mm}` is authoritative and content width is clamped to the printable area.
+  2. `frontend/src/styles/print.css` (@media print) — width-clamp for `#report-root`/`#report-body` (100% width, overflow visible), `.overflow-x-auto→visible`; Gantt (`#report-gantt`) and WBS section/table forced to fit page width with `table-layout:fixed` + `word-break` so no column is clipped; Gantt changed from `break-inside:avoid` to `auto`; footer `page-break-before:avoid` + smaller top margin to remove the blank trailing page. No on-screen (non-print) appearance changed.
+- **Verified by testing_agent:** 6-page 16:9 PDF (960×540pts), WBS "ACTUALS VS EST."/DEPS fully visible, Timeline not clipped, risks not split mid-item, no blank trailing page. PPT export regression pass (8 slides).
+
+### Verification: Client Portal Magic Link (existing feature, VERIFIED)
+- Testing agent ran full flow 17/17 pass: create (admin) → verify token → confirm 6-digit code (wrong=401 w/ attempt counter, 3 attempts then 429) → fetch report (unverified=403, verified=200, view_count increments) → admin list/revoke (revoked link blocked). RESEND_API_KEY not configured locally so emails aren't sent (expected); codes read from Mongo for testing.
+
+### Env note
+- Fresh checkout had no `.env` files. Created `backend/.env` (local MONGO_URL, DB_NAME=resource_planner, MULTI_TENANT_ENABLED=false) and `frontend/.env` (REACT_APP_BACKEND_URL=preview). Installed missing python deps (pytz).
+
+
 ## Session: Enrichment Gap Fix + Submit Week Confirmation (Feb 2026)
 
 ### Bug Fix: "Unknown Project" enrichment gap

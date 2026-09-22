@@ -19,7 +19,7 @@ import sys
 from typing import Dict, Any
 
 # Backend URL from review request
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com"
+BASE_URL = "https://base-product-check.preview.emergentagent.com"
 
 # Test credentials from review request
 TENANT_ADMIN_EMAIL = "admin@test.com"

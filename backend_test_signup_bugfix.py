@@ -14,7 +14,7 @@ import sys
 from datetime import datetime
 
 # Backend URL - using the public URL from test environment
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
+BASE_URL = "https://base-product-check.preview.emergentagent.com/api"
 
 def print_test(test_num, description):
     print(f"\n{'='*80}")
@@ -105,7 +105,7 @@ def main():
     try:
         # The bug fix should ensure that on .run.app or emergentagent.com domains,
         # the login_url uses query parameter format: ?tenant=slug
-        # NOT subdomain format: https://slug.preview.emergentagent.com
+        # NOT subdomain format: https://base-product-check.preview.emergentagent.com
         
         print(f"Login URL: {login_url}")
         

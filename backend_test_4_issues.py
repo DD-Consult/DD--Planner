@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Backend API Testing for 4 Reported Issues (Re-run after /api/projects/create-full fix)
-Test URL: https://enhance-feedback-2.preview.emergentagent.com
+Test URL: https://base-product-check.preview.emergentagent.com
 """
 
 import requests
@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 import time
 
 # Configuration
-BASE_URL = "https://enhance-feedback-2.preview.emergentagent.com/api"
+BASE_URL = "https://base-product-check.preview.emergentagent.com/api"
 TEST_USER = "admin@test.com"
 TEST_PASSWORD = "admin123"
 
