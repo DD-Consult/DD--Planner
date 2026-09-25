@@ -913,9 +913,19 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
   // Plan View (date-sorted table with actuals)
   // ============================================================
   const renderPlanView = () => {
+    // In readOnly mode (client report / PDF export) the table must FIT the
+    // page width — never scroll. Drop `overflow-x-auto` + `min-w-max` (which
+    // force the table wider than the page and clip the rightmost columns in
+    // print) and use table-layout:fixed so all columns compress to fit.
+    const wrapperCls = readOnly
+      ? "border border-gray-200 rounded-lg overflow-hidden"
+      : "border border-gray-200 rounded-lg overflow-hidden overflow-x-auto";
+    const tableCls = readOnly
+      ? "w-full text-left table-fixed"
+      : "w-full text-left min-w-max";
     return (
-      <div className="border border-gray-200 rounded-lg overflow-hidden overflow-x-auto">
-        <table className="w-full text-left min-w-max">
+      <div className={wrapperCls}>
+        <table className={tableCls}>
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               {!readOnly && (
@@ -928,7 +938,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
                   />
                 </th>
               )}
-              <th className="py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide min-w-48">Task</th>
+              <th className={`py-2.5 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide ${readOnly ? 'w-[20%]' : 'min-w-48'}`}>Task</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Phase</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Start</th>
@@ -936,7 +946,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide text-right">Duration</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide text-right">% Complete</th>
-              <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide min-w-40">Actuals vs Est.</th>
+              <th className={`py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide ${readOnly ? '' : 'min-w-40'}`}>Actuals vs Est.</th>
               <th className="py-2.5 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Deps</th>
               {!readOnly && <th className="py-2.5 px-3 w-24"></th>}
             </tr>
@@ -1057,7 +1067,7 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
                     </td>
                     <td className="py-2.5 px-3">
                       {task.estimated_hours > 0 ? (
-                        <div className="space-y-1 min-w-36">
+                        <div className={`space-y-1 ${readOnly ? '' : 'min-w-36'}`}>
                           <div className="flex items-center justify-between">
                             <span className={`text-xs font-medium ${
                               actualsStatus === 'over' ? 'text-red-600' :
