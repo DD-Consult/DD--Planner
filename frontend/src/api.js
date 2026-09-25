@@ -465,18 +465,21 @@ export const getResourceUtilization = (params) =>
   api.get('/reports/resource-utilization', { params });
 
 // Server-side Exports — DD-branded report (single mode)
+// skipErrorToast: the export handlers have their own client-side fallback, so
+// we suppress the global error toast to avoid a scary "502" flash before the
+// fallback silently produces the file.
 export const exportProjectPDF = (projectId) =>
-  api.get(`/projects/${projectId}/export/pdf`, { responseType: 'blob' });
+  api.get(`/projects/${projectId}/export/pdf`, { responseType: 'blob', skipErrorToast: true });
 
 export const exportProjectPPT = (projectId) =>
-  api.get(`/projects/${projectId}/export/ppt`, { responseType: 'blob' });
+  api.get(`/projects/${projectId}/export/ppt`, { responseType: 'blob', skipErrorToast: true });
 
 // Server-side WBS Exports — standalone Work Breakdown Structure
 export const exportProjectWBSPDF = (projectId) =>
-  api.get(`/projects/${projectId}/export/wbs/pdf`, { responseType: 'blob' });
+  api.get(`/projects/${projectId}/export/wbs/pdf`, { responseType: 'blob', skipErrorToast: true });
 
 export const exportProjectWBSPPT = (projectId) =>
-  api.get(`/projects/${projectId}/export/wbs/ppt`, { responseType: 'blob' });
+  api.get(`/projects/${projectId}/export/wbs/ppt`, { responseType: 'blob', skipErrorToast: true });
 
 // ─────────────────────────────────────────────────────────────
 // Baselines & Change Log (PMBOK-style baseline tracking)

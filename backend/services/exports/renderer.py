@@ -59,6 +59,43 @@ def _ensure_chromium_installed(force: bool = False) -> None:
 _browser: Optional[Browser] = None
 _playwright = None
 
+# ---------------------------------------------------------------------------
+# Render concurrency guard.
+# Each PDF/PPTX render spins up a heavy Chromium page (plus, for the project
+# report, it re-loads the entire React SPA + re-fetches data + AI summary).
+# Running several of these AT ONCE on a single Cloud Run instance stacks
+# Chromium memory and OOM-kills the container (root cause of the intermittent
+# 502s: the instance dies and every concurrent request — even trivial
+# /api/notifications polls — instantly 502s while it restarts).
+#
+# This semaphore serialises renders per instance so memory stays bounded no
+# matter how many tenants/users export simultaneously. Requests queue briefly
+# instead of crashing the container. Tunable via EXPORT_RENDER_CONCURRENCY.
+# ---------------------------------------------------------------------------
+import asyncio
+_RENDER_CONCURRENCY = max(1, int(os.environ.get("EXPORT_RENDER_CONCURRENCY", "1")))
+_render_semaphore = asyncio.Semaphore(_RENDER_CONCURRENCY)
+
+# Memory-lean Chromium flags. Keeps peak RSS down so a 2-4Gi Cloud Run instance
+# can render heavy reports without being OOM-killed. We intentionally do NOT use
+# --single-process (known to crash multi-context rendering on Cloud Run).
+_CHROMIUM_ARGS = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',   # use /tmp instead of small /dev/shm
+    '--disable-gpu',
+    '--disable-extensions',
+    '--disable-background-networking',
+    '--disable-background-timer-throttling',
+    '--disable-renderer-backgrounding',
+    '--disable-features=Translate,BackForwardCache,AcceptCHFrame',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--mute-audio',
+    '--hide-scrollbars',
+    '--js-flags=--max-old-space-size=512',  # cap Chromium JS heap
+]
+
 
 async def _get_browser() -> Browser:
     """Get or create a shared browser instance.
@@ -89,12 +126,7 @@ async def _get_browser() -> Browser:
             _playwright = await async_playwright().start()
         _browser = await _playwright.chromium.launch(
             headless=True,
-            args=[
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-            ],
+            args=_CHROMIUM_ARGS,
         )
 
     logger.info("Initializing Playwright browser (Chromium headless)")
@@ -108,6 +140,7 @@ async def _get_browser() -> Browser:
 
     logger.info(f"Browser launched successfully: {_browser}")
     return _browser
+
 
 
 async def _get_fresh_context(viewport: dict = None, device_scale_factor: int = 1):
@@ -164,56 +197,62 @@ async def render_pdf(
         margin = {'top': '8mm', 'bottom': '8mm', 'left': '8mm', 'right': '8mm'}
     
     logger.info(f"Rendering PDF from URL: {url}")
-    context = await _get_fresh_context()
-    page = await context.new_page()
-    
-    try:
-        # Navigate to URL
-        logger.info(f"Navigating to {url}")
-        await page.goto(url, wait_until='domcontentloaded', timeout=timeout_ms)
-        
-        # Wait for the ready indicator
-        logger.info(f"Waiting for selector: {wait_selector}")
+    # Serialise heavy renders per instance so concurrent exports can't stack
+    # Chromium memory and OOM-kill the container.
+    async with _render_semaphore:
+        context = await _get_fresh_context()
+        page = await context.new_page()
         try:
-            await page.wait_for_selector(wait_selector, timeout=10000)
+            # Navigate to URL
+            logger.info(f"Navigating to {url}")
+            await page.goto(url, wait_until='domcontentloaded', timeout=timeout_ms)
+
+            # Wait for the ready indicator
+            logger.info(f"Waiting for selector: {wait_selector}")
+            try:
+                await page.wait_for_selector(wait_selector, timeout=10000)
+            except Exception as e:
+                logger.warning(f"Timeout waiting for selector '{wait_selector}': {e}. Proceeding with PDF generation.")
+
+            # Small additional delay to ensure all rendering is complete
+            await page.wait_for_timeout(500)
+
+            # Generate PDF — prefer width/height when supplied (16:9 widescreen)
+            logger.info("Generating PDF")
+            pdf_kwargs = {
+                "print_background": True,
+            }
+            if width and height:
+                # When explicit page dimensions are supplied we want the CSS
+                # @page rule (in print.css) to own the margins so the content
+                # width is clamped to the printable area — this prevents the
+                # right-edge clipping seen on the Timeline / WBS table. Passing
+                # Playwright margins here on top of CSS @page margins double-counts
+                # and shrinks the content box inconsistently, so we zero them and
+                # let CSS drive spacing.
+                pdf_kwargs["width"] = width
+                pdf_kwargs["height"] = height
+                pdf_kwargs["prefer_css_page_size"] = True
+                pdf_kwargs["margin"] = {"top": "0", "bottom": "0", "left": "0", "right": "0"}
+            else:
+                pdf_kwargs["format"] = format
+                pdf_kwargs["landscape"] = landscape
+                pdf_kwargs["margin"] = margin
+                pdf_kwargs["prefer_css_page_size"] = False
+            pdf_bytes = await page.pdf(**pdf_kwargs)
+
+            logger.info(f"PDF generated successfully: {len(pdf_bytes)} bytes")
+            return pdf_bytes
+
         except Exception as e:
-            logger.warning(f"Timeout waiting for selector '{wait_selector}': {e}. Proceeding with PDF generation.")
-        
-        # Small additional delay to ensure all rendering is complete
-        await page.wait_for_timeout(500)
-        
-        # Generate PDF — prefer width/height when supplied (16:9 widescreen)
-        logger.info("Generating PDF")
-        pdf_kwargs = {
-            "print_background": True,
-        }
-        if width and height:
-            # When explicit page dimensions are supplied we want the CSS
-            # @page rule (in print.css) to own the margins so the content
-            # width is clamped to the printable area — this prevents the
-            # right-edge clipping seen on the Timeline / WBS table. Passing
-            # Playwright margins here on top of CSS @page margins double-counts
-            # and shrinks the content box inconsistently, so we zero them and
-            # let CSS drive spacing.
-            pdf_kwargs["width"] = width
-            pdf_kwargs["height"] = height
-            pdf_kwargs["prefer_css_page_size"] = True
-            pdf_kwargs["margin"] = {"top": "0", "bottom": "0", "left": "0", "right": "0"}
-        else:
-            pdf_kwargs["format"] = format
-            pdf_kwargs["landscape"] = landscape
-            pdf_kwargs["margin"] = margin
-            pdf_kwargs["prefer_css_page_size"] = False
-        pdf_bytes = await page.pdf(**pdf_kwargs)
-        
-        logger.info(f"PDF generated successfully: {len(pdf_bytes)} bytes")
-        return pdf_bytes
-        
-    except Exception as e:
-        logger.error(f"Error rendering PDF: {e}")
-        raise
-    finally:
-        await context.close()
+            logger.error(f"Error rendering PDF: {e}")
+            raise
+        finally:
+            try:
+                await page.close()
+            except Exception:
+                pass
+            await context.close()
 
 
 async def render_screenshots(
@@ -242,52 +281,56 @@ async def render_screenshots(
         viewport = {'width': 1600, 'height': 900}
     
     logger.info(f"Rendering screenshots from URL: {url}")
-    context = await _get_fresh_context(viewport=viewport, device_scale_factor=2)
-    page = await context.new_page()
-    
-    try:
-        # Navigate to URL
-        logger.info(f"Navigating to {url}")
-        await page.goto(url, wait_until='domcontentloaded', timeout=timeout_ms)
-        
-        # Wait for the ready indicator
-        logger.info(f"Waiting for selector: {wait_selector}")
+    async with _render_semaphore:
+        context = await _get_fresh_context(viewport=viewport, device_scale_factor=2)
+        page = await context.new_page()
         try:
-            await page.wait_for_selector(wait_selector, timeout=10000)
+            # Navigate to URL
+            logger.info(f"Navigating to {url}")
+            await page.goto(url, wait_until='domcontentloaded', timeout=timeout_ms)
+
+            # Wait for the ready indicator
+            logger.info(f"Waiting for selector: {wait_selector}")
+            try:
+                await page.wait_for_selector(wait_selector, timeout=10000)
+            except Exception as e:
+                logger.warning(f"Timeout waiting for selector '{wait_selector}': {e}. Proceeding with screenshot generation.")
+
+            # Small additional delay to ensure all rendering is complete
+            await page.wait_for_timeout(500)
+
+            screenshots = []
+
+            if selectors:
+                # Take individual screenshots for each selector
+                for selector in selectors:
+                    logger.info(f"Taking screenshot of: {selector}")
+                    element = await page.query_selector(selector)
+                    if element:
+                        screenshot_bytes = await element.screenshot(type='png')
+                        screenshots.append(screenshot_bytes)
+                        logger.info(f"Screenshot captured: {len(screenshot_bytes)} bytes")
+                    else:
+                        logger.warning(f"Selector not found: {selector}")
+            else:
+                # Take a single full-page screenshot
+                logger.info("Taking full-page screenshot")
+                screenshot_bytes = await page.screenshot(type='png', full_page=True)
+                screenshots.append(screenshot_bytes)
+                logger.info(f"Screenshot captured: {len(screenshot_bytes)} bytes")
+
+            logger.info(f"Total screenshots captured: {len(screenshots)}")
+            return screenshots
+
         except Exception as e:
-            logger.warning(f"Timeout waiting for selector '{wait_selector}': {e}. Proceeding with screenshot generation.")
-        
-        # Small additional delay to ensure all rendering is complete
-        await page.wait_for_timeout(500)
-        
-        screenshots = []
-        
-        if selectors:
-            # Take individual screenshots for each selector
-            for selector in selectors:
-                logger.info(f"Taking screenshot of: {selector}")
-                element = await page.query_selector(selector)
-                if element:
-                    screenshot_bytes = await element.screenshot(type='png')
-                    screenshots.append(screenshot_bytes)
-                    logger.info(f"Screenshot captured: {len(screenshot_bytes)} bytes")
-                else:
-                    logger.warning(f"Selector not found: {selector}")
-        else:
-            # Take a single full-page screenshot
-            logger.info("Taking full-page screenshot")
-            screenshot_bytes = await page.screenshot(type='png', full_page=True)
-            screenshots.append(screenshot_bytes)
-            logger.info(f"Screenshot captured: {len(screenshot_bytes)} bytes")
-        
-        logger.info(f"Total screenshots captured: {len(screenshots)}")
-        return screenshots
-        
-    except Exception as e:
-        logger.error(f"Error rendering screenshots: {e}")
-        raise
-    finally:
-        await context.close()
+            logger.error(f"Error rendering screenshots: {e}")
+            raise
+        finally:
+            try:
+                await page.close()
+            except Exception:
+                pass
+            await context.close()
 
 
 async def close_browser():

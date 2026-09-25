@@ -53,13 +53,13 @@ steps:
       - "--port"
       - "8080"                  # MUST match nginx listen port and EXPOSE in Dockerfile
       - "--memory"
-      - "2Gi"
+      - "4Gi"                    # Bumped 2Gi->4Gi: headless Chromium report renders were OOM-killing the 2Gi instance, returning instant 502s to all concurrent requests. 4Gi gives Chromium + uvicorn + nginx safe headroom.
       - "--cpu"
-      - "2"
+      - "4"                      # 2->4 vCPU so a heavy export render doesn't starve concurrent API requests on the same instance
       - "--min-instances"
       - "1"                     # Keep 1 instance warm — prevents cold-start 502 on login
       - "--max-instances"
-      - "3"
+      - "10"                    # Raised for multi-tenant load — more instances absorb concurrent exports instead of stacking on one
       - "--timeout"
       - "300"
       - "--cpu-boost"           # Give container extra CPU during startup — reduces cold-start time (Cloud Run 2nd-gen feature)
@@ -67,7 +67,7 @@ steps:
       - "gen2"
       - "--allow-unauthenticated"
       - "--set-env-vars"
-      - "DB_NAME=resource_planner,MULTI_TENANT_ENABLED=false,PLATFORM_DB_NAME=platform_db,TENANT_DB_PREFIX=tenant_,PLAYWRIGHT_BROWSERS_PATH=/pw-browsers"
+      - "DB_NAME=resource_planner,MULTI_TENANT_ENABLED=false,PLATFORM_DB_NAME=platform_db,TENANT_DB_PREFIX=tenant_,PLAYWRIGHT_BROWSERS_PATH=/pw-browsers,EXPORT_RENDER_CONCURRENCY=2"
       - "--update-secrets"
       - "MONGO_URL=MONGO_URL:latest,SECRET_KEY=SECRET_KEY:latest,EMERGENT_LLM_KEY=EMERGENT_LLM_KEY:latest,EXPORT_API_KEY=EXPORT_API_KEY:latest"
 

@@ -895,75 +895,101 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
     URL.revokeObjectURL(url);
   };
 
-  // Client-side PDF export using jsPDF + html2canvas
+  // Client-side PDF export using jsPDF + html2canvas.
+  // This is the SAFETY-NET fallback used only if the server-side Playwright
+  // render fails. It paginates at natural SECTION boundaries (cover, summary,
+  // timeline, overview, budget, risks, wbs) so the output is clean — no
+  // mid-section cuts and no right-edge clipping — mirroring the server output.
   const exportClientSidePDF = async () => {
     try {
-      // Dynamic imports
       const { jsPDF } = await import('jspdf');
       const html2canvas = (await import('html2canvas')).default;
-      
-      // Find the report container (prioritize report-root to exclude top navigation buttons)
-      const element = document.getElementById('report-root') ||
-                      document.querySelector('.max-w-\\[1600px\\]') || 
-                      document.querySelector('[data-export-ready]') || 
-                      document.body;
-      
-      if (!element) {
-        throw new Error('No exportable content found');
-      }
-      
-      // Capture the element as canvas with ignoreElements to exclude navigation/buttons/dialogs
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        ignoreElements: (el) => {
-          return el.classList.contains('no-print') || 
-                 el.getAttribute('role') === 'dialog' || 
-                 el.tagName === 'NAV' ||
-                 el.classList.contains('dropdown-menu');
+
+      const root = document.getElementById('report-root') ||
+                   document.querySelector('[data-export-ready]') ||
+                   document.body;
+      if (!root) throw new Error('No exportable content found');
+
+      // 16:9 widescreen page (matches server export + PPT)
+      const pageWidth = 338.67;  // mm
+      const pageHeight = 190.5;  // mm
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pageWidth, pageHeight] });
+
+      const ignoreEls = (el) =>
+        el.classList?.contains('no-print') ||
+        el.getAttribute?.('role') === 'dialog' ||
+        el.tagName === 'NAV' ||
+        el.classList?.contains('dropdown-menu');
+
+      const h2cOpts = { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', ignoreElements: ignoreEls };
+
+      // Collect the report's top-level blocks in document order. We treat the
+      // cover, header and each [data-export-section]/[data-print-section] as a
+      // unit that should not be split unless it is taller than a full page.
+      const blocks = [];
+      const cover = root.querySelector('#report-cover, [data-export-section="cover"]');
+      if (cover) blocks.push(cover);
+      const header = root.querySelector('#report-header');
+      if (header) blocks.push(header);
+      root.querySelectorAll('[data-export-section]:not([data-export-section="cover"]), [data-print-section]')
+        .forEach((el) => { if (!blocks.includes(el)) blocks.push(el); });
+      const footer = root.querySelector('.report-footer');
+      if (footer) blocks.push(footer);
+
+      // Fallback: if we somehow found no sections, capture the whole root once.
+      const targets = blocks.length ? blocks : [root];
+
+      let cursorY = 0;      // current vertical position on the current page (mm)
+      let firstPlacement = true;
+      const topMargin = 6;  // mm
+      const usableHeight = pageHeight - topMargin;
+
+      for (const el of targets) {
+        const canvas = await html2canvas(el, h2cOpts);
+        const imgW = pageWidth;
+        const imgH = (canvas.height * imgW) / canvas.width;
+        const imgData = canvas.toDataURL('image/jpeg', 0.9);
+        const isCover = el === cover;
+
+        if (isCover) {
+          // Cover fills its own page.
+          if (!firstPlacement) pdf.addPage([pageWidth, pageHeight], 'landscape');
+          pdf.addImage(imgData, 'JPEG', 0, 0, imgW, pageHeight);
+          pdf.addPage([pageWidth, pageHeight], 'landscape');
+          cursorY = topMargin;
+          firstPlacement = false;
+          continue;
         }
-      });
-      
-      // Use 16:9 widescreen page size (or A4 landscape 297 x 210 mm)
-      const pageWidth = 338.67; // 16:9 widescreen width in mm
-      const pageHeight = 190.5; // 16:9 widescreen height in mm
-      // Alternative: Use A4 landscape
-      // const pageWidth = 297; // A4 landscape width in mm
-      // const pageHeight = 210; // A4 landscape height in mm
-      
-      const pdf = new jsPDF({
-        orientation: 'landscape',
-        unit: 'mm',
-        format: [pageWidth, pageHeight],
-      });
-      
-      const imgData = canvas.toDataURL('image/jpeg', 0.85);
-      
-      // Calculate image dimensions to fit page width
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      // Multi-page pagination logic
-      let heightLeft = imgHeight;
-      let position = 0;
-      
-      // Page 1
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-      
-      // Subsequent pages
-      while (heightLeft > 5) {
-        position -= pageHeight;
-        pdf.addPage([pageWidth, pageHeight], 'landscape');
-        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+
+        if (imgH <= usableHeight) {
+          // Section fits on the remaining space of the current page?
+          if (!firstPlacement && cursorY + imgH > pageHeight) {
+            pdf.addPage([pageWidth, pageHeight], 'landscape');
+            cursorY = topMargin;
+          }
+          if (firstPlacement) cursorY = topMargin;
+          pdf.addImage(imgData, 'JPEG', 0, cursorY, imgW, imgH);
+          cursorY += imgH + 2;
+          firstPlacement = false;
+        } else {
+          // Section taller than one page — slice it across pages (still keeps
+          // full width so nothing is clipped horizontally).
+          if (!firstPlacement) { pdf.addPage([pageWidth, pageHeight], 'landscape'); }
+          firstPlacement = false;
+          let remaining = imgH;
+          let sliceTop = 0;
+          while (remaining > 1) {
+            pdf.addImage(imgData, 'JPEG', 0, -sliceTop, imgW, imgH);
+            remaining -= pageHeight;
+            sliceTop += pageHeight;
+            if (remaining > 1) pdf.addPage([pageWidth, pageHeight], 'landscape');
+          }
+          cursorY = pageHeight; // force next block to a new page
+        }
       }
-      
-      // Save the PDF
+
       pdf.save(`${safeFileName()}.pdf`);
-      toast.success('Complete multi-page PDF exported successfully');
+      toast.success('PDF exported successfully');
     } catch (err) {
       console.error('Client-side PDF export failed:', err);
       // Final fallback to browser print
@@ -1172,7 +1198,8 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
       toast.success('PDF exported successfully');
     } catch (err) {
       console.error('PDF export failed:', err);
-      // Fallback to client-side PDF generation
+      // Server render unavailable — fall back to clean client-side generation.
+      toast.info('Preparing your PDF…');
       try {
         await exportClientSidePDF();
       } catch (clientErr) {
@@ -1196,6 +1223,7 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
     } catch (err) {
       console.error('PPTX export failed:', err);
       // Fallback to client-side PPTX generation
+      toast.info('Preparing your PowerPoint…');
       await exportClientSidePPTX();
     } finally {
       setExporting(null);
