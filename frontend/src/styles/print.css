@@ -158,7 +158,14 @@
   }
 
   /* WBS section + its table: fit page width, wrap long cell text so the
-   * rightmost column ("Actuals vs Est.") is never clipped. */
+   * rightmost column ("Actuals vs Est." / "Deps") is never clipped.
+   *
+   * ROOT CAUSE of the residual clipping: the plan-view table is rendered with
+   * Tailwind `min-w-max` (min-width:max-content) inside an `overflow-x-auto`
+   * wrapper, and its columns carry `min-w-48/40/36`. Those min-widths WIN over
+   * our `width:100%`, so the table stays wider than the page and the last
+   * columns get cut off at the right edge in print. We must forcibly zero every
+   * min-width inside the WBS section so `table-layout:fixed` can compress it. */
   [data-export-section="wbs"],
   [data-print-section="wbs"] {
     width: 100% !important;
@@ -169,7 +176,15 @@
   [data-print-section="wbs"] table {
     width: 100% !important;
     max-width: 100% !important;
+    min-width: 0 !important;      /* neutralise min-w-max on the table */
     table-layout: fixed !important;
+  }
+  /* Kill EVERY min-width inside the WBS section (min-w-max, min-w-48, min-w-40,
+   * min-w-36, etc.) so columns can shrink to fit the page. */
+  [data-export-section="wbs"] *,
+  [data-print-section="wbs"] * {
+    min-width: 0 !important;
+    max-width: 100% !important;
   }
   [data-export-section="wbs"] td,
   [data-export-section="wbs"] th,
@@ -177,7 +192,9 @@
   [data-print-section="wbs"] th {
     word-break: break-word !important;
     overflow-wrap: anywhere !important;
-    white-space: normal !important;
+    white-space: normal !important;   /* override whitespace-nowrap */
+    font-size: 7.5pt !important;       /* compact so all 11 columns fit */
+    padding: 3pt 4pt !important;
   }
 
   /* Tighten the header */
@@ -221,25 +238,32 @@
   }
 
   /* ────────────────────────────────────────────────────────
-   * 3. Force major sections to start on a NEW page so the
-   *    report reads as: Cover / Performance / Risks / Team.
-   *    Skip the rule for the very first such section.
+   * 3. Section flow. We previously FORCED each major section
+   *    (risks/team/wbs) onto a fresh page, but that created
+   *    near-blank pages whenever the preceding section ended
+   *    partway down. Instead we now let sections FLOW naturally
+   *    and only avoid breaking INSIDE items, so the report is
+   *    compact with no wasted blank pages.
    * ──────────────────────────────────────────────────────── */
 
-  /* Risks section starts on its own page */
-  [data-print-section="risks"] {
-    page-break-before: always;
-    break-before: page;
+  /* Do NOT force a new page before these — let them flow. */
+  [data-print-section="risks"],
+  [data-print-section="team"],
+  [data-print-section="wbs"],
+  [data-export-section="summary"],
+  [data-export-section="timeline"],
+  [data-export-section="overview"],
+  [data-export-section="budget"] {
+    page-break-before: auto !important;
+    break-before: auto !important;
   }
-  /* Team allocations on its own page (if there are any) */
-  [data-print-section="team"] {
-    page-break-before: always;
-    break-before: page;
-  }
-  /* WBS section starts on its own page in the main client report */
+
+  /* Big sections (WBS/Risks) may break across pages rather than being
+   * forced whole onto a fresh page. */
+  [data-print-section="risks"],
   [data-print-section="wbs"] {
-    page-break-before: always;
-    break-before: page;
+    page-break-inside: auto;
+    break-inside: auto;
   }
   /* WBS-only export shouldn't force breaks */
   [data-export-section="wbs"] {
