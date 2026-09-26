@@ -210,7 +210,7 @@ async def render_pdf(
             # Wait for the ready indicator
             logger.info(f"Waiting for selector: {wait_selector}")
             try:
-                await page.wait_for_selector(wait_selector, timeout=10000)
+                await page.wait_for_selector(wait_selector, timeout=15000)
             except Exception as e:
                 logger.warning(f"Timeout waiting for selector '{wait_selector}': {e}. Proceeding with PDF generation.")
 
@@ -292,7 +292,7 @@ async def render_screenshots(
             # Wait for the ready indicator
             logger.info(f"Waiting for selector: {wait_selector}")
             try:
-                await page.wait_for_selector(wait_selector, timeout=10000)
+                await page.wait_for_selector(wait_selector, timeout=15000)
             except Exception as e:
                 logger.warning(f"Timeout waiting for selector '{wait_selector}': {e}. Proceeding with screenshot generation.")
 

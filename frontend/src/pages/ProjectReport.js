@@ -284,7 +284,7 @@ const SectionBox = ({ icon: Icon, title, colorClasses, children }) => (
 );
 
 // Client-facing Status Summary with 4 structured sections
-const AIStatusSummary = ({ project, periodInfo, statusUpdates = [], risks = [] }) => {
+const AIStatusSummary = ({ project, periodInfo, statusUpdates = [], risks = [], onReady }) => {
   const [sections, setSections] = useState(null); // { executive_summary, project_objective, achievements, next_period_focus }
   const [rawFallback, setRawFallback] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -410,6 +410,11 @@ Rules:
       }
     } finally {
       setIsLoading(false);
+      // Signal the export renderer that the summary is done (success OR
+      // fallback), so the PDF is never captured mid-"Generating…".
+      if (typeof onReady === 'function') {
+        try { onReady(); } catch (_e) { /* no-op */ }
+      }
     }
   };
 
@@ -703,16 +708,20 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
   const [generatedLink, setGeneratedLink] = useState(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [forceExportReady, setForceExportReady] = useState(false);
+  const [summaryReady, setSummaryReady] = useState(false);
   const isClientMode = searchParams.get('client') === 'true';
   // Print/export mode flags — also read from URL so the component works when used
   // directly under a route that doesn't pass props.
   const printMode = printModeProp || searchParams.get('print') === '1';
   const wbsOnly = wbsOnlyProp || searchParams.get('view') === 'wbs';
 
-  // Force export ready after timeout in print mode (prevent Playwright hanging)
+  // Force export ready after a timeout in print mode as a SAFETY CAP so the
+  // renderer never hangs if the AI summary is slow/unavailable. We give the AI
+  // status summary time to finish first (see summaryReady gating below); this
+  // 12s cap only fires if the summary never signals ready.
   useEffect(() => {
     if (printMode) {
-      const timer = setTimeout(() => setForceExportReady(true), 3000);
+      const timer = setTimeout(() => setForceExportReady(true), 12000);
       return () => clearTimeout(timer);
     }
   }, [printMode]);
@@ -1364,7 +1373,12 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
 
   // Signal to Playwright that all data is ready & rendered
   // Only true once project + (timeReport OR no time tracking) + risks + allocations are all settled
-  const isExportReady = forceExportReady || (!isLoading && !!project && !!periodInfo && (timeReport !== undefined) && (risks !== undefined) && (allocations !== undefined));
+  // Base readiness: all report data loaded. In PRINT/export mode we ALSO wait
+  // for the AI status summary to finish rendering (summaryReady) so the PDF is
+  // never captured while it still says "Generating…". forceExportReady is the
+  // 12s safety cap so the renderer never hangs.
+  const dataReady = (!isLoading && !!project && !!periodInfo && (timeReport !== undefined) && (risks !== undefined) && (allocations !== undefined));
+  const isExportReady = forceExportReady || (dataReady && (!printMode || summaryReady));
 
   // ============================================================
   // WBS-only render path (used by /print routes for WBS exports)
@@ -1642,6 +1656,7 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
             periodInfo={periodInfo}
             statusUpdates={periodStatusUpdates}
             risks={risks}
+            onReady={() => setSummaryReady(true)}
           />
         </div>
 
