@@ -268,6 +268,23 @@ DD Planner is a full-stack resource planning and project management application 
 - **Service Layer**: `services/ai_instructions.py` helper fetches applicable instructions and formats them for prompt injection
 - Files: `services/ai_instructions.py`, `routes/ai_instructions.py`, `AIInstructionsPanel.js`, `AIFeedbackButtons.js`, `risk_ai.py`, `ai.py`, `wbs.py`, `projects.py`, `ProjectDetail.js`, `AIRescheduleDialog.js`
 
+## Session: Reliable Clean Report Export — Phase 1 (print-first WBS table) (Jul 2025)
+
+### Approved plan
+Rebuild how the project report is turned into PDF/PPTX so output is always clean and never errors. On-screen app unchanged — only the export.
+
+### Phase 1 (DONE, testing-agent verified 15/15, incl. data-heavy 30-task validation)
+- **Root cause of recurring WBS clipping:** the export reused the SCREEN-FIRST `WBSView` plan table (`overflow-x-auto` + `min-w-max`, ~11 columns) on a fixed-size page → right columns ("Actuals vs Est.", "Deps") clipped. Four rounds of CSS tweaks kept failing on real data.
+- **Fix:** new `frontend/src/components/PrintWBSTable.js` — a print-first table with a fixed `<colgroup>` (widths sum to 100%) + `table-layout:fixed`, so it ALWAYS fits the page and long text wraps. Essential columns only: Task, Phase, Start, End, Duration, Status, % Complete, Actuals vs Est. **"Deps" removed** from the client export.
+- Wired into `ProjectReport.js` for both the full report WBS section and the wbsOnly export; removed the now-unused `WBSView` import there. On-screen interactive `WBSView` is unchanged.
+- Also carried the earlier hardening: compact section flow (no near-blank pages), render concurrency semaphore + 4Gi/4CPU (no 502/503), clean client-side fallback.
+- **Verified:** 30-task data-heavy report — all columns visible incl Actuals vs Est. (0h/40h…0h/120h), long names wrap, status badges colored, header repeats per page, table flows across pages, no clipping, no blank page; 3 concurrent exports all HTTP 200 full PDFs; PPTX/health/projects regressions pass.
+- **New bundle** (needs deploy): `main.2389f74b.js` / `main.afc39e38.css`.
+
+### Phase 2 (next): client-report WBS full-table vs compact-summary toggle (remembered per generation).
+### Phase 3 (later): scale hardening — dedicated render capacity for many tenants.
+
+
 ## Session: Customer Report PDF Clean-Layout Fix + Magic Link Verification (Jul 2025)
 
 ### Bug Fix: Customer Report PDF exported unclean across several pages (VERIFIED)

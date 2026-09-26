@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getProject, getProjectRisks, getProjectAllocations, getResources, getProjectStatusUpdates, getProjectTimeReport, sendChatMessage, exportProjectPDF, exportProjectPPT, exportProjectWBSPDF, exportProjectWBSPPT, updateProjectSummary, getMe } from '../api';
+import { getProject, getProjectRisks, getProjectAllocations, getResources, getProjectStatusUpdates, getProjectTimeReport, sendChatMessage, exportProjectPDF, exportProjectPPT, exportProjectWBSPDF, exportProjectWBSPPT, updateProjectSummary, getMe, getProjectWBS, getWBSActuals } from '../api';
 import { format, differenceInDays, startOfWeek, endOfWeek, addDays, subDays, parseISO, isWithinInterval, isBefore, isAfter } from 'date-fns';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -18,7 +18,7 @@ import {
 } from '../components/ui/dropdown-menu';
 import { ArrowLeft, Printer, Calendar, TrendingUp, AlertTriangle, CheckCircle2, Clock, Sparkles, Bot, RefreshCw, Download, FileText, Presentation, Loader2, Target, ArrowRight, Edit2, Save, X, Mail, Copy, CheckCheck } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
-import WBSView from '../components/WBSView';
+import PrintWBSTable from '../components/PrintWBSTable';
 import { toast } from 'sonner';
 import '../styles/print.css';
 
@@ -777,6 +777,25 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
     enabled: !!id,
   });
 
+  // WBS tasks + actuals for the print-optimized report table (PrintWBSTable).
+  const { data: wbsTasks = [] } = useQuery({
+    queryKey: ['projectWBS', id],
+    queryFn: async () => {
+      const response = await getProjectWBS(id);
+      return response.data;
+    },
+    enabled: !!id,
+  });
+
+  const { data: wbsActuals = [] } = useQuery({
+    queryKey: ['projectWBSActuals', id],
+    queryFn: async () => {
+      const response = await getWBSActuals(id);
+      return response.data;
+    },
+    enabled: !!id,
+  });
+
   // Calculate period dates
   const periodInfo = useMemo(() => {
     if (!project) return null;
@@ -1383,9 +1402,9 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
             </div>
           </div>
 
-          {/* WBS body */}
-          <div data-export-section="wbs">
-            <WBSView projectId={id} project={project} phases={project.phases} resources={[]} readOnly={printMode} defaultView="plan" />
+          {/* WBS body — print-first table (fixed columns, no clipping) */}
+          <div data-export-section="wbs" data-print-section="wbs">
+            <PrintWBSTable tasks={wbsTasks} actuals={wbsActuals} phases={project.phases} />
           </div>
         </div>
       </div>
@@ -1807,22 +1826,20 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
 
         {/* Team Allocations section removed per user request — see Team tab on Project Detail for staffing info */}
 
-        {/* Work Breakdown Structure — always included in the client report */}
+        {/* Work Breakdown Structure — always included in the client report.
+            Uses the dedicated print-first table (PrintWBSTable) with fixed
+            column widths so it ALWAYS fits the page (no clipping), rather than
+            reusing the screen-first interactive WBSView plan table. */}
         <div className="mb-8" data-export-section="wbs" data-print-section="wbs">
           <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
             <Target className="h-6 w-6 text-[#4A9CC7]" />
             Work Breakdown Structure
           </h2>
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <WBSView
-              projectId={id}
-              project={project}
-              phases={project.phases}
-              resources={[]}
-              readOnly={true}
-              defaultView="plan"
-            />
-          </div>
+          <PrintWBSTable
+            tasks={wbsTasks}
+            actuals={wbsActuals}
+            phases={project.phases}
+          />
         </div>
 
         {/* Footer */}

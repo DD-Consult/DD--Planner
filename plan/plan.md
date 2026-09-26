@@ -1,56 +1,111 @@
-# Remediation Plan: Resolving Production PDF/PPT Report Export (503 Error)
+# DD Planner — Reliable, Clean Report Export (PDF & PPTX)
 
-## 1. Problem Diagnosis
-In production on Google Cloud Run (`https://ddplan-502760053858.australia-southeast1.run.app`), clicking "Export as PDF" or "Export as PPTX" fails with `HTTP 503 Service Unavailable`.
+Rebuild how the project report is turned into a PDF/PPTX so the output is always
+clean and never errors. The on-screen app is not changed — only what gets exported.
 
-### Root Cause Factors
-1. **Server-Side Headless Browser Constraints on Cloud Run**:
-   - The current export mechanism relies on launching an internal headless Chromium browser via Playwright inside the Cloud Run container.
-   - Cloud Run containers operate in a constrained virtualized sandbox with ephemeral filesystem limits (`/tmp`), restricted shared memory (`/dev/shm`), and CPU throttling when background child processes spawn.
-   - When Playwright attempts to launch Chromium or render canvas/SVG charts in the background, the subprocess fails or crashes immediately, triggering Cloud Run's HTTP 503 error.
-2. **Missing Dual-Layer Fallback Architecture**:
-   - Currently, if the server-side headless browser encounters an issue, the system throws an unhandled failure instead of failing over to an instant server-side PDF generator (ReportLab) or a client-side direct exporter.
+## Who it's for
+- Consultants/admins who send project status reports to clients.
+- Clients who receive the exported PDF/PPTX.
 
----
+## The problem being solved (why this plan exists)
+The export currently produces the report by having a headless browser render the
+exact interactive report page — including the on-screen Work Breakdown Structure
+(WBS) table. That table was designed for a wide screen with horizontal scrolling
+and ~11 columns. A fixed-width page cannot hold all of it, so the right-most
+columns ("Actuals vs Est.", "Deps") are cut off at the page edge. Four rounds of
+CSS/structural tweaks each looked fixed on light demo data but the real report
+(with fuller cells: status badges, progress bars, "N timesheets") still overflows
+and clips. Separately, heavy renders have caused server errors (502/503), and the
+report contains near-empty pages.
 
-## 2. Proposed Solution
+The recurring failure has one cause: **the export reuses a screen-first component
+for a fixed-size page.** This plan stops patching that and gives the export its
+own print-first layout that is guaranteed to fit, plus removes the wasted pages
+and confirms what is actually running in production so fixes stop "disappearing."
 
-We will implement a **Two-Tier Resilient Export Architecture**:
+## Core features and experience
+1. **Print-optimized WBS table (essential columns only).** In the exported
+   report the WBS is rendered by a dedicated print layout showing: Task, Phase,
+   Start, End, Duration, Status, % Complete, Actuals vs Est. The "Deps" column is
+   removed from the client export. Column widths are fixed so the table always
+   fits the page and long text wraps instead of overflowing — no clipping,
+   regardless of how much data a project has.
+2. **WBS detail vs. summary toggle for the client report.** When generating a
+   client report, the user chooses whether the WBS appears as the full task table
+   (print-optimized, above) or as a compact summary (phases with roll-up % and
+   task counts). Default is the full table; the choice is remembered per report
+   generation. Internal/admin views are unaffected.
+3. **No wasted pages.** The near-blank pages that currently appear (a page
+   containing only a footer) are removed. Sections flow so the report is tight;
+   the cover page and closing footer remain intentional.
+4. **No clipping anywhere else.** The timeline/Gantt and all other sections are
+   confirmed to fit the page width in the export.
+5. **Exports don't error (no 502/503).** Heavy renders are prevented from
+   overloading the server so a request never brings the instance down; if the
+   primary render is ever unavailable, the user still receives a clean file
+   rather than an error.
+6. **Honest deploy verification.** Before and after shipping, confirm exactly
+   which build is live in production, so a fix is never assumed live when it
+   isn't. The finished work is checked against a real, data-heavy report — not
+   just light sample data — before it is called done.
 
-### Tier 1: Client-Side Direct High-Fidelity PDF Export (Instant & 100% Cloud-Proof)
-- Because the project report is already fully fetched, rendered, and visible in the user's browser, the report page will generate and download the PDF directly using client-side rendering.
-- **Benefits**:
-  - Zero server load and zero reliance on server-side browser binaries.
-  - Generates the exact 16:9 widescreen presentation layout instantly without roundtrips.
-  - Immune to Cloud Run timeouts, cold starts, memory limits, and container sandbox restrictions.
+## User flow
+1. User opens a project and chooses Export (PDF or PPTX), or generates a client
+   report / magic link.
+2. If it's a client report, the user picks the WBS presentation: full task table
+   or summary.
+3. The file is produced and downloads. It opens as a clean, multi-page 16:9
+   document: cover, status summary, timeline, overview, budget, risks, and the
+   WBS in the chosen form — every column visible, no cut-off content, no blank
+   pages.
+4. If the server render is momentarily unavailable, the user still gets a clean
+   file with a brief "preparing" message instead of an error.
 
-### Tier 2: Resilient Server-Side Fallback (Lightweight Engine + Failover)
-- Update the server export endpoint (`/api/projects/{id}/export/pdf`) to:
-  1. Attempt headless Chromium execution with `--single-process=false`, `--disable-dev-shm-usage`, and `/tmp` scratch storage.
-  2. If Chromium fails or is terminated by Cloud Run, automatically fall back to **ReportLab** (already installed in the backend) to assemble and return a structured PDF report containing all project metrics, status updates, risks, and timeline summaries.
-  3. Ensure the endpoint never emits an unhandled 503.
+## UI/UX feel
+- Exported document keeps the current DD-branded look (navy/gold cover,
+  section styling) — this plan does not restyle the report, it makes it render
+  completely and reliably.
+- The WBS in export form reads like a clean printed table: fixed columns,
+  wrapped text, compact but legible.
+- The only new on-screen element is the WBS "full vs summary" choice in the
+  report/export step; everything else in the app stays exactly as it is today.
 
-### Tier 3: Deployment & Infrastructure Alignment
-- Verify that Cloud Run deployment configuration on `ddplan`:
-  - Allocates 2GiB memory and 2 vCPUs.
-  - Has `PLAYWRIGHT_BROWSERS_PATH=/pw-browsers` set in container environment variables.
-  - Ensures `--execution-environment=gen2` (Cloud Run second generation, which provides a full Linux kernel and `/dev/shm` support).
+## Implementation phases
 
----
+### Phase 1 — MVP (built now)
+- Dedicated print-only WBS table for the export with the agreed essential
+  columns (Task, Phase, Start, End, Duration, Status, % Complete, Actuals vs
+  Est.), "Deps" removed, guaranteed to fit the page with wrapping.
+- Remove the near-blank pages; verify no other section clips at the page edge.
+- Prevent export renders from overloading the server (no 502/503); ensure a
+  clean fallback file if the primary render is unavailable.
+- Verify the live production build before and after, and validate against a
+  data-heavy report (not just light demo data).
+- Applies to the PDF export first; PPTX inherits the same clean layout.
 
-## 3. Decisions & Choices for User Approval
+### Phase 2 — WBS summary/detail toggle
+- Add the client-report choice between full print WBS table and a compact
+  phase-level summary, remembered per generation.
 
-1. **Primary Export Trigger**:
-   - **Option A (Recommended)**: The "Export as PDF" button will immediately generate and download the high-fidelity PDF directly in the browser, with an option to request a server-compiled archive if needed.
-   - **Option B**: Continue attempting the server-side Playwright rendering first, with an automatic instant client-side download fallback if the server returns any non-200 status.
-   - *Default Assumption*: Option B (preserves existing server flow while guaranteeing that the user always receives their file).
+### Phase 3 — Scale hardening for many tenants
+- Make exports resilient under many simultaneous users/tenants (e.g. dedicated
+  render capacity), so report generation never competes with normal app usage.
 
-2. **ReportLab Server Fallback Scope**:
-   - When server fallback engages, generate a clean branded PDF report containing Project Overview, Timeline, Financials, Risks, and Status Updates.
-
----
-
-## 4. Acceptance Criteria
-- Clicking "Export as PDF" on any project (including `TradesX Phase 2 Production Build`) successfully downloads a PDF file on production.
-- Zero 503 error toasts displayed to users.
-- Export works reliably regardless of container cold-starts, memory limits, or headless browser status.
+## Assumptions
+- "Deps" is dropped from the client-facing export; it remains visible in the
+  on-screen interactive WBS.
+- Essential export columns are exactly: Task, Phase, Start, End, Duration,
+  Status, % Complete, Actuals vs Est. If any of these should also be dropped for
+  space, that's a later tweak.
+- The cover page and a single closing footer are intentional and kept; only the
+  extra footer-only pages are removed.
+- The exported report keeps its current visual style and section order; this is
+  a rendering-reliability fix, not a redesign.
+- Default WBS presentation in the client report is the full table (Phase 1);
+  the summary option arrives in Phase 2.
+- Scope is export/report generation only — the on-screen application behavior is
+  unchanged.
+- "No 502/503" means export requests no longer crash or overload the serving
+  instance; extreme concurrent multi-tenant load is fully addressed in Phase 3.
+- Production is updated by pushing to the existing GitHub → Cloud Build flow;
+  each fix only takes effect in production after that deploy runs.
