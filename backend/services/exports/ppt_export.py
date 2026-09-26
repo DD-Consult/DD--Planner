@@ -9,6 +9,7 @@ safe default so this file remains backward compatible.
 """
 import logging
 from io import BytesIO
+from urllib.parse import urlencode
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
@@ -16,6 +17,19 @@ from pptx.enum.text import PP_ALIGN
 from .renderer import render_screenshots
 
 logger = logging.getLogger(__name__)
+
+
+def _print_url(frontend_base_url: str, project_id: str, token: str, extra: dict = None) -> str:
+    """Build the /print report URL, threading through optional query params
+    (e.g. period, wbs_mode) so the exported render matches the user's choices."""
+    params = {"print": "1"}
+    if extra:
+        for k, v in extra.items():
+            if v is not None and v != "":
+                params[k] = v
+    params["_t"] = token
+    return f"{frontend_base_url}/print/projects/{project_id}/report?{urlencode(params)}"
+
 
 # Default (DD Consulting) brand palette — used when a tenant has no branding.
 DD_NAVY = RGBColor(0x1B, 0x2A, 0x47)
@@ -351,7 +365,7 @@ async def _fetch_cover_meta(project_id: str, subtitle: str = "PROJECT REPORT") -
     }
 
 
-async def build_project_ppt(project_id: str, token: str, frontend_base_url: str) -> bytes:
+async def build_project_ppt(project_id: str, token: str, frontend_base_url: str, extra_params: dict = None) -> bytes:
     """
     Generate PowerPoint for a project report.
     Uses per-section screenshots (data-export-section) so each section becomes
@@ -362,12 +376,14 @@ async def build_project_ppt(project_id: str, token: str, frontend_base_url: str)
         project_id: The project ID
         token: JWT token for authentication
         frontend_base_url: Base URL of the frontend (e.g., http://localhost:3000)
+        extra_params: Optional query params threaded into the print URL
+                      (e.g. {"period": "...", "wbs_mode": "summary"}).
     
     Returns:
         PPTX bytes
     """
-    logger.info(f"Building project PPT for project_id={project_id}")
-    url = f"{frontend_base_url}/print/projects/{project_id}/report?print=1&_t={token}"
+    logger.info(f"Building project PPT for project_id={project_id} params={extra_params}")
+    url = _print_url(frontend_base_url, project_id, token, extra_params)
     
     # Screenshot each report section separately → one slide per section.
     section_selectors = [
@@ -400,13 +416,16 @@ async def build_project_ppt(project_id: str, token: str, frontend_base_url: str)
     return pptx_bytes
 
 
-async def build_wbs_ppt(project_id: str, token: str, frontend_base_url: str) -> bytes:
+async def build_wbs_ppt(project_id: str, token: str, frontend_base_url: str, extra_params: dict = None) -> bytes:
     """
     Generate PowerPoint for a WBS (Work Breakdown Structure).
     Prepended with a branded cover slide.
     """
     logger.info(f"Building WBS PPT for project_id={project_id}")
-    url = f"{frontend_base_url}/print/projects/{project_id}/report?print=1&view=wbs&_t={token}"
+    extra = {"view": "wbs"}
+    if extra_params:
+        extra.update(extra_params)
+    url = _print_url(frontend_base_url, project_id, token, extra)
     
     pngs = await render_screenshots(
         url,

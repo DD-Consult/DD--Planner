@@ -281,6 +281,14 @@ Rebuild how the project report is turned into PDF/PPTX so output is always clean
 - **Verified:** 30-task data-heavy report — all columns visible incl Actuals vs Est. (0h/40h…0h/120h), long names wrap, status badges colored, header repeats per page, table flows across pages, no clipping, no blank page; 3 concurrent exports all HTTP 200 full PDFs; PPTX/health/projects regressions pass.
 - **New bundle** (needs deploy): `main.2389f74b.js` / `main.afc39e38.css`.
 
+### Phase 2 (DONE, testing-agent verified 25/27 — 2 were OCR false-negatives, pdftotext confirmed correct): client-report WBS full-table vs compact-summary toggle
+- New `frontend/src/components/PrintWBSSummary.js` — compact print-first roll-up: one row per phase with Tasks (Done), roll-up % complete + bar, Est. Hours, plus a Total row. Fixed `<colgroup>` so it always fits.
+- `ProjectReport.js` — `wbsMode` state from `?wbs_mode=` (default `full`); WBS section renders `PrintWBSSummary` when `summary` else `PrintWBSTable`; the "Select Report Period" dialog gained a "Work Breakdown Structure" choice (Full task table / Compact summary); `handleApplyFilter` adds `&wbs_mode=`; exports pass `{period, wbsMode}`.
+- `api.js` — `exportProjectPDF/PPT` accept `{period, wbsMode}` → query params.
+- Backend `services/exports/pdf_export.py` + `ppt_export.py` — `_print_url()` threads `period` + `wbs_mode` into the `/print` URL; `build_project_pdf/ppt` + `build_wbs_pdf/ppt` accept `extra_params`; `routes/reports.py` PDF+PPT endpoints read `?period` & `?wbs_mode` and pass through.
+- Verified: full = 7-page task table (no clip, no Deps); summary = 5-page phase roll-up (Execution Phase 4/30, 40%, 2044h + Total); PPT summary OK; concurrency OK; no near-blank page.
+- Magic link left at default full (portal schema unchanged) — future enhancement.
+
 ### Phase 2 (next): client-report WBS full-table vs compact-summary toggle (remembered per generation).
 ### Phase 3 (later): scale hardening — dedicated render capacity for many tenants.
 

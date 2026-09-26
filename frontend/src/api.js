@@ -468,11 +468,20 @@ export const getResourceUtilization = (params) =>
 // skipErrorToast: the export handlers have their own client-side fallback, so
 // we suppress the global error toast to avoid a scary "502" flash before the
 // fallback silently produces the file.
-export const exportProjectPDF = (projectId) =>
-  api.get(`/projects/${projectId}/export/pdf`, { responseType: 'blob', skipErrorToast: true });
+// opts: { period, wbsMode } thread the user's report choices into the render.
+const _exportQuery = (opts = {}) => {
+  const p = new URLSearchParams();
+  if (opts.period) p.set('period', opts.period);
+  if (opts.wbsMode) p.set('wbs_mode', opts.wbsMode);
+  const s = p.toString();
+  return s ? `?${s}` : '';
+};
 
-export const exportProjectPPT = (projectId) =>
-  api.get(`/projects/${projectId}/export/ppt`, { responseType: 'blob', skipErrorToast: true });
+export const exportProjectPDF = (projectId, opts = {}) =>
+  api.get(`/projects/${projectId}/export/pdf${_exportQuery(opts)}`, { responseType: 'blob', skipErrorToast: true });
+
+export const exportProjectPPT = (projectId, opts = {}) =>
+  api.get(`/projects/${projectId}/export/ppt${_exportQuery(opts)}`, { responseType: 'blob', skipErrorToast: true });
 
 // Server-side WBS Exports — standalone Work Breakdown Structure
 export const exportProjectWBSPDF = (projectId) =>

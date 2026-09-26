@@ -952,8 +952,16 @@ async def export_project_pdf(
     token = _extract_or_mint_token(request, current_user)
     base = _frontend_base_url()
 
+    # Thread the user's report options (period + WBS presentation) into the
+    # print render so the exported PDF matches what was chosen.
+    qp = request.query_params
+    extra_params = {
+        "period": qp.get("period") or "whole-project",
+        "wbs_mode": qp.get("wbs_mode") or "full",
+    }
+
     try:
-        pdf_bytes = await build_project_pdf(project_id, token, base)
+        pdf_bytes = await build_project_pdf(project_id, token, base, extra_params=extra_params)
     except Exception as e:
         logger.warning(f"[PDF Export] Playwright render failed ({e}); falling back to ReportLab...")
         try:
@@ -1006,8 +1014,14 @@ async def export_project_ppt(
     token = _extract_or_mint_token(request, current_user)
     base = _frontend_base_url()
 
+    qp = request.query_params
+    extra_params = {
+        "period": qp.get("period") or "whole-project",
+        "wbs_mode": qp.get("wbs_mode") or "full",
+    }
+
     try:
-        pptx_bytes = await build_project_ppt(project_id, token, base)
+        pptx_bytes = await build_project_ppt(project_id, token, base, extra_params=extra_params)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PPT generation failed: {e}")
 

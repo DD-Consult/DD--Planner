@@ -19,6 +19,7 @@ import {
 import { ArrowLeft, Printer, Calendar, TrendingUp, AlertTriangle, CheckCircle2, Clock, Sparkles, Bot, RefreshCw, Download, FileText, Presentation, Loader2, Target, ArrowRight, Edit2, Save, X, Mail, Copy, CheckCheck } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import PrintWBSTable from '../components/PrintWBSTable';
+import PrintWBSSummary from '../components/PrintWBSSummary';
 import { toast } from 'sonner';
 import '../styles/print.css';
 
@@ -701,6 +702,10 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
   const [reportPeriod, setReportPeriod] = useState(
     searchParams.get('period') || (printModeProp ? 'whole-project' : 'whole-project')
   );
+  // Phase 2: WBS presentation choice for the client report — 'full' task table
+  // (default) or 'summary' compact phase roll-up. Remembered per generation via
+  // the URL (?wbs_mode=) so the export render honors it.
+  const [wbsMode, setWbsMode] = useState(searchParams.get('wbs_mode') || 'full');
   const [exporting, setExporting] = useState(null); // 'pdf' | 'pptx' | null
   const [showMagicLinkDialog, setShowMagicLinkDialog] = useState(false);
   const [magicLinkEmail, setMagicLinkEmail] = useState('');
@@ -900,7 +905,7 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
 
   const handleApplyFilter = () => {
     setShowFilterDialog(false);
-    navigate(`/projects/${id}/report?period=${reportPeriod}`, { replace: true });
+    navigate(`/projects/${id}/report?period=${reportPeriod}&wbs_mode=${wbsMode}`, { replace: true });
   };
 
   const handlePrint = () => {
@@ -1220,7 +1225,7 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
   const exportToPDF = async () => {
     setExporting('pdf');
     try {
-      const res = await exportProjectPDF(id);
+      const res = await exportProjectPDF(id, { period: reportPeriod, wbsMode });
       const filename = `${safeFileName()}.pdf`;
       downloadBlob(res.data, filename);
       toast.success('PDF exported successfully');
@@ -1244,7 +1249,7 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
   const exportToPPTX = async () => {
     setExporting('pptx');
     try {
-      const res = await exportProjectPPT(id);
+      const res = await exportProjectPPT(id, { period: reportPeriod, wbsMode });
       const filename = `${safeFileName()}.pptx`;
       downloadBlob(res.data, filename);
       toast.success('PPTX exported — 2 slides');
@@ -1473,6 +1478,27 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
                 </Label>
               </div>
             </RadioGroup>
+
+            {/* Phase 2: WBS presentation choice */}
+            <div className="pt-2 border-t mt-2">
+              <div className="text-sm font-medium text-gray-700 mb-2">Work Breakdown Structure</div>
+              <RadioGroup value={wbsMode} onValueChange={setWbsMode}>
+                <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-gray-50 cursor-pointer" data-testid="wbs-mode-full">
+                  <RadioGroupItem value="full" id="wbs-full" />
+                  <Label htmlFor="wbs-full" className="cursor-pointer flex-1">
+                    <div className="font-medium">Full task table</div>
+                    <div className="text-sm text-gray-500">Every task with dates, status, % complete, actuals vs est.</div>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-gray-50 cursor-pointer" data-testid="wbs-mode-summary">
+                  <RadioGroupItem value="summary" id="wbs-summary" />
+                  <Label htmlFor="wbs-summary" className="cursor-pointer flex-1">
+                    <div className="font-medium">Compact summary</div>
+                    <div className="text-sm text-gray-500">Phases with roll-up % complete and task counts</div>
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => navigate(-1)}>Cancel</Button>
@@ -1842,19 +1868,19 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
         {/* Team Allocations section removed per user request — see Team tab on Project Detail for staffing info */}
 
         {/* Work Breakdown Structure — always included in the client report.
-            Uses the dedicated print-first table (PrintWBSTable) with fixed
-            column widths so it ALWAYS fits the page (no clipping), rather than
-            reusing the screen-first interactive WBSView plan table. */}
+            Phase 2: user chooses full print table (default) or a compact
+            phase-level summary via ?wbs_mode=. Both are print-first components
+            with fixed columns that always fit the page (no clipping). */}
         <div className="mb-8" data-export-section="wbs" data-print-section="wbs">
           <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
             <Target className="h-6 w-6 text-[#4A9CC7]" />
             Work Breakdown Structure
           </h2>
-          <PrintWBSTable
-            tasks={wbsTasks}
-            actuals={wbsActuals}
-            phases={project.phases}
-          />
+          {wbsMode === 'summary' ? (
+            <PrintWBSSummary tasks={wbsTasks} phases={project.phases} />
+          ) : (
+            <PrintWBSTable tasks={wbsTasks} actuals={wbsActuals} phases={project.phases} />
+          )}
         </div>
 
         {/* Footer */}
