@@ -290,7 +290,16 @@ Rebuild how the project report is turned into PDF/PPTX so output is always clean
 - Magic link left at default full (portal schema unchanged) — future enhancement.
 
 ### Phase 2 (next): client-report WBS full-table vs compact-summary toggle (remembered per generation).
-### Phase 3 (later): scale hardening — dedicated render capacity for many tenants.
+### Phase 3 (DONE, testing-agent verified 6/6): dedicated render service (Option B — user's choice)
+- Heavy PDF/PPTX renders delegate to a SEPARATE Cloud Run service `ddplan-render` (same image, render-only, `--min-instances 0`, independently scaled) so exports never starve app traffic.
+- New `services/exports/render_client.py` `render_via_service()` — when `RENDER_SERVICE_URL`+`RENDER_SERVICE_KEY` set, calls the render service's internal endpoint (httpx, forwards user JWT via `X-Forward-Authorization`, `X-Render-Key` shared secret); returns bytes or None.
+- New `routes/internal_render.py` — `GET /api/internal/render/{pdf,ppt}` guarded by `X-Render-Key` (timing-safe; 403 if missing/wrong/unconfigured); runs `build_project_pdf/ppt`/`build_wbs_*` in-process; honors period/wbs_mode/view.
+- `routes/reports.py` PDF+PPT endpoints try delegation FIRST → fall back in-process → ReportLab (exports never error).
+- `cloudbuild.yaml` now 4 steps (build, push, deploy `ddplan-render`, deploy `ddplan` with `RENDER_SERVICE_URL` via `_RENDER_SERVICE_URL` substitution + `RENDER_SERVICE_KEY` secret). `DEPLOYMENT.md` documents the one-time setup (create `RENDER_SERVICE_KEY` secret, deploy, grab `ddplan-render` URL, set `_RENDER_SERVICE_URL`, redeploy).
+- **Backward compatible:** unset `RENDER_SERVICE_*` → in-process (today's behavior); unreachable render service → falls back in-process; internal endpoint disabled (403) when no key.
+- Verified locally via self-delegation (URL→localhost): delegation log confirmed, full clean PDF; internal auth 403/403/200; PPT + wbs_mode summary via internal endpoint; concurrency OK; fallback OK. True 2-service topology only exists in prod after deploy.
+
+**All 3 phases of the approved export-rebuild plan are COMPLETE.** Everything ships in one GitHub→Cloud Build deploy (which now provisions `ddplan-render`).
 
 
 ## Session: Customer Report PDF Clean-Layout Fix + Magic Link Verification (Jul 2025)

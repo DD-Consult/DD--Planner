@@ -4,7 +4,7 @@
 #
 # RULES — DO NOT CHANGE WITHOUT TESTING:
 #   - Port MUST be 8080 (Cloud Run requirement)
-#   - All 4 secrets must exist in GCP Secret Manager
+#   - All required secrets must exist in GCP Secret Manager
 #   - --min-instances 1 keeps container warm (prevents cold-start 502)
 #   - Only add gcloud flags you have verified exist:
 #     VALID: --image --region --platform --port --memory --cpu
@@ -12,9 +12,24 @@
 #            --allow-unauthenticated --set-env-vars --update-secrets
 #   INVALID (broke deploy): --startup-probe-initial-delay
 #
+# PHASE 3 — Dedicated render service (Option B):
+#   - A SECOND Cloud Run service "ddplan-render" runs the SAME image but only
+#     serves the heavy PDF/PPTX renders, on its OWN independently-scaled
+#     capacity, so exports never starve the main app.
+#   - The main app (ddplan) delegates renders to it via RENDER_SERVICE_URL +
+#     RENDER_SERVICE_KEY (shared secret). If those are unset, the app renders
+#     in-process (fully backward compatible).
+#   - Substitution vars you must set (see DEPLOYMENT.md):
+#       _RENDER_SERVICE_URL : the ddplan-render service URL (fill after first
+#                             render-service deploy, then re-run for the main app)
+#   - Secret required in Secret Manager: RENDER_SERVICE_KEY (shared secret)
+#
 # Validate before pushing: bash scripts/validate-deploy.sh
 # Full docs: DEPLOYMENT.md
 # ============================================================
+substitutions:
+  _RENDER_SERVICE_URL: ""   # e.g. https://ddplan-render-502760053858.australia-southeast1.run.app
+
 steps:
   # Step 1: Build Docker image (frontend + backend)
   - name: "gcr.io/cloud-builders/docker"
@@ -35,9 +50,44 @@ steps:
       - "--all-tags"
       - "australia-southeast1-docker.pkg.dev/$PROJECT_ID/dd-planner/dd-planner"
 
-  # Step 3: Deploy to Cloud Run
-  # WARNING: Only add flags listed as VALID above.
-  # Each flag and its value must be separate list items.
+  # Step 3: Deploy the DEDICATED RENDER SERVICE (ddplan-render) — same image,
+  # render-only role, independently scaled. min-instances 0 keeps cost low when
+  # idle; it scales up on export bursts without touching the main app.
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "ddplan-render"
+      - "--image"
+      - "australia-southeast1-docker.pkg.dev/$PROJECT_ID/dd-planner/dd-planner:$SHORT_SHA"
+      - "--region"
+      - "australia-southeast1"
+      - "--platform"
+      - "managed"
+      - "--port"
+      - "8080"
+      - "--memory"
+      - "4Gi"                    # headroom for headless Chromium
+      - "--cpu"
+      - "4"
+      - "--min-instances"
+      - "0"                     # scale to zero when no exports — cost efficient
+      - "--max-instances"
+      - "10"                    # absorb concurrent export bursts here, off the app
+      - "--timeout"
+      - "300"
+      - "--cpu-boost"
+      - "--execution-environment"
+      - "gen2"
+      - "--allow-unauthenticated"   # protected by RENDER_SERVICE_KEY on /api/internal/render/*
+      - "--set-env-vars"
+      - "DB_NAME=resource_planner,MULTI_TENANT_ENABLED=false,PLATFORM_DB_NAME=platform_db,TENANT_DB_PREFIX=tenant_,PLAYWRIGHT_BROWSERS_PATH=/pw-browsers,EXPORT_RENDER_CONCURRENCY=2"
+      - "--update-secrets"
+      - "MONGO_URL=MONGO_URL:latest,SECRET_KEY=SECRET_KEY:latest,EMERGENT_LLM_KEY=EMERGENT_LLM_KEY:latest,EXPORT_API_KEY=EXPORT_API_KEY:latest,RENDER_SERVICE_KEY=RENDER_SERVICE_KEY:latest"
+
+  # Step 4: Deploy the MAIN app (ddplan). It delegates renders to ddplan-render
+  # when _RENDER_SERVICE_URL is set (otherwise renders in-process).
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: "gcloud"
     args:
@@ -67,9 +117,9 @@ steps:
       - "gen2"
       - "--allow-unauthenticated"
       - "--set-env-vars"
-      - "DB_NAME=resource_planner,MULTI_TENANT_ENABLED=false,PLATFORM_DB_NAME=platform_db,TENANT_DB_PREFIX=tenant_,PLAYWRIGHT_BROWSERS_PATH=/pw-browsers,EXPORT_RENDER_CONCURRENCY=2"
+      - "DB_NAME=resource_planner,MULTI_TENANT_ENABLED=false,PLATFORM_DB_NAME=platform_db,TENANT_DB_PREFIX=tenant_,PLAYWRIGHT_BROWSERS_PATH=/pw-browsers,EXPORT_RENDER_CONCURRENCY=2,RENDER_SERVICE_URL=${_RENDER_SERVICE_URL}"
       - "--update-secrets"
-      - "MONGO_URL=MONGO_URL:latest,SECRET_KEY=SECRET_KEY:latest,EMERGENT_LLM_KEY=EMERGENT_LLM_KEY:latest,EXPORT_API_KEY=EXPORT_API_KEY:latest"
+      - "MONGO_URL=MONGO_URL:latest,SECRET_KEY=SECRET_KEY:latest,EMERGENT_LLM_KEY=EMERGENT_LLM_KEY:latest,EXPORT_API_KEY=EXPORT_API_KEY:latest,RENDER_SERVICE_KEY=RENDER_SERVICE_KEY:latest"
 
 images:
   - "australia-southeast1-docker.pkg.dev/$PROJECT_ID/dd-planner/dd-planner:$SHORT_SHA"

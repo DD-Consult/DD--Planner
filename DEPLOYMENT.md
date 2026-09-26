@@ -6,6 +6,48 @@
 
 ---
 
+## Phase 3 — Dedicated Render Service (Option B)
+
+**Goal:** heavy PDF/PPTX renders run on a SEPARATE Cloud Run service so exports
+never compete with app/API traffic under multi-tenant load.
+
+**How it works**
+- `cloudbuild.yaml` now deploys TWO services from the same image:
+  1. `ddplan` — the main app (UI + API), `--min-instances 1`.
+  2. `ddplan-render` — render-only, `--min-instances 0` (scales to zero when idle,
+     scales up on export bursts on its OWN capacity).
+- The main app delegates renders to `ddplan-render` via `POST/GET
+  /api/internal/render/{pdf,ppt}` when `RENDER_SERVICE_URL` + `RENDER_SERVICE_KEY`
+  are set. The internal endpoint is protected by the `RENDER_SERVICE_KEY` shared
+  secret (timing-safe compare) and the user's JWT is forwarded to preserve
+  data scoping.
+- **Backward compatible:** if `RENDER_SERVICE_URL`/`RENDER_SERVICE_KEY` are unset,
+  or the render service is unreachable, the main app renders in-process (and
+  ultimately ReportLab) — so exports never error.
+
+**One-time setup**
+1. Create the shared secret:
+   `printf 'CHOOSE-A-LONG-RANDOM-STRING' | gcloud secrets create RENDER_SERVICE_KEY --data-file=-`
+   (or add a new version to an existing secret).
+2. First deploy (push to GitHub): Cloud Build deploys `ddplan-render` and `ddplan`.
+   On the very first run `_RENDER_SERVICE_URL` is empty, so `ddplan` renders
+   in-process — that's fine.
+3. Grab the render service URL:
+   `gcloud run services describe ddplan-render --region australia-southeast1 --format 'value(status.url)'`
+4. Set the substitution on the Cloud Build trigger (or pass `--substitutions
+   _RENDER_SERVICE_URL=<that url>`), then re-run the build. Now `ddplan`
+   delegates renders to `ddplan-render`.
+
+**Verify**
+- `gcloud run services list` shows both `ddplan` and `ddplan-render`.
+- Export a report from the app; `ddplan-render` logs show
+  `[RENDER DELEGATE] ... rendered by render service`, and `ddplan-render`
+  instance count rises during the export while `ddplan` stays steady.
+
+---
+
+---
+
 ## ⚑ Pending Release — Customer Report PDF Clean-Layout Fix (Jul 2025)
 
 **What it fixes:** The exported project customer report PDF was clipping content

@@ -960,32 +960,47 @@ async def export_project_pdf(
         "wbs_mode": qp.get("wbs_mode") or "full",
     }
 
+    pdf_bytes = None
+    # Phase 3: prefer the dedicated render service (independent Cloud Run
+    # capacity) so heavy Chromium renders never starve app traffic. Falls back
+    # to in-process render if not configured or if the call fails.
     try:
-        pdf_bytes = await build_project_pdf(project_id, token, base, extra_params=extra_params)
-    except Exception as e:
-        logger.warning(f"[PDF Export] Playwright render failed ({e}); falling back to ReportLab...")
+        from services.exports.render_client import render_via_service
+        pdf_bytes = await render_via_service(
+            "pdf", project_id, token,
+            period=extra_params["period"], wbs_mode=extra_params["wbs_mode"],
+        )
+    except Exception as _de:
+        logger.warning(f"[PDF Export] render delegation error ({_de}); will render in-process")
+        pdf_bytes = None
+
+    if pdf_bytes is None:
         try:
-            from services.exports.reportlab_export import build_project_pdf_reportlab
-            from database import risks_collection, allocations_collection, status_updates_collection, resources_collection
-            risks = await risks_collection.find({"project_id": project_id}).to_list(length=100)
-            allocs = await allocations_collection.find({"project_id": project_id}).to_list(length=100)
-            res_ids = [ObjectId(a["resource_id"]) for a in allocs if a.get("resource_id") and ObjectId.is_valid(str(a["resource_id"]))]
-            if res_ids:
-                res_docs = await resources_collection.find({"_id": {"$in": res_ids}}).to_list(length=100)
-                res_map = {str(r["_id"]): r.get("name", "Unknown") for r in res_docs}
-                for a in allocs:
-                    a["resource_name"] = res_map.get(a.get("resource_id"), "Unknown")
-            status_updates = await status_updates_collection.find({"project_id": project_id}).sort("update_date", -1).to_list(length=10)
-            pdf_bytes = build_project_pdf_reportlab(
-                project=project,
-                risks=risks,
-                allocations=allocs,
-                status_updates=status_updates
-            )
-        except Exception as fallback_e:
-            logger.error(f"[PDF Export] Both Playwright and ReportLab failed: {fallback_e}")
-            from services.exports.reportlab_export import build_project_pdf_reportlab
-            pdf_bytes = build_project_pdf_reportlab(project=project)
+            pdf_bytes = await build_project_pdf(project_id, token, base, extra_params=extra_params)
+        except Exception as e:
+            logger.warning(f"[PDF Export] Playwright render failed ({e}); falling back to ReportLab...")
+            try:
+                from services.exports.reportlab_export import build_project_pdf_reportlab
+                from database import risks_collection, allocations_collection, status_updates_collection, resources_collection
+                risks = await risks_collection.find({"project_id": project_id}).to_list(length=100)
+                allocs = await allocations_collection.find({"project_id": project_id}).to_list(length=100)
+                res_ids = [ObjectId(a["resource_id"]) for a in allocs if a.get("resource_id") and ObjectId.is_valid(str(a["resource_id"]))]
+                if res_ids:
+                    res_docs = await resources_collection.find({"_id": {"$in": res_ids}}).to_list(length=100)
+                    res_map = {str(r["_id"]): r.get("name", "Unknown") for r in res_docs}
+                    for a in allocs:
+                        a["resource_name"] = res_map.get(a.get("resource_id"), "Unknown")
+                status_updates = await status_updates_collection.find({"project_id": project_id}).sort("update_date", -1).to_list(length=10)
+                pdf_bytes = build_project_pdf_reportlab(
+                    project=project,
+                    risks=risks,
+                    allocations=allocs,
+                    status_updates=status_updates
+                )
+            except Exception as fallback_e:
+                logger.error(f"[PDF Export] Both Playwright and ReportLab failed: {fallback_e}")
+                from services.exports.reportlab_export import build_project_pdf_reportlab
+                pdf_bytes = build_project_pdf_reportlab(project=project)
 
     fname = _safe_filename(project.get("name", "project")) + "-Report.pdf"
     return Response(
@@ -1020,10 +1035,23 @@ async def export_project_ppt(
         "wbs_mode": qp.get("wbs_mode") or "full",
     }
 
+    pptx_bytes = None
+    # Phase 3: prefer the dedicated render service; fall back in-process.
     try:
-        pptx_bytes = await build_project_ppt(project_id, token, base, extra_params=extra_params)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PPT generation failed: {e}")
+        from services.exports.render_client import render_via_service
+        pptx_bytes = await render_via_service(
+            "ppt", project_id, token,
+            period=extra_params["period"], wbs_mode=extra_params["wbs_mode"],
+        )
+    except Exception as _de:
+        logger.warning(f"[PPT Export] render delegation error ({_de}); will render in-process")
+        pptx_bytes = None
+
+    if pptx_bytes is None:
+        try:
+            pptx_bytes = await build_project_ppt(project_id, token, base, extra_params=extra_params)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"PPT generation failed: {e}")
 
     fname = _safe_filename(project.get("name", "project")) + "-Report.pptx"
     return Response(
