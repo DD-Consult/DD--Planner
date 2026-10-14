@@ -189,6 +189,10 @@ async def get_project_wbs(project_id: str, current_user: dict = Depends(get_curr
     - Weighted average by estimated_hours of children
     - Simple average if children have 0 estimated hours
     """
+    from utils import check_project_read_access
+    if not await check_project_read_access(current_user, project_id):
+        raise HTTPException(status_code=403, detail="Access denied to this project")
+    
     cursor = wbs_tasks_collection.find({"project_id": project_id}).sort("order", 1)
     tasks = await cursor.to_list(length=10000)
 
@@ -260,6 +264,10 @@ async def get_wbs_budget_status(project_id: str, current_user: dict = Depends(ge
     Get current WBS budget status for a project.
     Returns total WBS hours vs project budget with validation status.
     """
+    from utils import check_project_read_access
+    if not await check_project_read_access(current_user, project_id):
+        raise HTTPException(status_code=403, detail="Access denied to this project")
+    
     budget_status = await validate_wbs_budget(project_id)
     return budget_status
 
@@ -857,6 +865,10 @@ async def get_wbs_actuals(project_id: str, current_user: dict = Depends(get_curr
     Aggregate actual hours from timesheets by WBS task.
     FIX #3: NOW WITH HIERARCHICAL ROLLUP - Child task hours roll up to parents.
     """
+    from utils import check_project_read_access
+    if not await check_project_read_access(current_user, project_id):
+        raise HTTPException(status_code=403, detail="Access denied to this project")
+    
     # 1. Get direct timesheet hours (leaf level)
     cursor = timesheets_collection.find({
         "project_id": project_id,
@@ -987,6 +999,10 @@ async def get_wbs_tasks_for_timesheet(
     current_user: dict = Depends(get_current_user),
 ):
     """Lightweight task list for timesheet task dropdown."""
+    from utils import check_project_read_access
+    if not await check_project_read_access(current_user, project_id):
+        raise HTTPException(status_code=403, detail="Access denied to this project")
+    
     query: dict = {"project_id": project_id}
     if phase_id:
         query["phase_id"] = phase_id
@@ -1406,6 +1422,9 @@ async def get_project_wbs_summary(
     - Tasks completed vs total
     - Phase-level breakdown
     """
+    from utils import check_project_read_access
+    if not await check_project_read_access(current_user, project_id):
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     
     # 1. Get all WBS tasks for this project
     wbs_tasks = await wbs_tasks_collection.find({

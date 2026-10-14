@@ -200,6 +200,42 @@ async def get_user_allowed_project_ids(current_user: dict):
 
 
 
+async def get_user_allowed_project_ids_read(current_user: dict):
+    """Allowed project IDs for READ ops (role-aware).
+    - admin/super_admin -> None (unrestricted)
+    - resource -> None (resources may view ALL projects read-only, per owner decision)
+    - client -> set(allowed_project_ids)
+    - contractor -> allocated + led projects only
+    """
+    from database import allocations_collection, projects_collection
+    role = (current_user.get("role") or "").lower()
+    if role in ("admin", "super_admin"):
+        return None
+    if role == "resource":
+        return None
+    if role == "client":
+        return set(str(pid) for pid in current_user.get("allowed_project_ids", []))
+    # contractor
+    resource = await find_user_resource(current_user)
+    if not resource:
+        return set()
+    rid = str(resource["_id"])
+    allocs = await allocations_collection.find({"resource_id": rid}).to_list(length=1000)
+    pids = {a["project_id"] for a in allocs}
+    lead_projects = await projects_collection.find({"project_lead_id": rid}).to_list(length=500)
+    pids |= {str(p["_id"]) for p in lead_projects}
+    return pids
+
+
+async def check_project_read_access(current_user: dict, project_id: str) -> bool:
+    """True if the user may READ this project per role-aware scoping."""
+    allowed = await get_user_allowed_project_ids_read(current_user)
+    if allowed is None:
+        return True
+    return str(project_id) in allowed
+
+
+
 def calculate_weekly_hours(percentage: int, allocation_start: date, allocation_end: date, week_start: date, week_end: date) -> float:
     """Calculate planned hours for a specific week based on allocation percentage.
     Uses 5-day business week (Mon-Fri) for all calculations."""

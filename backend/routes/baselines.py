@@ -98,6 +98,15 @@ async def api_list_baselines(project_id: str, current_user: dict = Depends(get_c
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
     pid = proj.get("id") or str(proj.get("_id"))
+    
+    # Access check (both forms)
+    from utils import get_user_allowed_project_ids_read
+    allowed = await get_user_allowed_project_ids_read(current_user)
+    if allowed is not None:
+        pid_candidates = {pid, str(proj.get("_id")), str(proj.get("id") or "")}
+        if not (pid_candidates & allowed):
+            raise HTTPException(status_code=403, detail="Access denied to this project")
+    
     items = await list_baselines(pid)
     return {"items": items, "count": len(items)}
 
@@ -108,6 +117,15 @@ async def api_get_current(project_id: str, current_user: dict = Depends(get_curr
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
     pid = proj.get("id") or str(proj.get("_id"))
+    
+    # Access check (both forms)
+    from utils import get_user_allowed_project_ids_read
+    allowed = await get_user_allowed_project_ids_read(current_user)
+    if allowed is not None:
+        pid_candidates = {pid, str(proj.get("_id")), str(proj.get("id") or "")}
+        if not (pid_candidates & allowed):
+            raise HTTPException(status_code=403, detail="Access denied to this project")
+    
     b = await get_current_baseline(pid)
     if not b:
         raise HTTPException(status_code=404, detail="No current baseline set")
@@ -118,12 +136,23 @@ async def api_get_current(project_id: str, current_user: dict = Depends(get_curr
 async def api_get_baseline(project_id: str, baseline_id: str,
                            current_user: dict = Depends(get_current_user)):
     b = await get_baseline(baseline_id)
-    if not b or b.get("project_id") not in (project_id,):
-        # Fallback: look up project to allow ObjectId form
-        proj = await _find_project(project_id)
-        pid = proj.get("id") or str(proj.get("_id")) if proj else project_id
-        if not b or b.get("project_id") != pid:
-            raise HTTPException(status_code=404, detail="Baseline not found")
+    # Fallback: look up project to allow ObjectId form
+    proj = await _find_project(project_id)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    pid = proj.get("id") or str(proj.get("_id"))
+    
+    if not b or b.get("project_id") != pid:
+        raise HTTPException(status_code=404, detail="Baseline not found")
+    
+    # Access check (both forms)
+    from utils import get_user_allowed_project_ids_read
+    allowed = await get_user_allowed_project_ids_read(current_user)
+    if allowed is not None:
+        pid_candidates = {pid, str(proj.get("_id")), str(proj.get("id") or "")}
+        if not (pid_candidates & allowed):
+            raise HTTPException(status_code=403, detail="Access denied to this project")
+    
     return b
 
 
@@ -133,6 +162,15 @@ async def api_variance_current(project_id: str, current_user: dict = Depends(get
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
     pid = proj.get("id") or str(proj.get("_id"))
+    
+    # Access check (both forms)
+    from utils import get_user_allowed_project_ids_read
+    allowed = await get_user_allowed_project_ids_read(current_user)
+    if allowed is not None:
+        pid_candidates = {pid, str(proj.get("_id")), str(proj.get("id") or "")}
+        if not (pid_candidates & allowed):
+            raise HTTPException(status_code=403, detail="Access denied to this project")
+    
     return await compute_variance(pid)
 
 
@@ -143,6 +181,15 @@ async def api_variance_specific(project_id: str, baseline_id: str,
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
     pid = proj.get("id") or str(proj.get("_id"))
+    
+    # Access check (both forms)
+    from utils import get_user_allowed_project_ids_read
+    allowed = await get_user_allowed_project_ids_read(current_user)
+    if allowed is not None:
+        pid_candidates = {pid, str(proj.get("_id")), str(proj.get("id") or "")}
+        if not (pid_candidates & allowed):
+            raise HTTPException(status_code=403, detail="Access denied to this project")
+    
     return await compute_variance(pid, baseline_id)
 
 
@@ -158,6 +205,15 @@ async def api_change_log(
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
     pid = proj.get("id") or str(proj.get("_id"))
+
+    # Access check (both forms)
+    from utils import get_user_allowed_project_ids_read
+    allowed = await get_user_allowed_project_ids_read(current_user)
+    if allowed is not None:
+        pid_candidates = {pid, str(proj.get("_id")), str(proj.get("id") or "")}
+        if not (pid_candidates & allowed):
+            raise HTTPException(status_code=403, detail="Access denied to this project")
+
     items = await list_change_log(pid, limit=limit, entity_type=entity_type, since=since)
     return {"items": items, "count": len(items)}
 
