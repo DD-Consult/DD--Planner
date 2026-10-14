@@ -2,12 +2,25 @@
 import json
 import os
 import re
+import logging
 import uuid as uuid_module
 
 from database import settings_collection, EMERGENT_LLM_KEY
 
-# Gemini model name (env-overridable for future model upgrades)
+logger = logging.getLogger(__name__)
+
+# Gemini model name (env-overridable for future model upgrades).
+# A short, ordered fallback list is tried if the primary 404s / is unavailable
+# to the project — model availability on the Gemini API changes over time and
+# differs per project, so we degrade gracefully instead of hard-failing.
 GEMINI_TEXT_MODEL = os.environ.get("GEMINI_TEXT_MODEL", "gemini-flash-latest")
+_GEMINI_MODEL_FALLBACKS = [
+    GEMINI_TEXT_MODEL,
+    "gemini-flash-latest",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+]
 # Default Gemini key from env — used as a fallback across ALL AI features
 # (chat, WBS, reschedule, voice) when a tenant hasn't set their own in Settings → AI.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -62,30 +75,70 @@ async def call_openai_api(api_key: str, system_prompt: str, user_message: str):
 
 
 async def call_gemini_api(api_key: str, system_prompt: str, user_message: str):
-    """Helper function to call Gemini API"""
+    """Call the Gemini (Google AI Studio) generateContent API.
+
+    Resilient:
+      - 45s timeout (report prompts are long; 15s caused silent timeouts).
+      - Tries a short ordered list of model names, so if the configured model
+        404s / is unavailable to the project, we fall through to a working one.
+      - Logs the actual Gemini error (status + body) so prod logs show the real
+        cause instead of a generic 'unable to process' message.
+
+    Returns an httpx-like response object with .status_code / .json() / .text.
+    """
     import httpx
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        try:
-            response = await client.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_TEXT_MODEL}:generateContent?key={api_key}",
-                headers={"Content-Type": "application/json"},
-                json={
-                    "contents": [{
-                        "parts": [{
-                            "text": f"{system_prompt}\n\n{user_message}\n\nRespond with valid JSON only."
-                        }]
-                    }],
-                    "generationConfig": {
-                        "temperature": 0.3,
-                        "responseMimeType": "application/json"
+
+    tried = []
+    last_response = None
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        for model in dict.fromkeys([m for m in _GEMINI_MODEL_FALLBACKS if m]):
+            tried.append(model)
+            try:
+                response = await client.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "contents": [{
+                            "parts": [{
+                                "text": f"{system_prompt}\n\n{user_message}\n\nRespond with valid JSON only."
+                            }]
+                        }],
+                        "generationConfig": {
+                            "temperature": 0.3,
+                            "responseMimeType": "application/json"
+                        }
                     }
-                }
-            )
+                )
+            except httpx.TimeoutException:
+                logger.warning(f"[Gemini] timeout on model={model}")
+                last_response = type('obj', (object,), {'status_code': 408, 'text': 'Request timeout', 'json': lambda self=None: {}})()
+                continue
+            except Exception as e:
+                logger.warning(f"[Gemini] request error on model={model}: {e}")
+                last_response = type('obj', (object,), {'status_code': 500, 'text': str(e), 'json': lambda self=None: {}})()
+                continue
+
+            if response.status_code == 200:
+                if model != GEMINI_TEXT_MODEL:
+                    logger.info(f"[Gemini] used fallback model '{model}' (configured '{GEMINI_TEXT_MODEL}' unavailable)")
+                return response
+
+            # Non-200: log the real reason. 404/400 (bad/retired model) → try next.
+            body = ""
+            try:
+                body = response.text[:300]
+            except Exception:
+                pass
+            logger.warning(f"[Gemini] model={model} HTTP {response.status_code}: {body}")
+            last_response = response
+            if response.status_code in (400, 404):
+                # Likely bad/unavailable model — try the next candidate.
+                continue
+            # Auth (401/403) or rate-limit (429) etc. — no point trying other models.
             return response
-        except httpx.TimeoutException:
-            return type('obj', (object,), {'status_code': 408, 'text': 'Request timeout'})()
-        except Exception as e:
-            return type('obj', (object,), {'status_code': 500, 'text': str(e)})()
+
+    logger.error(f"[Gemini] all model attempts failed ({tried})")
+    return last_response or type('obj', (object,), {'status_code': 500, 'text': 'No Gemini response', 'json': lambda self=None: {}})()
 
 
 async def call_emergent_fallback(system_prompt: str, user_message: str):
