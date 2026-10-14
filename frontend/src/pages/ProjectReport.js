@@ -722,11 +722,13 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
 
   // Force export ready after a timeout in print mode as a SAFETY CAP so the
   // renderer never hangs if the AI summary is slow/unavailable. We give the AI
-  // status summary time to finish first (see summaryReady gating below); this
-  // 12s cap only fires if the summary never signals ready.
+  // status summary ample time to finish first (see summaryReady gating below);
+  // this 30s cap only fires if the summary never signals ready. 30s comfortably
+  // covers a cold Gemini call (3-10s typical) plus any model fallback, so the
+  // PDF is not captured while it still says "Generating…".
   useEffect(() => {
     if (printMode) {
-      const timer = setTimeout(() => setForceExportReady(true), 12000);
+      const timer = setTimeout(() => setForceExportReady(true), 30000);
       return () => clearTimeout(timer);
     }
   }, [printMode]);
@@ -1780,13 +1782,15 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
           </div>
         )}
 
-        {/* Risks & Issues Section — Enhanced visual matching Project Detail */}
-        {risks && risks.filter(r => (r.status || 'Active') !== 'Closed').length > 0 && (
-          <div className="mb-8" data-print-section="risks">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <AlertTriangle className="h-6 w-6 text-amber-600" />
-              Risks & Issues
-            </h2>
+        {/* Risks & Issues Section — always rendered. If there are no OPEN risks
+            (all resolved/closed), show a concise "all resolved" line instead of
+            hiding the section, so clients always see the risk posture. */}
+        <div className="mb-8" data-print-section="risks">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <AlertTriangle className="h-6 w-6 text-amber-600" />
+            Risks & Issues
+          </h2>
+          {risks && risks.filter(r => (r.status || 'Active') !== 'Closed').length > 0 ? (
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden divide-y divide-gray-100">
               {(() => {
                 const statusOrder = { Active: 0, Mitigated: 1, Accepted: 2, Closed: 3 };
@@ -1862,8 +1866,16 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
                   });
               })()}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="bg-white border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
+              {risks && risks.length > 0 ? (
+                <span>✓ No open risks — all {risks.length} identified risk{risks.length !== 1 ? 's' : ''}/issue{risks.length !== 1 ? 's' : ''} resolved or closed.</span>
+              ) : (
+                <span>No risks or issues have been logged for this project.</span>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Team Allocations section removed per user request — see Team tab on Project Detail for staffing info */}
 

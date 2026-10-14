@@ -90,7 +90,10 @@ async def call_gemini_api(api_key: str, system_prompt: str, user_message: str):
 
     tried = []
     last_response = None
-    async with httpx.AsyncClient(timeout=45.0) as client:
+    # Per-attempt timeout (not a single long 45s) so the model-fallback loop
+    # can't eat the whole export render budget if a model hangs. A healthy
+    # Gemini call returns in 3-10s; this caps each attempt at 18s.
+    async with httpx.AsyncClient(timeout=18.0) as client:
         for model in dict.fromkeys([m for m in _GEMINI_MODEL_FALLBACKS if m]):
             tried.append(model)
             try:
