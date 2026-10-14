@@ -96,6 +96,8 @@ const Allocations = () => {
   });
 
   const isAdmin = userData?.role === 'admin' || userData?.role === 'super_admin';
+  const role = userData?.role;
+  const canEdit = ['admin', 'super_admin'].includes(role);
 
   // Calculate the current filter date range
   const filterDateRange = useMemo(() => {
@@ -449,6 +451,7 @@ const Allocations = () => {
   };
 
   const handleOpenDialog = (allocation = null) => {
+    if (!canEdit) return; // Guard for read-only users
     if (allocation) {
       setEditingAllocation(allocation);
       const isHours = allocation.allocation_type === 'hours';
@@ -469,6 +472,7 @@ const Allocations = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!canEdit) return; // Guard for read-only users
     // Clean form data: convert empty strings to null for optional numeric fields
     const cleanData = { ...formData };
     if (cleanData.hours === '' || cleanData.hours === null || cleanData.hours === undefined) {
@@ -482,6 +486,7 @@ const Allocations = () => {
   };
 
   const handleDelete = (id) => {
+    if (!canEdit) return; // Guard for read-only users
     if (window.confirm('Delete this allocation?')) {
       deleteMutation.mutate(id);
     }
@@ -525,7 +530,7 @@ const Allocations = () => {
             <span className="font-semibold text-sm">{alloc.percentage}%</span>
             <div className="text-xs text-[#667085]">({(alloc.weekly_hours || 0).toFixed(1)}h/wk)</div>
           </div>
-          {isAdmin && (
+          {canEdit && (
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
@@ -623,18 +628,28 @@ const Allocations = () => {
 
   return (
     <div className="space-y-6" data-testid="allocations-page">
+      {/* Read-only banner for resource/contractor */}
+      {!canEdit && (
+        <div className="bg-[#F9FAFB] border border-[#E6E8EC] rounded-lg px-4 py-3 flex items-center gap-3" data-testid="capacity-readonly-banner">
+          <div className="w-2 h-2 rounded-full bg-[#667085]" />
+          <p className="text-sm text-[#667085]">
+            Read-only view — you can see team capacity but cannot edit allocations.
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-semibold flex items-center gap-3" style={{ fontFamily: 'Space Grotesk' }}>
             <Calendar size={28} />
-            Allocations
+            Capacity
           </h1>
           <p className="text-sm text-[#667085] mt-1">
-            Resource capacity planning
+            Team capacity view (next 8 weeks)
           </p>
         </div>
-        {isAdmin && (
+        {canEdit && (
           <Button onClick={() => handleOpenDialog()} data-testid="add-allocation-button">
             <Plus size={16} className="mr-2" />
             Add Allocation

@@ -31,6 +31,28 @@ def generate_verification_code() -> str:
     return str(random.randint(100000, 999999))
 
 
+def _public_base_url(request: Request) -> str:
+    """Derive the public-facing base URL from forwarded headers (for ingress/proxy).
+    
+    Behind a Kubernetes ingress or proxy, request.base_url reflects the internal
+    pod address. This helper reconstructs the public origin from x-forwarded-*
+    headers set by the ingress.
+    
+    Falls back to request.base_url if headers are not present (local/test env).
+    """
+    proto = request.headers.get("x-forwarded-proto")
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    
+    if host:
+        # x-forwarded-host may contain comma-separated list; take the first
+        host = host.split(",")[0].strip()
+        proto = (proto.split(",")[0].strip() if proto else None) or "https"
+        return f"{proto}://{host}"
+    
+    # Fallback to request.base_url if no headers present (e.g. local/tests)
+    return str(request.base_url).rstrip('/')
+
+
 async def send_verification_email(email: str, code: str, project_name: str):
     """Send verification code email using Resend"""
     if not RESEND_API_KEY or not resend.api_key:
@@ -143,8 +165,8 @@ async def create_magic_link(
     created_at = datetime.now(timezone.utc)
     expires_at = created_at + timedelta(days=30)
     
-    # Build magic link URL
-    base_url = str(request.base_url).rstrip('/')
+    # Build magic link URL (using public-facing origin from forwarded headers)
+    base_url = _public_base_url(request)
     magic_link = f"{base_url}/portal/{token}"
     
     # Create report link document

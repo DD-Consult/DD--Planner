@@ -162,7 +162,7 @@ export const setUserStatus = (userId, disabled) =>
 export const deleteUser = (userId) => api.delete(`/admin/users/${userId}`);
 
 // Projects
-export const getProjects = () => api.get('/projects');
+export const getProjects = (scope) => api.get('/projects', { params: scope ? { scope } : {} });
 export const getAllActiveProjectsSummary = () => api.get('/projects/all-active-summary');
 export const getProject = (id) => api.get(`/projects/${id}`);
 export const getProjectRisks = (id) => api.get(`/projects/${id}/risks`);

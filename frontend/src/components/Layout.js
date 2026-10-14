@@ -458,7 +458,7 @@ const Layout = ({ children, token, onLogout }) => {
     { path: '/projects', label: 'Projects', icon: Briefcase, roles: ['admin', 'super_admin', 'resource'], module: 'projects', tooltip: 'View and manage all projects' },
     { path: '/portfolio', label: 'Portfolio', icon: Building2, roles: ['admin', 'super_admin'], module: 'projects', tooltip: 'Company-wide portfolio view with timeline and hours analysis' },
     { path: '/my-allocations', label: 'My Allocations', icon: User, roles: ['resource', 'contractor'], module: 'allocations', tooltip: 'View your project allocations and capacity' },
-    { path: '/allocations', label: 'Allocations', icon: Calendar, roles: ['admin', 'super_admin'], module: 'allocations', tooltip: 'Manage resource assignments' },
+    { path: '/allocations', label: 'Capacity', icon: Calendar, roles: ['admin', 'super_admin', 'resource', 'contractor'], module: 'allocations', tooltip: 'Team capacity view (next 8 weeks)' },
     { path: '/my-timesheets', label: 'My Timesheets', icon: ClipboardList, roles: ['resource', 'contractor'], module: 'timesheets', tooltip: 'View your timesheet history and autofill current week' },
     { path: '/users', label: 'Users', icon: Users, roles: ['admin', 'super_admin'], tooltip: 'Manage user accounts and roles' },
     { path: '/manage-timesheets', label: 'Manage Timesheets', icon: Clock, roles: ['super_admin'], module: 'timesheets', tooltip: 'View and edit all user timesheets' },

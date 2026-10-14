@@ -12,7 +12,7 @@ from database import (
     wbs_tasks_collection, EMERGENT_LLM_KEY,
 )
 from auth.dependencies import get_current_user, require_admin
-from utils import serialize_doc, compute_allocation_hours
+from utils import serialize_doc, compute_allocation_hours, get_user_allowed_project_ids
 from services.ai_providers import call_emergent_fallback
 
 router = APIRouter()
@@ -28,6 +28,11 @@ async def get_project_time_report(project_id: str, current_user: dict = Depends(
     project = await projects_collection.find_one({"_id": ObjectId(project_id)})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    
+    # CHANGE 1: Scope check - ensure user can access this project
+    allowed_pids = await get_user_allowed_project_ids(current_user)
+    if allowed_pids is not None and project_id not in allowed_pids:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     
     # Get all allocations for this project
     cursor = allocations_collection.find({"project_id": project_id})
@@ -179,6 +184,11 @@ async def get_time_tracking_summary(current_user: dict = Depends(get_current_use
     # Get projects with high variance (>20%)
     cursor = projects_collection.find({"status": "Active"})
     active_projects = await cursor.to_list(length=1000)
+    
+    # CHANGE 2: Filter active_projects by user's allowed projects
+    allowed_pids = await get_user_allowed_project_ids(current_user)
+    if allowed_pids is not None:
+        active_projects = [p for p in active_projects if str(p["_id"]) in allowed_pids]
     
     projects_at_risk = []
     

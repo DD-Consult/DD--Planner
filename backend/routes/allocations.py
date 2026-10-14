@@ -798,7 +798,8 @@ async def get_my_allocations(
                 "is_over_capacity": False,
                 "total_weekly_hours": 0.0,
                 "total_period_hours": 0.0,
-                "standard_capacity": 100
+                "standard_capacity": 100,
+                "available_hours_per_week": 40.0
             },
             "allocations": []
         }
@@ -808,28 +809,41 @@ async def get_my_allocations(
     resource_role = resource.get("role", "")
     standard_capacity = resource.get("standard_capacity", 100)
     
-    # Convert period dates to datetime for MongoDB query
-    period_start_dt = datetime.combine(period_start, datetime.min.time())
-    period_end_dt = datetime.combine(period_end, datetime.max.time())
-    
-    # Query allocations that overlap the period for this resource
-    # Overlap condition: allocation.start_date <= period_end AND allocation.end_date >= period_start
-    # Handle both _id and id fields for project lookup
+    # Query all allocations for this resource
+    # We'll filter by period overlap in Python after normalizing date formats
+    # (safer than MongoDB date queries when dealing with mixed datetime/string formats)
     allocations_cursor = allocations_collection.find({
-        "resource_id": resource_id,
-        "$or": [
-            {
-                "start_date": {"$lte": period_end_dt},
-                "end_date": {"$gte": period_start_dt}
-            },
-            # Fallback for any weird date formats
-            {
-                "start_date": {"$exists": True},
-                "end_date": {"$exists": True}
-            }
-        ]
+        "resource_id": resource_id
     })
-    allocations = await allocations_cursor.to_list(length=10000)
+    all_allocations = await allocations_cursor.to_list(length=10000)
+    
+    # Filter to only allocations that overlap the selected period
+    # Overlap condition: alloc_start <= period_end AND alloc_end >= period_start
+    allocations = []
+    for alloc in all_allocations:
+        alloc_start = alloc.get("start_date")
+        alloc_end = alloc.get("end_date")
+        
+        # Normalize to date objects (handle both datetime and string formats)
+        if isinstance(alloc_start, datetime):
+            alloc_start = alloc_start.date()
+        elif isinstance(alloc_start, str):
+            try:
+                alloc_start = datetime.fromisoformat(alloc_start.replace('Z', '+00:00')).date()
+            except (ValueError, AttributeError):
+                continue  # Skip invalid dates
+        
+        if isinstance(alloc_end, datetime):
+            alloc_end = alloc_end.date()
+        elif isinstance(alloc_end, str):
+            try:
+                alloc_end = datetime.fromisoformat(alloc_end.replace('Z', '+00:00')).date()
+            except (ValueError, AttributeError):
+                continue  # Skip invalid dates
+        
+        # Check overlap with period
+        if alloc_start and alloc_end and alloc_start <= period_end and alloc_end >= period_start:
+            allocations.append(alloc)
     
     # Bulk-fetch projects
     project_ids = list(set(a.get("project_id") for a in allocations if a.get("project_id")))

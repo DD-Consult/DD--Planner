@@ -212,7 +212,7 @@ function App() {
                     <Route 
                       path="/allocations" 
                       element={
-                        <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                        <ProtectedRoute allowedRoles={['admin', 'super_admin', 'resource', 'contractor']}>
                           <ModuleRoute module="allocations"><Allocations token={token} /></ModuleRoute>
                         </ProtectedRoute>
                       } 

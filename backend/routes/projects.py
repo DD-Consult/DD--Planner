@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, Query
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date, timedelta, timezone
 from bson import ObjectId
@@ -44,13 +44,35 @@ async def get_all_active_projects_summary(current_user: dict = Depends(get_curre
 
 
 @router.get("/api/projects", response_model=List[ProjectResponse])
-async def get_projects(current_user: dict = Depends(get_current_user)):
+async def get_projects(current_user: dict = Depends(get_current_user), scope: str = Query("mine")):
     query = {}
     if current_user["role"] == UserRole.CLIENT:
         allowed_ids = [ObjectId(pid) for pid in current_user.get("allowed_project_ids", [])]
         query = {"_id": {"$in": allowed_ids}}
-    elif current_user["role"] in [UserRole.RESOURCE, UserRole.CONTRACTOR]:
-        # Resources and contractors only see projects they're allocated to
+    elif current_user["role"] == UserRole.RESOURCE:
+        # CHANGE 3: Resource can view all projects if scope="all" (read-only)
+        if scope == "all":
+            query = {}  # See all projects
+        else:
+            # Default scope="mine" — see allocated/led projects only
+            resource = await find_user_resource(current_user)
+            if resource:
+                allocs = await allocations_collection.find(
+                    {"resource_id": str(resource["_id"])}
+                ).to_list(length=1000)
+                project_ids = list({ObjectId(a["project_id"]) for a in allocs})
+                # Also include projects where they are the lead
+                lead_projects = await projects_collection.find(
+                    {"project_lead_id": str(resource["_id"])}
+                ).to_list(length=1000)
+                for lp in lead_projects:
+                    if lp["_id"] not in project_ids:
+                        project_ids.append(lp["_id"])
+                query = {"_id": {"$in": project_ids}} if project_ids else {"_id": None}
+            else:
+                query = {"_id": None}  # No resource link → no projects
+    elif current_user["role"] == UserRole.CONTRACTOR:
+        # Contractors ALWAYS restricted to allocated/led projects (scope ignored)
         resource = await find_user_resource(current_user)
         if resource:
             allocs = await allocations_collection.find(
@@ -108,7 +130,12 @@ async def get_project(project_id: str, current_user: dict = Depends(get_current_
         allowed_ids = [ObjectId(pid) for pid in current_user.get("allowed_project_ids", [])]
         if ObjectId(project_id) not in allowed_ids:
             raise HTTPException(status_code=403, detail="Access denied to this project")
-    elif current_user["role"] in [UserRole.RESOURCE, UserRole.CONTRACTOR]:
+    elif current_user["role"] == UserRole.RESOURCE:
+        # CHANGE 4: Resource can view ANY project detail (read-only)
+        # No 403 check — allow through
+        pass
+    elif current_user["role"] == UserRole.CONTRACTOR:
+        # Contractor stays restricted (allocated/lead/timesheet check)
         resource = await find_user_resource(current_user)
         if resource:
             rid = str(resource["_id"])

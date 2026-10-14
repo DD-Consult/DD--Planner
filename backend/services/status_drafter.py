@@ -37,9 +37,12 @@ def _dt(x):
         return None
     if isinstance(x, str):
         try:
-            return datetime.fromisoformat(x.replace("Z", "+00:00"))
+            parsed = datetime.fromisoformat(x.replace("Z", "+00:00"))
         except Exception:
             return None
+        # Normalize naive strings (e.g. "2025-07-01T00:00:00" with no tz) to UTC
+        # so they can be safely compared against timezone-aware datetimes.
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     if isinstance(x, datetime):
         return x if x.tzinfo else x.replace(tzinfo=timezone.utc)
     return None
@@ -83,11 +86,12 @@ async def _snapshot(project_id: str) -> Optional[dict]:
         if (t.get("status") or "").lower() in ("done", "completed")
         and _dt(t.get("updated_at")) and _dt(t["updated_at"]) >= since
     ]
-    overdue_open = [
-        t for t in all_wbs
-        if (t.get("status") or "").lower() not in ("done", "completed")
-        and _dt(t.get("end_date")) and _dt(t["end_date"]) < now
-    ]
+    overdue_open = []
+    for t in all_wbs:
+        if (t.get("status") or "").lower() not in ("done", "completed"):
+            end_dt = _dt(t.get("end_date"))
+            if end_dt and end_dt < now:
+                overdue_open.append(t)
     milestones_hit = [t for t in completed_recent if t.get("is_milestone")]
     milestones_missed = [t for t in overdue_open if t.get("is_milestone")]
 

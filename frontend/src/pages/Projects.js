@@ -68,6 +68,8 @@ const Projects = ({ token }) => {
 
   const queryClient = useQueryClient();
 
+  const [projectScope, setProjectScope] = useState('mine'); // For resource role only
+
   const { data: userData } = useQuery({
     queryKey: ['me'],
     queryFn: async () => {
@@ -76,10 +78,13 @@ const Projects = ({ token }) => {
     },
   });
 
+  const role = userData?.role;
+  const isResource = role === 'resource';
+
   const { data: projects, isLoading } = useQuery({
-    queryKey: ['projects'],
+    queryKey: ['projects', projectScope],
     queryFn: async () => {
-      const response = await getProjects();
+      const response = await getProjects(projectScope);
       return response.data;
     },
   });
@@ -369,6 +374,31 @@ const Projects = ({ token }) => {
           </div>
         )}
       </div>
+
+      {/* Resource scope toggle - only for resource role */}
+      {isResource && (
+        <div className="flex items-center gap-2 bg-white border border-[#E6E8EC] rounded-lg p-3" data-testid="project-scope-toggle">
+          <span className="text-sm font-medium text-[#667085] mr-2">View:</span>
+          <Button
+            variant={projectScope === 'mine' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setProjectScope('mine')}
+            data-testid="scope-mine"
+            className={projectScope === 'mine' ? 'bg-[#1570EF] text-white' : ''}
+          >
+            My Projects
+          </Button>
+          <Button
+            variant={projectScope === 'all' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setProjectScope('all')}
+            data-testid="scope-all"
+            className={projectScope === 'all' ? 'bg-[#1570EF] text-white' : ''}
+          >
+            All Projects
+          </Button>
+        </div>
+      )}
 
       {/* Projects — rich rows grouped by status (Active expanded by default) */}
       {isLoading ? (

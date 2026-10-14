@@ -112,7 +112,7 @@ class ProjectUpdate(BaseModel):
 class ProjectResponse(BaseModel):
     id: str
     name: str
-    client_name: str
+    client_name: Optional[str] = ""
     main_contact_name: Optional[str] = None
     main_contact_email: Optional[str] = None
     main_contact_phone: Optional[str] = None
@@ -161,7 +161,7 @@ class StatusUpdateResponse(BaseModel):
     update_date: str
     health: str
     schedule_status: str
-    actual_progress: float  # was int — allows fractional progress values
+    actual_progress: Optional[float] = 0.0  # was int — allows fractional progress values; optional for old docs
     accomplishments: Optional[str] = None
     blockers: Optional[Union[str, list]] = None
     next_steps: Optional[str] = None
@@ -241,7 +241,7 @@ class AllocationResponse(BaseModel):
     project_id: str
     start_date: str
     end_date: str
-    percentage: float  # was int — legacy prod data may have 2.5 etc.
+    percentage: Optional[float] = 0.0  # was int — legacy prod data may have 2.5 etc.; optional when allocation_type is hours
     hours: Optional[float] = None
     weekly_hours: Optional[float] = None
     allocation_type: Optional[str] = "percentage"
