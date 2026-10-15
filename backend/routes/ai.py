@@ -1835,15 +1835,25 @@ Guidelines:
 
         if ai_config["api_key"]:
             if ai_config["provider"] == "openai":
-                response = await call_openai_api(ai_config["api_key"], system_prompt, user_message)
+                # Chat is conversational text (not JSON) → json_mode=False.
+                response = await call_openai_api(ai_config["api_key"], system_prompt, user_message, json_mode=False)
                 if response.status_code == 200:
                     data = response.json()
                     ai_response_text = data["choices"][0]["message"]["content"].strip()
+                else:
+                    body = getattr(response, "text", "")
+                    print(f"[AI Chat] OpenAI non-200: {response.status_code} {str(body)[:300]}")
             elif ai_config["provider"] == "gemini":
-                response = await call_gemini_api(ai_config["api_key"], system_prompt, user_message)
+                # Chat is conversational text (not JSON) → json_mode=False.
+                # Forcing JSON here makes Gemini return a JSON blob / empty text,
+                # which was the root cause of chat failing on Gemini-configured tenants.
+                response = await call_gemini_api(ai_config["api_key"], system_prompt, user_message, json_mode=False)
                 if response.status_code == 200:
                     data = response.json()
                     ai_response_text = extract_gemini_text(data).strip()
+                else:
+                    body = getattr(response, "text", "")
+                    print(f"[AI Chat] Gemini non-200: {response.status_code} {str(body)[:300]}")
             elif ai_config["provider"] == "emergent":
                 # Use emergentintegrations library for Emergent LLM key
                 try:

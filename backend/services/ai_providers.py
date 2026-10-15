@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 GEMINI_TEXT_MODEL = os.environ.get("GEMINI_TEXT_MODEL", "gemini-flash-latest")
 _GEMINI_MODEL_FALLBACKS = [
     GEMINI_TEXT_MODEL,
-    "gemini-flash-latest",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
+    "gemini-flash-latest",       # self-updating alias → always current flash
+    "gemini-3.8-flash",          # current stable flash (verified available)
+    "gemini-3.5-flash",          # prior stable flash
+    "gemini-flash-lite-latest",  # lightweight alias fallback
 ]
 # Default Gemini key from env — used as a fallback across ALL AI features
 # (chat, WBS, reschedule, voice) when a tenant hasn't set their own in Settings → AI.
@@ -46,26 +46,35 @@ async def get_ai_config() -> dict:
     return {"provider": None, "api_key": None}
 
 
-async def call_openai_api(api_key: str, system_prompt: str, user_message: str):
-    """Helper function to call OpenAI API"""
+async def call_openai_api(api_key: str, system_prompt: str, user_message: str, json_mode: bool = True):
+    """Helper function to call OpenAI API.
+
+    json_mode=True (default): forces a JSON object response — used by the
+      structured endpoints (command parsing, WBS generation, analyses, etc.).
+    json_mode=False: free-form text — used by the conversational CHAT endpoint,
+      which returns natural language (optionally with a fenced ```action``` block).
+      Forcing json_object there would corrupt the reply.
+    """
     import httpx
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
+            payload = {
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
+                "temperature": 0.3,
+            }
+            if json_mode:
+                payload["response_format"] = {"type": "json_object"}
             response = await client.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json"
                 },
-                json={
-                    "model": "gpt-4o-mini",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message}
-                    ],
-                    "temperature": 0.3,
-                    "response_format": {"type": "json_object"}
-                }
+                json=payload
             )
             return response
         except httpx.TimeoutException:
@@ -74,7 +83,7 @@ async def call_openai_api(api_key: str, system_prompt: str, user_message: str):
             return type('obj', (object,), {'status_code': 500, 'text': str(e)})()
 
 
-async def call_gemini_api(api_key: str, system_prompt: str, user_message: str):
+async def call_gemini_api(api_key: str, system_prompt: str, user_message: str, json_mode: bool = True):
     """Call the Gemini (Google AI Studio) generateContent API.
 
     Resilient:
@@ -84,9 +93,26 @@ async def call_gemini_api(api_key: str, system_prompt: str, user_message: str):
       - Logs the actual Gemini error (status + body) so prod logs show the real
         cause instead of a generic 'unable to process' message.
 
+    json_mode=True (default): forces `responseMimeType=application/json` and asks
+      for JSON only — used by the structured endpoints (command parsing, WBS
+      generation, analyses, retrospectives, etc.).
+    json_mode=False: free-form text — used by the conversational CHAT endpoint.
+      Forcing JSON there makes Gemini return a JSON blob (or empty/invalid text),
+      which is why chat failed when a tenant used a Gemini key. In text mode we
+      omit responseMimeType and the 'JSON only' instruction so Gemini returns a
+      normal conversational reply (optionally with a fenced ```action``` block).
+
     Returns an httpx-like response object with .status_code / .json() / .text.
     """
     import httpx
+
+    # Build request body depending on desired output format.
+    if json_mode:
+        prompt_text = f"{system_prompt}\n\n{user_message}\n\nRespond with valid JSON only."
+        generation_config = {"temperature": 0.3, "responseMimeType": "application/json"}
+    else:
+        prompt_text = f"{system_prompt}\n\n{user_message}"
+        generation_config = {"temperature": 0.3}
 
     tried = []
     last_response = None
@@ -103,13 +129,10 @@ async def call_gemini_api(api_key: str, system_prompt: str, user_message: str):
                     json={
                         "contents": [{
                             "parts": [{
-                                "text": f"{system_prompt}\n\n{user_message}\n\nRespond with valid JSON only."
+                                "text": prompt_text
                             }]
                         }],
-                        "generationConfig": {
-                            "temperature": 0.3,
-                            "responseMimeType": "application/json"
-                        }
+                        "generationConfig": generation_config
                     }
                 )
             except httpx.TimeoutException:
