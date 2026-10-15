@@ -1883,7 +1883,7 @@ const ProjectReport = ({ printMode: printModeProp = false, wbsOnly: wbsOnlyProp 
             Phase 2: user chooses full print table (default) or a compact
             phase-level summary via ?wbs_mode=. Both are print-first components
             with fixed columns that always fit the page (no clipping). */}
-        <div className="mb-8" data-export-section="wbs" data-print-section="wbs">
+        <div className="mb-8 print-wbs-newpage" data-export-section="wbs" data-print-section="wbs">
           <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
             <Target className="h-6 w-6 text-[#4A9CC7]" />
             Work Breakdown Structure

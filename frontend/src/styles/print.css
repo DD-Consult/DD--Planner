@@ -298,6 +298,19 @@
     break-before: auto !important;
   }
 
+  /* Full-report WBS section starts on a FRESH page (owner request).
+   * Scoped via the .print-wbs-newpage class so ONLY the WBS section inside
+   * the full project report is affected. The standalone WBS-only export
+   * (same data-* attributes but WITHOUT this class) stays at `auto` above,
+   * so it does not get a blank leading page. The higher-specificity
+   * (attribute + class) selector wins over the `auto` rules regardless of
+   * source order. break-inside stays `auto` (see below) so a long WBS table
+   * can still flow across multiple pages rather than being forced whole. */
+  [data-print-section="wbs"].print-wbs-newpage {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+
   /* The Gantt chart is frequently TALLER than one 7.5in page. Using
    * break-inside:avoid on an oversized element forces it to overflow the
    * page and get clipped, so we ALLOW it to break across pages instead.
