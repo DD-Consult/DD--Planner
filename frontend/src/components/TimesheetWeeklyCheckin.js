@@ -117,12 +117,12 @@ const TimesheetWeeklyCheckin = () => {
 
   // Projects available for timesheet entry.
   // IMPORTANT: `projects` is already scoped to the user's allocated/led projects
-  // (backend get_projects, scope="mine"). We must NOT additionally filter by
-  // status === 'Active' or require phases — staff can be allocated to Pipeline
-  // projects or projects without phases, and still need to log time against them.
-  // We only hide Completed projects (nothing to log against anymore).
+  // (backend get_projects, scope="mine"). We must show EVERY project the user is
+  // assigned to — regardless of status (Active, Pipeline, Completed, etc.) or
+  // whether it has phases — otherwise staff cannot log time against legitimate
+  // allocations. Phase-less projects fall back to a synthetic "General" phase below.
   const activeProjects = useMemo(() => {
-    return projects.filter(p => p.status !== 'Completed');
+    return projects;
   }, [projects]);
 
   // Phases for selected project.
