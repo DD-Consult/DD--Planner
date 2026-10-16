@@ -1,18 +1,161 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Calendar, TrendingUp, TrendingDown, AlertCircle, Building2, Users, Clock, GanttChart, LayoutGrid, ListTree } from 'lucide-react';
+import { Calendar, TrendingUp, TrendingDown, AlertCircle, Building2, Users, Clock, GanttChart, LayoutGrid, ListTree, Presentation } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import api from '../api';
 import PortfolioGantt from '../components/PortfolioGantt';
+import PortfolioMeetingMode from '../components/PortfolioMeetingMode';
+
+// Helper functions
+const getHealthColor = (health) => {
+  switch (health?.toLowerCase()) {
+    case 'green': return 'bg-green-100 text-green-800 border-green-300';
+    case 'amber': case 'yellow': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+    case 'red': return 'bg-red-100 text-red-800 border-red-300';
+    default: return 'bg-gray-100 text-gray-800 border-gray-300';
+  }
+};
+
+const getScheduleColor = (schedule) => {
+  switch (schedule?.toLowerCase()) {
+    case 'on track': return 'bg-green-100 text-green-800';
+    case 'at risk': return 'bg-yellow-100 text-yellow-800';
+    case 'delayed': return 'bg-red-100 text-red-800';
+    default: return 'bg-gray-100 text-gray-800';
+  }
+};
+
+const formatDate = (dateString) => {
+  if (!dateString) return 'N/A';
+  return new Date(dateString).toLocaleDateString('en-AU', { 
+    day: '2-digit', 
+    month: 'short', 
+    year: 'numeric' 
+  });
+};
+
+// ProjectCard component extracted outside Portfolio
+const ProjectCard = ({ project }) => {
+  const variance = project.actual_hours - project.baseline_hours;
+  const variancePercent = project.baseline_hours > 0 
+    ? ((variance / project.baseline_hours) * 100).toFixed(1) 
+    : 0;
+  const isOverBudget = variance > 0;
+
+  return (
+    <Card className="hover:shadow-lg transition-shadow mb-4">
+      <CardHeader>
+        <div className="flex justify-between items-start">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <CardTitle className="text-lg">{project.name}</CardTitle>
+              {project.is_pipeline && (
+                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
+                  Pipeline
+                </Badge>
+              )}
+            </div>
+            <CardDescription className="flex items-center gap-2">
+              <Building2 className="h-4 w-4" />
+              {project.client_name || 'No client'}
+            </CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Badge className={getHealthColor(project.health)}>
+              {project.health || 'N/A'}
+            </Badge>
+            <Badge className={getScheduleColor(project.schedule_status)}>
+              {project.schedule_status || 'N/A'}
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <p className="text-sm text-gray-600 flex items-center gap-1">
+              <Calendar className="h-4 w-4" />
+              Start Date
+            </p>
+            <p className="font-medium">{formatDate(project.start_date)}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600 flex items-center gap-1">
+              <Calendar className="h-4 w-4" />
+              End Date
+            </p>
+            <p className="font-medium">{formatDate(project.end_date)}</p>
+          </div>
+        </div>
+
+        {project.project_lead_name && (
+          <div className="mb-4">
+            <p className="text-sm text-gray-600 flex items-center gap-1">
+              <Users className="h-4 w-4" />
+              Project Lead
+            </p>
+            <p className="font-medium">{project.project_lead_name}</p>
+          </div>
+        )}
+
+        {/* Hours Analysis */}
+        <div className="border-t pt-4">
+          <p className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
+            <Clock className="h-4 w-4" />
+            Hours Analysis
+          </p>
+          <div className="grid grid-cols-3 gap-2 text-sm">
+            <div>
+              <p className="text-gray-600">Budgeted</p>
+              <p className="font-medium">{project.budgeted_hours?.toFixed(1) || 'N/A'} hrs</p>
+            </div>
+            <div>
+              <p className="text-gray-600">Baseline</p>
+              <p className="font-medium">{project.baseline_hours.toFixed(1)} hrs</p>
+            </div>
+            <div>
+              <p className="text-gray-600">Actual</p>
+              <p className="font-medium">{project.actual_hours.toFixed(1)} hrs</p>
+            </div>
+          </div>
+          
+          {/* Variance Display */}
+          <div className="mt-3 p-2 rounded-md bg-gray-50 flex items-center justify-between">
+            <span className="text-sm font-medium">Baseline vs Actual Variance:</span>
+            <span className={`flex items-center gap-1 font-semibold ${isOverBudget ? 'text-red-600' : 'text-green-600'}`}>
+              {isOverBudget ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+              {Math.abs(variance).toFixed(1)} hrs ({variancePercent}%)
+            </span>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="mt-4">
+          <div className="flex justify-between text-sm mb-1">
+            <span className="text-gray-600">Progress</span>
+            <span className="font-medium">{project.actual_progress || 0}%</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-blue-600 h-2 rounded-full transition-all"
+              style={{ width: `${Math.min(project.actual_progress || 0, 100)}%` }}
+            />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 const Portfolio = () => {
   const [selectedMonths, setSelectedMonths] = useState(3);
   const [viewMode, setViewMode] = useState('gantt'); // 'gantt' | 'cards'
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'pipeline'
   const [showAllPhases, setShowAllPhases] = useState(false);
+  const [meetingOpen, setMeetingOpen] = useState(false);
 
   // Fetch portfolio data using the shared API client.
   // `api` is configured with a relative `/api` baseURL and an auth
@@ -64,145 +207,6 @@ const Portfolio = () => {
   const totalBaseline = projects.reduce((sum, p) => sum + (p.baseline_hours || 0), 0);
   const totalActual = projects.reduce((sum, p) => sum + (p.actual_hours || 0), 0);
 
-  const getHealthColor = (health) => {
-    switch (health?.toLowerCase()) {
-      case 'green': return 'bg-green-100 text-green-800 border-green-300';
-      case 'amber': case 'yellow': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'red': return 'bg-red-100 text-red-800 border-red-300';
-      default: return 'bg-gray-100 text-gray-800 border-gray-300';
-    }
-  };
-
-  const getScheduleColor = (schedule) => {
-    switch (schedule?.toLowerCase()) {
-      case 'on track': return 'bg-green-100 text-green-800';
-      case 'at risk': return 'bg-yellow-100 text-yellow-800';
-      case 'delayed': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-AU', { 
-      day: '2-digit', 
-      month: 'short', 
-      year: 'numeric' 
-    });
-  };
-
-  const ProjectCard = ({ project }) => {
-    const variance = project.actual_hours - project.baseline_hours;
-    const variancePercent = project.baseline_hours > 0 
-      ? ((variance / project.baseline_hours) * 100).toFixed(1) 
-      : 0;
-    const isOverBudget = variance > 0;
-
-    return (
-      <Card className="hover:shadow-lg transition-shadow mb-4">
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <CardTitle className="text-lg">{project.name}</CardTitle>
-                {project.is_pipeline && (
-                  <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
-                    Pipeline
-                  </Badge>
-                )}
-              </div>
-              <CardDescription className="flex items-center gap-2">
-                <Building2 className="h-4 w-4" />
-                {project.client_name || 'No client'}
-              </CardDescription>
-            </div>
-            <div className="flex gap-2">
-              <Badge className={getHealthColor(project.health)}>
-                {project.health || 'N/A'}
-              </Badge>
-              <Badge className={getScheduleColor(project.schedule_status)}>
-                {project.schedule_status || 'N/A'}
-              </Badge>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <p className="text-sm text-gray-600 flex items-center gap-1">
-                <Calendar className="h-4 w-4" />
-                Start Date
-              </p>
-              <p className="font-medium">{formatDate(project.start_date)}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600 flex items-center gap-1">
-                <Calendar className="h-4 w-4" />
-                End Date
-              </p>
-              <p className="font-medium">{formatDate(project.end_date)}</p>
-            </div>
-          </div>
-
-          {project.project_lead_name && (
-            <div className="mb-4">
-              <p className="text-sm text-gray-600 flex items-center gap-1">
-                <Users className="h-4 w-4" />
-                Project Lead
-              </p>
-              <p className="font-medium">{project.project_lead_name}</p>
-            </div>
-          )}
-
-          {/* Hours Analysis */}
-          <div className="border-t pt-4">
-            <p className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
-              <Clock className="h-4 w-4" />
-              Hours Analysis
-            </p>
-            <div className="grid grid-cols-3 gap-2 text-sm">
-              <div>
-                <p className="text-gray-600">Budgeted</p>
-                <p className="font-medium">{project.budgeted_hours?.toFixed(1) || 'N/A'} hrs</p>
-              </div>
-              <div>
-                <p className="text-gray-600">Baseline</p>
-                <p className="font-medium">{project.baseline_hours.toFixed(1)} hrs</p>
-              </div>
-              <div>
-                <p className="text-gray-600">Actual</p>
-                <p className="font-medium">{project.actual_hours.toFixed(1)} hrs</p>
-              </div>
-            </div>
-            
-            {/* Variance Display */}
-            <div className="mt-3 p-2 rounded-md bg-gray-50 flex items-center justify-between">
-              <span className="text-sm font-medium">Baseline vs Actual Variance:</span>
-              <span className={`flex items-center gap-1 font-semibold ${isOverBudget ? 'text-red-600' : 'text-green-600'}`}>
-                {isOverBudget ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-                {Math.abs(variance).toFixed(1)} hrs ({variancePercent}%)
-              </span>
-            </div>
-          </div>
-
-          {/* Progress Bar */}
-          <div className="mt-4">
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-gray-600">Progress</span>
-              <span className="font-medium">{project.actual_progress || 0}%</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
-                className="bg-blue-600 h-2 rounded-full transition-all"
-                style={{ width: `${Math.min(project.actual_progress || 0, 100)}%` }}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -247,7 +251,7 @@ const Portfolio = () => {
             {formatDate(portfolioData?.date_range?.start)} - {formatDate(portfolioData?.date_range?.end)}
           </div>
 
-          {/* Right-aligned: phase toggle + view switch */}
+          {/* Right-aligned: phase toggle + view switch + meeting mode */}
           <div className="ml-auto flex items-center gap-3">
             {viewMode === 'gantt' && (
               <Button
@@ -260,6 +264,16 @@ const Portfolio = () => {
                 {showAllPhases ? 'Hide Phases' : 'Show Phases'}
               </Button>
             )}
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setMeetingOpen(true)}
+              data-testid="portfolio-meeting-mode-btn"
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Presentation className="h-4 w-4 mr-1" />
+              Meeting Mode
+            </Button>
             <div className="inline-flex rounded-md border border-gray-200 overflow-hidden">
               <button
                 onClick={() => setViewMode('gantt')}
@@ -366,6 +380,13 @@ const Portfolio = () => {
           </div>
         )}
       </div>
+
+      {/* Meeting Mode Overlay */}
+      <PortfolioMeetingMode
+        projects={projects}
+        open={meetingOpen}
+        onClose={() => setMeetingOpen(false)}
+      />
     </div>
   );
 };

@@ -201,6 +201,14 @@ const Login = ({ onLogin }) => {
             >
               Create a workspace
             </a>
+            {' '}or{' '}
+            <a
+              href="/demo"
+              className="text-[#4A90E2] font-medium hover:underline"
+              data-testid="login-try-demo-link"
+            >
+              try the live demo
+            </a>
           </div>
         </div>
       </div>

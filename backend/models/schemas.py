@@ -28,6 +28,7 @@ class UserResponse(BaseModel):
     resource_id: Optional[str] = None
     must_change_password: Optional[bool] = False
     allowed_project_ids: List[str] = []
+    is_demo: Optional[bool] = False
 
 
 class Token(BaseModel):
@@ -320,6 +321,10 @@ class LeaveResponse(BaseModel):
     end_date: str
     type: str
     notes: Optional[str] = None
+    status: Optional[str] = "Approved"  # "Pending", "Approved", "Rejected"; default for legacy docs
+    approver_email: Optional[str] = None
+    decided_at: Optional[str] = None
+    decision_note: Optional[str] = None
 
 
 class HolidayCreate(BaseModel):
@@ -459,6 +464,12 @@ class WBSTaskCreate(BaseModel):
     # Milestone fields
     is_milestone: Optional[bool] = False
     milestone_date: Optional[str] = None
+    # Scheduling fields (ADDITIVE for WBS scheduling capabilities)
+    duration_days: Optional[int] = None
+    dependency_links: Optional[List[dict]] = []
+    constraint_type: Optional[str] = None
+    constraint_date: Optional[str] = None
+    deadline: Optional[str] = None
 
 
 class WBSTaskUpdate(BaseModel):
@@ -482,6 +493,12 @@ class WBSTaskUpdate(BaseModel):
     is_milestone: Optional[bool] = None
     milestone_date: Optional[str] = None
     milestone_completed: Optional[bool] = None
+    # Scheduling fields (ADDITIVE for WBS scheduling capabilities)
+    duration_days: Optional[int] = None
+    dependency_links: Optional[List[dict]] = None
+    constraint_type: Optional[str] = None
+    constraint_date: Optional[str] = None
+    deadline: Optional[str] = None
 
 
 class WBSTaskResponse(BaseModel):
@@ -517,6 +534,15 @@ class WBSTaskResponse(BaseModel):
     is_milestone: Optional[bool] = False
     milestone_date: Optional[str] = None
     milestone_completed: Optional[bool] = False
+    # Scheduling fields (ADDITIVE for WBS scheduling capabilities)
+    duration_days: Optional[int] = None
+    dependency_links: Optional[List[dict]] = []
+    constraint_type: Optional[str] = None
+    constraint_date: Optional[str] = None
+    deadline: Optional[str] = None
+    # Computed flags for constraint/deadline violations
+    deadline_violated: Optional[bool] = False
+    constraint_violated: Optional[bool] = False
 
 
 class AIGenerateWBSRequest(BaseModel):

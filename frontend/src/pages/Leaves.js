@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getLeaves, deleteLeave, getResources, getMyResource } from '../api';
+import { getLeaves, deleteLeave, getResources, getMyResource, getPendingLeaves, approveLeave, rejectLeave } from '../api';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import {
@@ -32,6 +32,16 @@ const Leaves = () => {
   });
   const isAdmin = meData?.role === 'admin' || meData?.role === 'super_admin';
   const isResource = !isAdmin && (meData?.role === 'resource' || meData?.role === 'contractor');
+
+  // Fetch pending leaves for admin approval queue
+  const { data: pendingLeaves } = useQuery({
+    queryKey: ['pendingLeaves'],
+    queryFn: async () => {
+      const response = await getPendingLeaves();
+      return response.data;
+    },
+    enabled: isAdmin,
+  });
 
   // Fetch leaves (backend already scopes for non-admins)
   const { data: leaves, isLoading: leavesLoading } = useQuery({
@@ -82,9 +92,49 @@ const Leaves = () => {
     },
   });
 
+  // Approve leave mutation
+  const approveMutation = useMutation({
+    mutationFn: ({ id, note }) => approveLeave(id, note),
+    onSuccess: () => {
+      toast.success('Leave approved');
+      queryClient.invalidateQueries({ queryKey: ['pendingLeaves'] });
+      queryClient.invalidateQueries({ queryKey: ['leaves'] });
+      queryClient.invalidateQueries({ queryKey: ['capacity'] });
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.detail || 'Failed to approve leave');
+    },
+  });
+
+  // Reject leave mutation
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, note }) => rejectLeave(id, note),
+    onSuccess: () => {
+      toast.success('Leave rejected');
+      queryClient.invalidateQueries({ queryKey: ['pendingLeaves'] });
+      queryClient.invalidateQueries({ queryKey: ['leaves'] });
+      queryClient.invalidateQueries({ queryKey: ['capacity'] });
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.detail || 'Failed to reject leave');
+    },
+  });
+
   const handleDelete = (id) => {
     if (window.confirm('Are you sure you want to delete this time off entry?')) {
       deleteMutation.mutate(id);
+    }
+  };
+
+  const handleApprove = (id) => {
+    approveMutation.mutate({ id, note: null });
+  };
+
+  const handleReject = (id) => {
+    const reason = window.prompt('Optional reason for rejection:');
+    // User can cancel (null) or provide empty/non-empty string
+    if (reason !== null) {
+      rejectMutation.mutate({ id, note: reason || undefined });
     }
   };
 
@@ -98,6 +148,14 @@ const Leaves = () => {
       other: 'bg-[#F7F7F8] text-[#667085] border-[#E6E8EC]',
     };
     return colors[type] || colors.other;
+  };
+
+  const getStatusColor = (status) => {
+    const normalizedStatus = (status || 'Approved').toLowerCase();
+    if (normalizedStatus === 'pending') return 'bg-amber-100 text-amber-700 border-amber-200';
+    if (normalizedStatus === 'approved') return 'bg-green-100 text-green-700 border-green-200';
+    if (normalizedStatus === 'rejected') return 'bg-red-100 text-red-700 border-red-200';
+    return 'bg-green-100 text-green-700 border-green-200'; // default to approved for legacy
   };
 
   const getResourceName = (resourceId) => {
@@ -118,7 +176,7 @@ const Leaves = () => {
           <p className="text-sm text-[#667085] mt-1">
             {isAdmin
               ? 'Manage vacation, sick leave, and other time off for resources'
-              : 'View and manage your personal time off entries'}
+              : 'Submit time off requests for manager approval'}
           </p>
         </div>
         <Button
@@ -127,9 +185,64 @@ const Leaves = () => {
           disabled={isResource && !ownResourceData}
         >
           <Plus size={16} className="mr-2" />
-          Add Time Off
+          {isResource ? 'Request Time Off' : 'Add Time Off'}
         </Button>
       </div>
+
+      {/* Pending Approvals Section (Admin Only) */}
+      {isAdmin && pendingLeaves && pendingLeaves.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4" data-testid="pending-approvals-section">
+          <h2 className="text-lg font-semibold mb-3 text-amber-900" style={{ fontFamily: 'Space Grotesk' }}>
+            Pending Approvals ({pendingLeaves.length})
+          </h2>
+          <div className="space-y-3">
+            {pendingLeaves.map((leave) => (
+              <div
+                key={leave._id || leave.id}
+                className="bg-white border border-amber-200 rounded-md p-3 flex items-center justify-between"
+                data-testid={`pending-leave-${leave._id || leave.id}`}
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-medium text-[#0B1220]">{leave.resource_name}</span>
+                    <Badge className={getLeaveTypeColor(leave.type)}>
+                      {leave.type}
+                    </Badge>
+                  </div>
+                  <div className="text-sm text-[#667085]">
+                    {format(new Date(leave.start_date), 'MMM d, yyyy')} → {format(new Date(leave.end_date), 'MMM d, yyyy')}
+                  </div>
+                  {leave.notes && (
+                    <div className="text-xs text-[#667085] mt-1 italic">&quot;{leave.notes}&quot;</div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 ml-4">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleApprove(leave._id || leave.id)}
+                    disabled={approveMutation.isPending || rejectMutation.isPending}
+                    data-testid={`approve-leave-${leave._id || leave.id}`}
+                    className="bg-green-50 hover:bg-green-100 text-green-700 border-green-300"
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleReject(leave._id || leave.id)}
+                    disabled={approveMutation.isPending || rejectMutation.isPending}
+                    data-testid={`reject-leave-${leave._id || leave.id}`}
+                    className="bg-red-50 hover:bg-red-100 text-red-700 border-red-300"
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Leaves Table */}
       <div className="bg-white border border-[#E6E8EC] rounded-lg">
@@ -156,6 +269,7 @@ const Leaves = () => {
                 <TableHead>Start Date</TableHead>
                 <TableHead>End Date</TableHead>
                 <TableHead>Notes</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -180,6 +294,14 @@ const Leaves = () => {
                   </TableCell>
                   <TableCell className="text-[#667085] text-sm">
                     {leave.notes || '—'}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      className={getStatusColor(leave.status)}
+                      data-testid={`leave-status-${leave._id || leave.id}`}
+                    >
+                      {(leave.status || 'Approved')}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button

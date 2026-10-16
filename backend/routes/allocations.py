@@ -367,9 +367,11 @@ async def get_capacity_report(
     allocations_cursor = allocations_collection.find()
     all_allocations = await allocations_cursor.to_list(length=10000)
     
-    # Get all leaves (NEW)
+    # Get all leaves - ONLY APPROVED (NEW: filter by status)
     leaves_cursor = leaves_collection.find()
     all_leaves = await leaves_cursor.to_list(length=10000)
+    # Filter to approved only (legacy docs with no status field count as approved)
+    all_leaves = [lv for lv in all_leaves if (lv.get("status") or "Approved") == "Approved"]
     
     # Get all holidays (NEW)
     # Convert date objects to datetime for MongoDB query

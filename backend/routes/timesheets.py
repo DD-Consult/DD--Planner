@@ -355,6 +355,8 @@ async def auto_fill_timesheets(week_start: str, current_user: dict = Depends(get
             "start_date": {"$lte": week_end_dt},
             "end_date": {"$gte": week_start_dt},
         }).to_list(length=100)
+        # Filter to approved only (legacy docs with no status field count as approved)
+        leaves = [lv for lv in leaves if (lv.get("status") or "Approved") == "Approved"]
         for lv in leaves:
             ls, le = lv.get("start_date"), lv.get("end_date")
             ls = ls.date() if isinstance(ls, datetime) else ls

@@ -10,6 +10,7 @@ import { SandboxProvider } from './contexts/SandboxContext';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ChangePassword from './pages/ChangePassword';
+import DemoLanding from './pages/DemoLanding';
 import Dashboard from './pages/Dashboard';
 import Resources from './pages/Resources';
 import Projects from './pages/Projects';
@@ -116,6 +117,9 @@ function App() {
 
             {/* Public tenant sign-up — no auth required */}
             <Route path="/signup" element={<Signup />} />
+
+            {/* Public demo landing — no auth required */}
+            <Route path="/demo" element={<DemoLanding onLaunch={handleLogin} />} />
 
             {/* Print/Export routes — UNPROTECTED. Token is passed via ?_t=JWT and
                 bootstrapped by PrintReport into localStorage before rendering.

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { setAuthToken, getMe, getResources, getProjects, getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead } from '../api';
 import { useEnabledModules } from '../hooks/useEnabledModules';
@@ -27,6 +27,7 @@ import { format } from 'date-fns';
 
 const Layout = ({ children, token, onLogout }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [user, setUser] = useState(null);
   const [parsedCommand, setParsedCommand] = useState(null);
@@ -736,6 +737,43 @@ const Layout = ({ children, token, onLogout }) => {
 
           {/* Main Content — offset for fixed sidebar on desktop */}
           <main className="min-h-screen pt-16 lg:pt-0 lg:ml-[260px]">
+            {/* Demo Mode Banner - appears when user.is_demo === true */}
+            {user?.is_demo && (
+              <div
+                className="bg-[#FFF8E5] border-b border-[#F4B740] px-4 sm:px-6 lg:px-8 py-3 sticky top-16 lg:top-0 z-40"
+                data-testid="demo-mode-banner"
+              >
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-lg">🔒</span>
+                    <span className="text-[#0B1220] font-medium">
+                      You&apos;re viewing a read-only demo. Sign up to create your own workspace.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        onLogout();
+                        navigate('/demo');
+                      }}
+                      className="bg-white border-[#F4B740] text-[#0B1220] hover:bg-[#FFF8E5]"
+                    >
+                      Exit demo
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => navigate('/signup')}
+                      className="bg-[#4A90E2] hover:bg-[#3A7BC8] text-white"
+                    >
+                      Sign up
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Sandbox Toggle Bar */}
             {(user?.role === 'admin' || user?.role === 'super_admin') && (
               <div className="bg-white border-b border-[#E6E8EC] px-4 sm:px-6 lg:px-8 py-3">

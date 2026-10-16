@@ -252,6 +252,31 @@ async def get_project_wbs(project_id: str, current_user: dict = Depends(get_curr
             # Ensure progress_percentage exists for leaf tasks
             task_data["progress_percentage"] = float(task.get("progress_percentage", 0))
         
+        # Compute deadline/constraint violation flags
+        task_data["deadline_violated"] = False
+        task_data["constraint_violated"] = False
+        
+        end_date = task.get("end_date")
+        if end_date:
+            # Check deadline violation
+            deadline = task.get("deadline")
+            if deadline:
+                try:
+                    if end_date[:10] > deadline[:10]:
+                        task_data["deadline_violated"] = True
+                except Exception:
+                    pass
+            
+            # Check FNLT constraint violation
+            constraint_type = task.get("constraint_type")
+            constraint_date = task.get("constraint_date")
+            if constraint_type == "FNLT" and constraint_date:
+                try:
+                    if end_date[:10] > constraint_date[:10]:
+                        task_data["constraint_violated"] = True
+                except Exception:
+                    pass
+        
         task_data["children"] = []
         result.append(task_data)
 
@@ -330,16 +355,36 @@ async def create_wbs_task(
         task_doc["estimated_hours"] = 0
         task_doc["actual_hours"] = 0
         task_doc["milestone_completed"] = False
+        task_doc["duration_days"] = 0
         # Set start/end dates to milestone_date for consistency
         if task_doc.get("milestone_date"):
             task_doc["start_date"] = task_doc["milestone_date"]
             task_doc["end_date"] = task_doc["milestone_date"]
 
+    # Auto-compute end_date from duration_days if provided
+    from utils import add_business_days
+    if (not task_doc.get("is_milestone")
+        and task_doc.get("duration_days") is not None
+        and task_doc.get("start_date")):
+        # Only compute if end_date is NOT explicitly provided
+        if not task_doc.get("end_date"):
+            try:
+                start_d = datetime.strptime(task_doc["start_date"][:10], "%Y-%m-%d").date()
+                duration = task_doc["duration_days"]
+                if duration > 0:
+                    computed_end_d = add_business_days(start_d, duration - 1)
+                    task_doc["end_date"] = computed_end_d.isoformat()
+                else:
+                    task_doc["end_date"] = task_doc["start_date"]
+            except Exception:
+                pass
+
     # Auto-compute end_date from estimated_hours + allocation (if not manually set or is auto)
     if (not task_doc.get("is_milestone")
         and task_doc.get("start_date")
         and task_doc.get("estimated_hours")
-        and task_doc["estimated_hours"] > 0):
+        and task_doc["estimated_hours"] > 0
+        and not task_doc.get("end_date")):
         computed_end = await compute_task_end_date(
             task_doc["start_date"],
             task_doc["estimated_hours"],
@@ -348,6 +393,26 @@ async def create_wbs_task(
         )
         if computed_end:
             task_doc["end_date"] = computed_end
+
+    # Handle SNET constraint (snap start date forward if needed)
+    if (task_doc.get("constraint_type") == "SNET"
+        and task_doc.get("constraint_date")
+        and task_doc.get("start_date")):
+        try:
+            start_d = datetime.strptime(task_doc["start_date"][:10], "%Y-%m-%d").date()
+            constraint_d = datetime.strptime(task_doc["constraint_date"][:10], "%Y-%m-%d").date()
+            if start_d < constraint_d:
+                # Snap start_date up to constraint_date
+                from utils import count_business_days
+                delta_days = count_business_days(start_d, constraint_d)
+                task_doc["start_date"] = constraint_d.isoformat()
+                # Shift end_date by the same business-day delta if end_date present
+                if task_doc.get("end_date") and delta_days > 0:
+                    end_d = datetime.strptime(task_doc["end_date"][:10], "%Y-%m-%d").date()
+                    new_end_d = add_business_days(end_d, delta_days)
+                    task_doc["end_date"] = new_end_d.isoformat()
+        except Exception:
+            pass
 
     result = await wbs_tasks_collection.insert_one(task_doc)
     task_doc["_id"] = result.inserted_id
@@ -446,10 +511,28 @@ async def update_wbs_task(
                 update_data["progress_percentage"] = 0
 
     # Auto-recompute end_date when estimated_hours, assigned_to, or start_date changes
-    if not task.get("is_milestone"):
+    # Also handle duration_days auto-computation
+    from utils import add_business_days
+    if not task.get("is_milestone") and "is_milestone" not in update_data:
+        # Handle duration_days computation
+        if ("duration_days" in update_data and update_data.get("duration_days") is not None):
+            merged_start = update_data.get("start_date") or task.get("start_date")
+            if merged_start and "end_date" not in update_data:
+                try:
+                    start_d = datetime.strptime(merged_start[:10], "%Y-%m-%d").date()
+                    duration = update_data["duration_days"]
+                    if duration > 0:
+                        computed_end_d = add_business_days(start_d, duration - 1)
+                        update_data["end_date"] = computed_end_d.isoformat()
+                    else:
+                        update_data["end_date"] = merged_start
+                except Exception:
+                    pass
+        
+        # Original auto-recompute from estimated_hours
         should_recompute = any(k in update_data for k in ("estimated_hours", "assigned_to", "start_date"))
         # Only if end_date is NOT explicitly being set in this same update
-        if should_recompute and "end_date" not in update_data:
+        if should_recompute and "end_date" not in update_data and "duration_days" not in update_data:
             merged_start = update_data.get("start_date") or task.get("start_date")
             merged_hours = update_data.get("estimated_hours") if "estimated_hours" in update_data else task.get("estimated_hours")
             merged_assignee = update_data.get("assigned_to") if "assigned_to" in update_data else task.get("assigned_to")
@@ -459,6 +542,32 @@ async def update_wbs_task(
                 )
                 if computed_end:
                     update_data["end_date"] = computed_end
+
+    # Handle SNET constraint (snap start date forward if needed)
+    if "constraint_type" in update_data or "constraint_date" in update_data or "start_date" in update_data:
+        merged_constraint_type = update_data.get("constraint_type") if "constraint_type" in update_data else task.get("constraint_type")
+        merged_constraint_date = update_data.get("constraint_date") if "constraint_date" in update_data else task.get("constraint_date")
+        merged_start = update_data.get("start_date") if "start_date" in update_data else task.get("start_date")
+        
+        if (merged_constraint_type == "SNET"
+            and merged_constraint_date
+            and merged_start):
+            try:
+                start_d = datetime.strptime(merged_start[:10], "%Y-%m-%d").date()
+                constraint_d = datetime.strptime(merged_constraint_date[:10], "%Y-%m-%d").date()
+                if start_d < constraint_d:
+                    # Snap start_date up to constraint_date
+                    from utils import count_business_days
+                    delta_days = count_business_days(start_d, constraint_d)
+                    update_data["start_date"] = constraint_d.isoformat()
+                    # Shift end_date by the same business-day delta if end_date present
+                    merged_end = update_data.get("end_date") if "end_date" in update_data else task.get("end_date")
+                    if merged_end and delta_days > 0:
+                        end_d = datetime.strptime(merged_end[:10], "%Y-%m-%d").date()
+                        new_end_d = add_business_days(end_d, delta_days)
+                        update_data["end_date"] = new_end_d.isoformat()
+            except Exception:
+                pass
 
     await wbs_tasks_collection.update_one(
         {"_id": task["_id"]},
@@ -750,6 +859,212 @@ async def cascade_task_dates(
     updated_count = await _auto_cascade_dependencies(task_id_str, str(end_date_str)[:10])
 
     return {"message": f"Cascaded dates to {updated_count} tasks", "updated_count": updated_count}
+
+
+@router.get("/api/projects/{project_id}/wbs/critical-path")
+async def get_critical_path(
+    project_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Compute the critical path for a project's WBS.
+    
+    Returns:
+    - critical_task_ids: List of task IDs on the critical path (zero slack)
+    - project_duration_days: Total project duration in business days
+    - task_slack: Dictionary mapping task IDs to their slack (float) in business days
+    """
+    from utils import check_project_read_access, count_business_days
+    
+    if not await check_project_read_access(current_user, project_id):
+        raise HTTPException(status_code=403, detail="Access denied to this project")
+    
+    # Fetch all tasks for the project
+    cursor = wbs_tasks_collection.find({"project_id": project_id})
+    tasks = await cursor.to_list(length=10000)
+    
+    if not tasks:
+        return {
+            "critical_task_ids": [],
+            "project_duration_days": 0,
+            "task_slack": {}
+        }
+    
+    # Build task map and filter tasks with dates
+    task_map = {}
+    valid_tasks = []
+    
+    for task in tasks:
+        task_id = str(task["_id"])
+        task_map[task_id] = task
+        
+        # Include tasks that have both start_date and end_date
+        if task.get("start_date") and task.get("end_date"):
+            valid_tasks.append(task)
+    
+    if not valid_tasks:
+        return {
+            "critical_task_ids": [],
+            "project_duration_days": 0,
+            "task_slack": {}
+        }
+    
+    # Calculate duration for each task
+    task_durations = {}
+    for task in valid_tasks:
+        task_id = str(task["_id"])
+        try:
+            start_d = datetime.strptime(task["start_date"][:10], "%Y-%m-%d").date()
+            end_d = datetime.strptime(task["end_date"][:10], "%Y-%m-%d").date()
+            duration = count_business_days(start_d, end_d)
+            task_durations[task_id] = max(0, duration)
+        except Exception:
+            task_durations[task_id] = 0
+    
+    # Build dependency graph (both from dependencies and dependency_links)
+    # dependencies: List[str] of predecessor task _id strings (FS with 0 lag)
+    # dependency_links: List[dict] with {predecessor_id, type, lag_days}
+    graph = {}  # task_id -> list of (predecessor_id, lag_days)
+    reverse_graph = {}  # predecessor_id -> list of (successor_id, lag_days)
+    
+    for task in valid_tasks:
+        task_id = str(task["_id"])
+        graph[task_id] = []
+        
+        # Process legacy dependencies (FS with 0 lag)
+        for pred_id in task.get("dependencies", []):
+            if pred_id in task_map:
+                graph[task_id].append((pred_id, 0))
+                if pred_id not in reverse_graph:
+                    reverse_graph[pred_id] = []
+                reverse_graph[pred_id].append((task_id, 0))
+        
+        # Process dependency_links (advanced typed dependencies)
+        for link in task.get("dependency_links", []):
+            pred_id = link.get("predecessor_id")
+            lag_days = link.get("lag_days", 0)
+            # For simplicity, treat all link types as FS for critical path calculation
+            if pred_id and pred_id in task_map:
+                graph[task_id].append((pred_id, lag_days))
+                if pred_id not in reverse_graph:
+                    reverse_graph[pred_id] = []
+                reverse_graph[pred_id].append((task_id, lag_days))
+    
+    # Initialize reverse_graph for tasks with no successors
+    for task in valid_tasks:
+        task_id = str(task["_id"])
+        if task_id not in reverse_graph:
+            reverse_graph[task_id] = []
+    
+    # Topological sort to compute earliest start/finish (forward pass)
+    earliest_start = {}
+    earliest_finish = {}
+    in_degree = {}
+    
+    for task in valid_tasks:
+        task_id = str(task["_id"])
+        in_degree[task_id] = len(graph[task_id])
+        if in_degree[task_id] == 0:
+            earliest_start[task_id] = 0
+            earliest_finish[task_id] = task_durations[task_id]
+    
+    # BFS for forward pass
+    queue = [tid for tid in in_degree if in_degree[tid] == 0]
+    visited = set()
+    
+    while queue:
+        task_id = queue.pop(0)
+        if task_id in visited:
+            continue
+        visited.add(task_id)
+        
+        # Update successors
+        for succ_id, lag in reverse_graph.get(task_id, []):
+            if succ_id in visited:
+                continue
+            
+            # Earliest start for successor is max of (predecessor finish + lag)
+            pred_finish = earliest_finish.get(task_id, 0)
+            candidate_start = pred_finish + lag
+            
+            if succ_id not in earliest_start:
+                earliest_start[succ_id] = candidate_start
+            else:
+                earliest_start[succ_id] = max(earliest_start[succ_id], candidate_start)
+            
+            earliest_finish[succ_id] = earliest_start[succ_id] + task_durations[succ_id]
+            
+            in_degree[succ_id] -= 1
+            if in_degree[succ_id] == 0 and succ_id not in visited:
+                queue.append(succ_id)
+    
+    # Find project finish (max earliest finish)
+    if earliest_finish:
+        project_finish = max(earliest_finish.values())
+    else:
+        project_finish = 0
+    
+    # Backward pass to compute latest start/finish
+    latest_finish = {}
+    latest_start = {}
+    out_degree = {}
+    
+    for task in valid_tasks:
+        task_id = str(task["_id"])
+        out_degree[task_id] = len(reverse_graph.get(task_id, []))
+        if out_degree[task_id] == 0:
+            # Terminal tasks: latest finish = project finish
+            latest_finish[task_id] = project_finish
+            latest_start[task_id] = project_finish - task_durations[task_id]
+    
+    # BFS for backward pass
+    queue = [tid for tid in out_degree if out_degree[tid] == 0]
+    visited_backward = set()
+    
+    while queue:
+        task_id = queue.pop(0)
+        if task_id in visited_backward:
+            continue
+        visited_backward.add(task_id)
+        
+        # Update predecessors
+        for pred_id, lag in graph.get(task_id, []):
+            if pred_id in visited_backward:
+                continue
+            
+            # Latest finish for predecessor is min of (successor start - lag)
+            succ_start = latest_start.get(task_id, project_finish)
+            candidate_finish = succ_start - lag
+            
+            if pred_id not in latest_finish:
+                latest_finish[pred_id] = candidate_finish
+            else:
+                latest_finish[pred_id] = min(latest_finish[pred_id], candidate_finish)
+            
+            latest_start[pred_id] = latest_finish[pred_id] - task_durations[pred_id]
+            
+            out_degree[pred_id] -= 1
+            if out_degree[pred_id] == 0 and pred_id not in visited_backward:
+                queue.append(pred_id)
+    
+    # Calculate slack and identify critical tasks
+    task_slack = {}
+    critical_task_ids = []
+    
+    for task in valid_tasks:
+        task_id = str(task["_id"])
+        if task_id in earliest_start and task_id in latest_start:
+            slack = latest_start[task_id] - earliest_start[task_id]
+            task_slack[task_id] = max(0, slack)
+            
+            # Critical path: tasks with zero (or near-zero) slack
+            if abs(slack) < 0.01:
+                critical_task_ids.append(task_id)
+    
+    return {
+        "critical_task_ids": critical_task_ids,
+        "project_duration_days": int(project_finish),
+        "task_slack": task_slack
+    }
 
 
 # ============================================================

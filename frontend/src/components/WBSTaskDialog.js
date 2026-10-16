@@ -32,6 +32,19 @@ const PRIORITY_OPTIONS = [
   { value: 'critical', label: 'Critical' },
 ];
 
+const CONSTRAINT_TYPE_OPTIONS = [
+  { value: 'ASAP', label: 'As soon as possible' },
+  { value: 'SNET', label: 'Start no earlier than' },
+  { value: 'FNLT', label: 'Finish no later than' },
+];
+
+const DEPENDENCY_TYPE_OPTIONS = [
+  { value: 'FS', label: 'Finish-to-Start (FS)' },
+  { value: 'SS', label: 'Start-to-Start (SS)' },
+  { value: 'FF', label: 'Finish-to-Finish (FF)' },
+  { value: 'SF', label: 'Start-to-Finish (SF)' },
+];
+
 const WBSTaskDialog = ({
   open,
   onClose,
@@ -89,10 +102,20 @@ const WBSTaskDialog = ({
     is_milestone: false,
     milestone_date: '',
     progress_percentage: 0,
+    duration_days: '',
+    constraint_type: 'ASAP',
+    constraint_date: '',
+    deadline: '',
+    dependency_links: [],
   });
 
   const [depToAdd, setDepToAdd] = useState('__none__');
   const [labelInput, setLabelInput] = useState('');
+  
+  // Advanced dependency link state
+  const [advDepPredecessor, setAdvDepPredecessor] = useState('__none__');
+  const [advDepType, setAdvDepType] = useState('FS');
+  const [advDepLag, setAdvDepLag] = useState('0');
 
   // Populate form when editing
   useEffect(() => {
@@ -114,6 +137,11 @@ const WBSTaskDialog = ({
         is_milestone: task.is_milestone || false,
         milestone_date: task.milestone_date || '',
         progress_percentage: task.progress_percentage != null ? Number(task.progress_percentage) : 0,
+        duration_days: task.duration_days != null ? String(task.duration_days) : '',
+        constraint_type: task.constraint_type || 'ASAP',
+        constraint_date: task.constraint_date || '',
+        deadline: task.deadline || '',
+        dependency_links: task.dependency_links || [],
       });
     } else {
       setFormData({
@@ -133,10 +161,18 @@ const WBSTaskDialog = ({
         is_milestone: false,
         milestone_date: '',
         progress_percentage: 0,
+        duration_days: '',
+        constraint_type: 'ASAP',
+        constraint_date: '',
+        deadline: '',
+        dependency_links: [],
       });
     }
     setDepToAdd('__none__');
     setLabelInput('');
+    setAdvDepPredecessor('__none__');
+    setAdvDepType('FS');
+    setAdvDepLag('0');
   }, [task, open]);
 
   const handleChange = (field, value) => {
@@ -177,6 +213,34 @@ const WBSTaskDialog = ({
     }));
   };
 
+  const handleAddDependencyLink = () => {
+    if (advDepPredecessor && advDepPredecessor !== '__none__') {
+      const newLink = {
+        predecessor_id: advDepPredecessor,
+        type: advDepType,
+        lag_days: parseInt(advDepLag) || 0,
+      };
+      // Check if this predecessor doesn't already exist in the links
+      const exists = formData.dependency_links.some(link => link.predecessor_id === advDepPredecessor);
+      if (!exists) {
+        setFormData(prev => ({
+          ...prev,
+          dependency_links: [...prev.dependency_links, newLink],
+        }));
+        setAdvDepPredecessor('__none__');
+        setAdvDepType('FS');
+        setAdvDepLag('0');
+      }
+    }
+  };
+
+  const handleRemoveDependencyLink = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      dependency_links: prev.dependency_links.filter((_, i) => i !== index),
+    }));
+  };
+
   const handleSubmit = async () => {
     if (!formData.name.trim()) return;
 
@@ -197,6 +261,12 @@ const WBSTaskDialog = ({
       is_milestone: formData.is_milestone,
       milestone_date: formData.is_milestone ? formData.milestone_date : null,
       progress_percentage: formData.is_milestone ? (formData.status === 'done' ? 100 : 0) : (formData.progress_percentage != null ? Number(formData.progress_percentage) : 0),
+      // New scheduling fields (only for non-milestones)
+      duration_days: formData.is_milestone ? null : (formData.duration_days !== '' ? parseInt(formData.duration_days) : null),
+      constraint_type: formData.is_milestone ? null : (formData.constraint_type || 'ASAP'),
+      constraint_date: (formData.is_milestone || !formData.constraint_type || formData.constraint_type === 'ASAP') ? null : (formData.constraint_date || null),
+      deadline: formData.is_milestone ? null : (formData.deadline || null),
+      dependency_links: formData.is_milestone ? [] : formData.dependency_links,
     };
 
     await onSubmit(payload);
@@ -446,6 +516,78 @@ const WBSTaskDialog = ({
           </div>
           )}
 
+          {/* Duration (days) — only for non-milestones */}
+          {!formData.is_milestone && (
+            <div>
+              <Label htmlFor="duration-days">Duration (business days)</Label>
+              <Input
+                id="duration-days"
+                data-testid="wbs-duration-days"
+                type="number"
+                min="0"
+                step="1"
+                value={formData.duration_days}
+                onChange={e => handleChange('duration_days', e.target.value)}
+                placeholder="Optional"
+                className="mt-1"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Optional — auto-sets end date from start date
+              </p>
+            </div>
+          )}
+
+          {/* Constraint type + date — only for non-milestones */}
+          {!formData.is_milestone && (
+            <div className="space-y-3">
+              <div>
+                <Label>Constraint</Label>
+                <Select 
+                  value={formData.constraint_type} 
+                  onValueChange={v => handleChange('constraint_type', v)}
+                >
+                  <SelectTrigger className="mt-1" data-testid="wbs-constraint-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONSTRAINT_TYPE_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {formData.constraint_type && formData.constraint_type !== 'ASAP' && (
+                <div>
+                  <Label htmlFor="constraint-date">Constraint date</Label>
+                  <WeekdayDateInput
+                    id="constraint-date"
+                    data-testid="wbs-constraint-date"
+                    value={formData.constraint_date}
+                    onChange={e => handleChange('constraint_date', e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Deadline — only for non-milestones */}
+          {!formData.is_milestone && (
+            <div>
+              <Label htmlFor="deadline">Deadline (optional)</Label>
+              <WeekdayDateInput
+                id="deadline"
+                data-testid="wbs-deadline"
+                value={formData.deadline}
+                onChange={e => handleChange('deadline', e.target.value)}
+                className="mt-1"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Flags the task if it finishes after this date
+              </p>
+            </div>
+          )}
+
           {/* Baseline (planned schedule) — only when editing an existing task */}
           {isEdit && (
             <div className="rounded-md border border-gray-200 bg-gray-50 p-3 flex items-center justify-between gap-3">
@@ -512,6 +654,82 @@ const WBSTaskDialog = ({
               </div>
             )}
           </div>
+
+          {/* Advanced Dependencies (typed links) — only for non-milestones */}
+          {!formData.is_milestone && (
+            <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+              <Label className="text-sm font-medium mb-2 block">Advanced dependencies (optional)</Label>
+              <p className="text-xs text-gray-500 mb-3">
+                Specify dependency types (FS/SS/FF/SF) and lag days for more control
+              </p>
+              <div className="flex gap-2 mb-3">
+                <Select 
+                  value={advDepPredecessor} 
+                  onValueChange={setAdvDepPredecessor}
+                >
+                  <SelectTrigger className="flex-1" data-testid="wbs-deplink-predecessor">
+                    <SelectValue placeholder="Select predecessor..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Select a task...</SelectItem>
+                    {tasks && tasks.filter(t => {
+                      if (isEdit && t.id === task?.id) return false;
+                      return true;
+                    }).map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select 
+                  value={advDepType} 
+                  onValueChange={setAdvDepType}
+                >
+                  <SelectTrigger className="w-32" data-testid="wbs-deplink-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DEPENDENCY_TYPE_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.value}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  data-testid="wbs-deplink-lag"
+                  value={advDepLag}
+                  onChange={e => setAdvDepLag(e.target.value)}
+                  placeholder="Lag"
+                  className="w-20"
+                  title="Lag in days"
+                />
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={handleAddDependencyLink} 
+                  size="sm"
+                  data-testid="wbs-deplink-add"
+                >
+                  Add link
+                </Button>
+              </div>
+              {formData.dependency_links.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {formData.dependency_links.map((link, idx) => (
+                    <Badge
+                      key={idx}
+                      variant="outline"
+                      className="flex items-center gap-1 cursor-pointer hover:bg-red-100"
+                      onClick={() => handleRemoveDependencyLink(idx)}
+                      data-testid={`wbs-deplink-remove-${idx}`}
+                    >
+                      {getTaskNameById(link.predecessor_id)} ({link.type}) {link.lag_days !== 0 && `+${link.lag_days}d`}
+                      <X size={10} />
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Labels */}
           <div>

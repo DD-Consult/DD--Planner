@@ -83,6 +83,54 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     }
 
 
+@router.post("/api/auth/demo-login", response_model=TokenWithUser)
+async def demo_login(request: Request):
+    """Public demo login endpoint - issues a READ-ONLY demo token.
+    
+    No credentials required. Returns a JWT with a 'demo: true' claim that is
+    blocked from making any write operations by the server-side middleware.
+    """
+    # Look up the demo user
+    demo_user = await users_collection.find_one({"email": "demo@ddplanner.app"})
+    if not demo_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Demo not available. Run: python3 /app/scripts/seed_demo.py"
+        )
+    
+    # Check for disabled status
+    if demo_user.get("disabled"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo account is disabled"
+        )
+    
+    # Build JWT payload with demo claim (CRITICAL for write-block middleware)
+    jwt_payload = {
+        "sub": demo_user["email"],
+        "demo": True,  # CRITICAL: marks this as a demo session
+        "role": demo_user.get("role"),
+    }
+    
+    # Include tenant context if present (for multi-tenant compatibility)
+    tenant = getattr(request.state, "tenant", None)
+    if tenant:
+        jwt_payload.update({
+            "tenant_id": tenant.get("id"),
+            "tenant_slug": tenant.get("slug"),
+            "token_type": "tenant",
+        })
+    
+    access_token = create_access_token(data=jwt_payload)
+    user_data = serialize_doc(demo_user)
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user_data
+    }
+
+
 @router.get("/api/auth/me", response_model=UserResponse)
 async def get_me(current_user: dict = Depends(get_current_user)):
     return current_user

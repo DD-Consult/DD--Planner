@@ -5,7 +5,7 @@ import {
   getProjectWBS, createWBSTask, updateWBSTask, deleteWBSTask,
   getWBSActuals, cascadeTaskDates, syncProjectDatesFromWBS,
   setProjectWBSBaseline, setWBSTaskBaseline, getProjectCommentCounts,
-  recalculateWBSDates,
+  recalculateWBSDates, getCriticalPath,
 } from '../api';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -18,12 +18,13 @@ import {
 } from './ui/select';
 import {
   LayoutGrid, List, CalendarDays, Plus, Sparkles, Loader2,
-  Edit2, Trash2, ChevronRight, ChevronDown, AlertTriangle,
-  Clock, Users, ArrowRight, RefreshCw, TrendingUp, Flag, Diamond, MessageSquare,
+  Edit2, Trash2, ChevronRight, ChevronDown, ChevronUp, ChevronLeft, AlertTriangle,
+  Clock, Users, ArrowRight, RefreshCw, TrendingUp, Flag, Diamond, MessageSquare, GanttChart,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import WBSTaskDialog from './WBSTaskDialog';
 import AIWBSGenerator from './AIWBSGenerator';
+import WBSGanttView from './WBSGanttView';
 
 // ============================================================
 // Constants
@@ -276,7 +277,7 @@ const TaskCard = ({
 // ============================================================
 const WBSView = ({ projectId, project, phases, resources, readOnly = false, defaultView = 'board', currentUserEmail }) => {
   const queryClient = useQueryClient();
-  const [viewMode, setViewMode] = useState(defaultView); // 'board' | 'list' | 'plan'
+  const [viewMode, setViewMode] = useState(defaultView); // 'board' | 'list' | 'plan' | 'gantt'
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [showAIGenerator, setShowAIGenerator] = useState(false);
@@ -653,10 +654,101 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
     }
   };
 
+  const handleGanttReschedule = async (task, newStart, newEnd) => {
+    try {
+      await updateWBSTask(task.id, { start_date: newStart, end_date: newEnd });
+      queryClient.invalidateQueries({ queryKey: ['wbs', projectId] });
+      toast.success(`"${task.name}" rescheduled successfully`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to reschedule task');
+    }
+  };
+
   const handleAddInPhase = (phaseName) => {
     setDefaultPhase(phaseName);
     setEditingTask(null);
     setShowTaskDialog(true);
+  };
+
+  // ============================================================
+  // WBS List Structure Controls (Move Up/Down, Indent/Outdent)
+  // ============================================================
+  
+  // Helper: get siblings (tasks with same parent_id) sorted by order
+  const getSiblings = (task) => {
+    const parentId = task.parent_id || null;
+    return tasks
+      .filter(t => (t.parent_id || null) === parentId)
+      .sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
+  };
+
+  const handleMoveUp = async (task) => {
+    const siblings = getSiblings(task);
+    const index = siblings.findIndex(t => t.id === task.id);
+    if (index <= 0) return; // Already first
+
+    try {
+      // Reorder the sibling array (swap with previous), then persist a clean
+      // sequential order for ALL siblings so the visible order is deterministic.
+      const reordered = [...siblings];
+      [reordered[index - 1], reordered[index]] = [reordered[index], reordered[index - 1]];
+      await Promise.all(reordered.map((s, idx) => updateWBSTask(s.id, { order: idx })));
+
+      queryClient.invalidateQueries({ queryKey: ['wbs', projectId] });
+      toast.success('Task moved up');
+    } catch (err) {
+      toast.error('Failed to move task');
+    }
+  };
+
+  const handleMoveDown = async (task) => {
+    const siblings = getSiblings(task);
+    const index = siblings.findIndex(t => t.id === task.id);
+    if (index < 0 || index >= siblings.length - 1) return; // Already last
+
+    try {
+      // Reorder the sibling array (swap with next), then persist a clean
+      // sequential order for ALL siblings so the visible order is deterministic.
+      const reordered = [...siblings];
+      [reordered[index + 1], reordered[index]] = [reordered[index], reordered[index + 1]];
+      await Promise.all(reordered.map((s, idx) => updateWBSTask(s.id, { order: idx })));
+
+      queryClient.invalidateQueries({ queryKey: ['wbs', projectId] });
+      toast.success('Task moved down');
+    } catch (err) {
+      toast.error('Failed to move task');
+    }
+  };
+
+  const handleIndent = async (task) => {
+    const siblings = getSiblings(task);
+    const index = siblings.findIndex(t => t.id === task.id);
+    if (index <= 0) return; // No preceding sibling to nest under
+
+    const precedingSibling = siblings[index - 1];
+
+    try {
+      await updateWBSTask(task.id, { parent_id: precedingSibling.id });
+      queryClient.invalidateQueries({ queryKey: ['wbs', projectId] });
+      toast.success('Task indented');
+    } catch (err) {
+      toast.error('Failed to indent task');
+    }
+  };
+
+  const handleOutdent = async (task) => {
+    if (!task.parent_id) return; // Already top-level
+
+    const currentParent = tasks.find(t => t.id === task.parent_id);
+    const newParentId = currentParent?.parent_id || null;
+
+    try {
+      await updateWBSTask(task.id, { parent_id: newParentId });
+      queryClient.invalidateQueries({ queryKey: ['wbs', projectId] });
+      toast.success('Task outdented');
+    } catch (err) {
+      toast.error('Failed to outdent task');
+    }
   };
 
   // ============================================================
@@ -720,8 +812,9 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
   // List View (tree table)
   // ============================================================
   const renderTaskRows = (taskList, level = 0) => {
+    const byOrder = (a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name);
     return taskList.map(task => {
-      const subTasks = getSubTasks(task.id);
+      const subTasks = getSubTasks(task.id).sort(byOrder);
       const isExpanded = expandedTasks[task.id];
       const hasChildren = subTasks.length > 0;
       const statusCfg = STATUS_CONFIG[task.status] || STATUS_CONFIG.todo;
@@ -852,16 +945,74 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
             </td>
             {!readOnly && (
             <td className="py-2.5 px-3">
-              <div className="opacity-0 group-hover:opacity-100 flex gap-1.5">
+              <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+                {/* Move Up */}
+                <button
+                  onClick={() => handleMoveUp(task)}
+                  disabled={(() => {
+                    const siblings = getSiblings(task);
+                    const index = siblings.findIndex(t => t.id === task.id);
+                    return index <= 0;
+                  })()}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Move Up"
+                  data-testid={`wbs-move-up-${task.id}`}
+                >
+                  <ChevronUp size={12} />
+                </button>
+                {/* Move Down */}
+                <button
+                  onClick={() => handleMoveDown(task)}
+                  disabled={(() => {
+                    const siblings = getSiblings(task);
+                    const index = siblings.findIndex(t => t.id === task.id);
+                    return index < 0 || index >= siblings.length - 1;
+                  })()}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Move Down"
+                  data-testid={`wbs-move-down-${task.id}`}
+                >
+                  <ChevronDown size={12} />
+                </button>
+                {/* Outdent */}
+                <button
+                  onClick={() => handleOutdent(task)}
+                  disabled={!task.parent_id}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Outdent (Move Left)"
+                  data-testid={`wbs-outdent-${task.id}`}
+                >
+                  <ChevronLeft size={12} />
+                </button>
+                {/* Indent */}
+                <button
+                  onClick={() => handleIndent(task)}
+                  disabled={(() => {
+                    const siblings = getSiblings(task);
+                    const index = siblings.findIndex(t => t.id === task.id);
+                    return index <= 0;
+                  })()}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Indent (Move Right)"
+                  data-testid={`wbs-indent-${task.id}`}
+                >
+                  <ChevronRight size={12} />
+                </button>
+                {/* Separator */}
+                <div className="w-px h-4 bg-gray-300 mx-0.5" />
+                {/* Edit */}
                 <button
                   onClick={() => handleEdit(task)}
                   className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+                  title="Edit"
                 >
                   <Edit2 size={12} />
                 </button>
+                {/* Delete */}
                 <button
                   onClick={() => handleDelete(task)}
                   className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600"
+                  title="Delete"
                 >
                   <Trash2 size={12} />
                 </button>
@@ -876,8 +1027,12 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
   };
 
   const renderListView = () => {
-    // Use topoSortedTasks but filter to root-only (children rendered via expand)
-    const rootTasks = topoSortedTasks.filter(t => !t.parent_id);
+    // List view orders strictly by the `order` field within each sibling group
+    // (same ordering the Move Up/Down + Indent/Outdent controls manipulate), so
+    // what the user sees matches what the structure controls change. The Plan
+    // view keeps dependency/date (topo) ordering separately.
+    const byOrder = (a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name);
+    const rootTasks = tasks.filter(t => !t.parent_id).sort(byOrder);
     return (
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <table className="w-full text-left">
@@ -1215,6 +1370,15 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
               <CalendarDays size={13} />
               <span className="hidden sm:inline">Plan</span>
             </button>
+            <button
+              data-testid="view-mode-gantt"
+              onClick={() => setViewMode('gantt')}
+              className={`px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1 transition-colors ${viewMode === 'gantt' ? 'bg-[#1570EF] text-white' : 'text-gray-500 hover:text-gray-700'}`}
+              title="Gantt view"
+            >
+              <GanttChart size={13} />
+              <span className="hidden sm:inline">Gantt</span>
+            </button>
           </div>
           )}
 
@@ -1395,6 +1559,17 @@ const WBSView = ({ projectId, project, phases, resources, readOnly = false, defa
           {viewMode === 'board' && <div data-testid="wbs-board-view">{renderBoardView()}</div>}
           {viewMode === 'list' && <div data-testid="wbs-list-view">{renderListView()}</div>}
           {viewMode === 'plan' && <div data-testid="wbs-plan-view">{renderPlanView()}</div>}
+          {viewMode === 'gantt' && (
+            <div data-testid="wbs-gantt-view">
+              <WBSGanttView
+                projectId={projectId}
+                tasks={tasks}
+                resources={resources}
+                readOnly={readOnly}
+                onReschedule={handleGanttReschedule}
+              />
+            </div>
+          )}
         </>
       )}
 

@@ -118,8 +118,46 @@ async def create_leave(leave: LeaveCreate, current_user: dict = Depends(get_curr
         leave_doc["start_date"] = datetime.combine(leave_doc["start_date"], datetime.min.time())
     if isinstance(leave_doc.get("end_date"), date):
         leave_doc["end_date"] = datetime.combine(leave_doc["end_date"], datetime.min.time())
+    
+    # Set status based on role
+    if is_admin:
+        # Admin creates leave for someone → auto-approved
+        leave_doc["status"] = "Approved"
+        leave_doc["approver_email"] = current_user.get("email")
+        leave_doc["decided_at"] = datetime.now(timezone.utc).isoformat()
+    else:
+        # Resource/contractor self-submit → pending approval
+        leave_doc["status"] = "Pending"
+    
     result = await leaves_collection.insert_one(leave_doc)
     leave_doc["_id"] = result.inserted_id
+    
+    # Notify admins if status is Pending (non-fatal)
+    if leave_doc.get("status") == "Pending":
+        try:
+            from database import users_collection, resources_collection, notifications_collection
+            # Get resource name
+            resource_doc = await resources_collection.find_one({"_id": ObjectId(leave_doc["resource_id"])})
+            resource_name = resource_doc.get("name", "Unknown") if resource_doc else "Unknown"
+            
+            # Notify all admins
+            admin_users = await users_collection.find({"role": {"$in": ["admin", "super_admin"]}}).to_list(length=100)
+            for admin_user in admin_users:
+                notification = {
+                    "user_id": str(admin_user["_id"]),
+                    "type": "leave_request",
+                    "title": "New Time Off Request",
+                    "message": f"{resource_name} has requested time off from {str(leave_doc['start_date'])[:10]} to {str(leave_doc['end_date'])[:10]} ({leave_doc.get('type', 'Leave')}).",
+                    "related_id": str(leave_doc["_id"]),
+                    "priority": "normal",
+                    "read": False,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }
+                await notifications_collection.insert_one(notification)
+        except Exception as e:
+            # Non-fatal: log but don't break leave creation
+            print(f"[Leave] Failed to notify admins: {e}")
+    
     return serialize_doc(leave_doc)
 
 
@@ -138,6 +176,123 @@ async def delete_leave(leave_id: str, current_user: dict = Depends(get_current_u
             raise HTTPException(status_code=403, detail="You can only delete your own time off entries.")
     await leaves_collection.delete_one({"_id": ObjectId(leave_id)})
     return {"message": "Leave deleted"}
+
+
+@router.put("/api/leaves/{leave_id}/approve", response_model=LeaveResponse)
+async def approve_leave(leave_id: str, payload: Optional[dict] = Body(default=None), admin: dict = Depends(require_admin)):
+    """Approve a pending leave request (admin only)."""
+    note = (payload or {}).get("note")
+    leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave not found")
+    
+    update_doc = {
+        "status": "Approved",
+        "approver_email": admin.get("email"),
+        "decided_at": datetime.now(timezone.utc).isoformat()
+    }
+    if note:
+        update_doc["decision_note"] = note
+    
+    await leaves_collection.update_one({"_id": ObjectId(leave_id)}, {"$set": update_doc})
+    updated_leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
+    
+    # Notify the resource's user (non-fatal)
+    try:
+        from database import users_collection, resources_collection, notifications_collection
+        resource_id = leave.get("resource_id")
+        if resource_id:
+            # Find user linked to this resource
+            user = await users_collection.find_one({"resource_id": resource_id})
+            if user:
+                resource_doc = await resources_collection.find_one({"_id": ObjectId(resource_id)})
+                resource_name = resource_doc.get("name", "Your") if resource_doc else "Your"
+                notification = {
+                    "user_id": str(user["_id"]),
+                    "type": "leave_approved",
+                    "title": "Time Off Request Approved",
+                    "message": f"{resource_name} time off request from {str(leave['start_date'])[:10]} to {str(leave['end_date'])[:10]} has been approved.",
+                    "related_id": leave_id,
+                    "priority": "normal",
+                    "read": False,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }
+                await notifications_collection.insert_one(notification)
+    except Exception as e:
+        print(f"[Leave] Failed to notify resource user: {e}")
+    
+    return serialize_doc(updated_leave)
+
+
+@router.put("/api/leaves/{leave_id}/reject", response_model=LeaveResponse)
+async def reject_leave(leave_id: str, payload: Optional[dict] = Body(default=None), admin: dict = Depends(require_admin)):
+    """Reject a pending leave request (admin only)."""
+    note = (payload or {}).get("note")
+    leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave not found")
+    
+    update_doc = {
+        "status": "Rejected",
+        "approver_email": admin.get("email"),
+        "decided_at": datetime.now(timezone.utc).isoformat()
+    }
+    if note:
+        update_doc["decision_note"] = note
+    
+    await leaves_collection.update_one({"_id": ObjectId(leave_id)}, {"$set": update_doc})
+    updated_leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
+    
+    # Notify the resource's user (non-fatal)
+    try:
+        from database import users_collection, resources_collection, notifications_collection
+        resource_id = leave.get("resource_id")
+        if resource_id:
+            # Find user linked to this resource
+            user = await users_collection.find_one({"resource_id": resource_id})
+            if user:
+                resource_doc = await resources_collection.find_one({"_id": ObjectId(resource_id)})
+                resource_name = resource_doc.get("name", "Your") if resource_doc else "Your"
+                msg = f"{resource_name} time off request from {str(leave['start_date'])[:10]} to {str(leave['end_date'])[:10]} has been rejected."
+                if note:
+                    msg += f" Reason: {note}"
+                notification = {
+                    "user_id": str(user["_id"]),
+                    "type": "leave_rejected",
+                    "title": "Time Off Request Rejected",
+                    "message": msg,
+                    "related_id": leave_id,
+                    "priority": "high",
+                    "read": False,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }
+                await notifications_collection.insert_one(notification)
+    except Exception as e:
+        print(f"[Leave] Failed to notify resource user: {e}")
+    
+    return serialize_doc(updated_leave)
+
+
+@router.get("/api/leaves/pending")
+async def get_pending_leaves(admin: dict = Depends(require_admin)):
+    """Get all pending leave requests (admin only), enriched with resource name."""
+    from database import resources_collection
+    cursor = leaves_collection.find({"status": "Pending"})
+    leaves = await cursor.to_list(length=10000)
+    
+    # Enrich with resource name
+    resource_ids = {lv.get("resource_id") for lv in leaves if lv.get("resource_id")}
+    resources = await resources_collection.find({"_id": {"$in": [ObjectId(rid) for rid in resource_ids if rid]}}).to_list(length=1000)
+    resource_map = {str(r["_id"]): r.get("name", "Unknown") for r in resources}
+    
+    result = []
+    for lv in leaves:
+        lv_dict = serialize_doc(lv)
+        lv_dict["resource_name"] = resource_map.get(lv.get("resource_id"), "Unknown")
+        result.append(lv_dict)
+    
+    return result
+
 
 
 # Holiday endpoints

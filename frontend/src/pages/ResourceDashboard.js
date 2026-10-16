@@ -42,9 +42,10 @@ function timesheetStatusFromActionItems(actionItems = []) {
 }
 
 const STATUS_CONFIG = {
-  missing: { label: 'Not Submitted', color: 'bg-red-100 text-red-700 border-red-200' },
-  draft:   { label: 'Draft',         color: 'bg-amber-100 text-amber-700 border-amber-200' },
-  ok:      { label: 'Up to Date',    color: 'bg-green-100 text-green-700 border-green-200' },
+  missing:   { label: 'Not Submitted', color: 'bg-red-100 text-red-700 border-red-200' },
+  draft:     { label: 'Draft',         color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  submitted: { label: 'Submitted',     color: 'bg-green-100 text-green-700 border-green-200' },
+  ok:        { label: 'Up to Date',    color: 'bg-green-100 text-green-700 border-green-200' },
 };
 
 const ACTION_ICON_MAP = {
@@ -470,8 +471,10 @@ export default function ResourceDashboard({ userData }) {
               ) : (
                 <div className="space-y-2">
                   {recentWeeks.map(week => {
-                    const submitted = week.entries?.some(e => e.status === 'submitted');
-                    const hasDraft  = week.entries?.some(e => e.status === 'draft');
+                    // Backend stores status as "Submitted"/"Draft" (capitalized).
+                    // Compare case-insensitively so the badge reflects the real status.
+                    const submitted = week.entries?.some(e => (e.status || '').toLowerCase() === 'submitted');
+                    const hasDraft  = week.entries?.some(e => (e.status || '').toLowerCase() === 'draft');
                     const weekStatus = submitted ? 'submitted' : hasDraft ? 'draft' : 'missing';
                     return (
                       <div key={week.week_start} className="flex items-center justify-between py-2 border-b border-[#F2F4F7] last:border-0" data-testid={`ts-week-${week.week_start}`}>

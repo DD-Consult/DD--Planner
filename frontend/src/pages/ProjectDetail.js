@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getProject, getProjectRisks, getProjectAllocations, getResources, generateProjectSummary, updateProjectSummary, getProjectStatusUpdates, getProjectTimeReport, getProjectBudgetAnalysis, createRisk, updateRisk, deleteRisk, updateProject, polishAllRisks, editStatusUpdate, syncProjectDatesFromWBS, getMe, getStatusOptions, createStatusUpdate, createAllocation, updateAllocation, deleteAllocation, getBudgetHealth, aiDraftStatusUpdate, aiSimilarProjects, getProjects } from '../api';
@@ -98,6 +98,7 @@ import AIFeedbackButtons from '../components/AIFeedbackButtons';
 import ProjectHealthScore from '../components/ProjectHealthScore';
 import ProjectPredictions from '../components/ProjectPredictions';
 import AIMemoryPanel from '../components/AIMemoryPanel';
+import { ResourceCombobox } from '../components/ResourceCombobox';
 
 // Safe date formatting helper
 const safeFormatDate = (dateStr, formatStr = 'MMM d, yyyy') => {
@@ -183,6 +184,13 @@ const ProjectDetail = () => {
     hours: '',
   });
   const [allocToDelete, setAllocToDelete] = useState(null);
+  
+  // Quick-Add allocation state (Team tab)
+  const [quickAddResource, setQuickAddResource] = useState('');
+  const [quickAddPercentage, setQuickAddPercentage] = useState(50);
+  
+  // Ref to track "Save & Add Another" mode
+  const keepAllocDialogOpenRef = useRef(false);
   
   const queryClient = useQueryClient();
 
@@ -371,7 +379,19 @@ const ProjectDetail = () => {
       queryClient.invalidateQueries(['project', id]);
       queryClient.invalidateQueries(['budgetHealth', id]);
       queryClient.invalidateQueries(['portfolioHealthScores']);
-      resetAllocDialog();
+      
+      // Handle "Save & Add Another" mode
+      if (keepAllocDialogOpenRef.current) {
+        keepAllocDialogOpenRef.current = false;
+        // Keep dialog open, reset only resource_id to allow adding another
+        setAllocForm(prev => ({
+          ...prev,
+          resource_id: '',
+        }));
+      } else {
+        // Normal mode: close dialog
+        resetAllocDialog();
+      }
     },
     onError: (err) => toast.error(err.response?.data?.detail || 'Failed to add allocation'),
   });
@@ -450,7 +470,7 @@ const ProjectDetail = () => {
     setShowAllocDialog(true);
   };
 
-  const submitAllocDialog = () => {
+  const submitAllocDialog = (keepOpen = false) => {
     if (!allocForm.resource_id) {
       toast.error('Please select a resource');
       return;
@@ -486,6 +506,11 @@ const ProjectDetail = () => {
       role: allocForm.role || null,
     };
 
+    // Set the ref before mutation
+    if (!editingAlloc && keepOpen) {
+      keepAllocDialogOpenRef.current = true;
+    }
+
     if (editingAlloc) {
       updateAllocationMutation.mutate({ allocId: editingAlloc.id, data: dataToSend });
     } else {
@@ -497,6 +522,38 @@ const ProjectDetail = () => {
     if (allocToDelete) {
       deleteAllocationMutation.mutate(allocToDelete.id);
     }
+  };
+
+  // Quick-Add allocation handler (Team tab)
+  const handleQuickAddAllocation = () => {
+    if (!quickAddResource) {
+      toast.error('Please select a resource');
+      return;
+    }
+    if (quickAddPercentage <= 0 || quickAddPercentage > 200) {
+      toast.error('Allocation percentage must be between 1 and 200');
+      return;
+    }
+
+    // Build payload with project dates
+    const dataToSend = {
+      project_id: id,
+      resource_id: quickAddResource,
+      start_date: project?.start_date ? format(new Date(project.start_date), 'yyyy-MM-dd') : '',
+      end_date: project?.end_date ? format(new Date(project.end_date), 'yyyy-MM-dd') : '',
+      allocation_type: 'percentage',
+      percentage: parseFloat(quickAddPercentage),
+      hours: null,
+      role: null,
+    };
+
+    createAllocationMutation.mutate(dataToSend, {
+      onSuccess: () => {
+        // Reset quick-add form
+        setQuickAddResource('');
+        setQuickAddPercentage(50);
+      },
+    });
   };
 
   // Fetch time tracking report for this project
@@ -2073,7 +2130,48 @@ const ProjectDetail = () => {
         <TabsContent value="team" className="space-y-6">
           {/* Budget Health Banner */}
           <BudgetHealthBanner projectId={id} />
-          
+
+          {/* Quick Add Allocation bar (admin only) */}
+          {isAdmin && (
+            <div className="bg-white border border-[#E6E8EC] rounded-lg p-4" data-testid="quick-add-allocation-bar">
+              <h4 className="text-sm font-semibold mb-3" style={{ fontFamily: 'Space Grotesk' }}>Quick Add Allocation</h4>
+              <div className="flex items-end gap-3 flex-wrap">
+                <div className="flex-1 min-w-[250px]">
+                  <Label className="text-xs mb-1 block">Resource</Label>
+                  <ResourceCombobox
+                    value={quickAddResource}
+                    onChange={setQuickAddResource}
+                    resources={resources || []}
+                    placeholder="Select resource..."
+                    testId="quick-add-resource"
+                  />
+                </div>
+                <div className="w-32">
+                  <Label className="text-xs mb-1 block">Allocation %</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="200"
+                    step="5"
+                    value={quickAddPercentage}
+                    onChange={(e) => setQuickAddPercentage(parseFloat(e.target.value) || 50)}
+                    data-testid="quick-add-percentage"
+                  />
+                </div>
+                <Button
+                  onClick={handleQuickAddAllocation}
+                  disabled={createAllocationMutation.isPending}
+                  className="bg-[#1570EF] hover:bg-[#1570EF]/90"
+                  data-testid="quick-add-submit"
+                >
+                  <Plus size={14} className="mr-2" />
+                  Add
+                </Button>
+              </div>
+              <p className="text-xs text-[#667085] mt-2">Uses the project start/end dates by default.</p>
+            </div>
+          )}
+
           {allocations && allocations.length > 0 ? (
             <>
               <div className="bg-white border border-[#E6E8EC] rounded-lg p-6">
@@ -3187,25 +3285,14 @@ const ProjectDetail = () => {
             {/* Resource Selection */}
             <div>
               <Label className="text-sm font-medium mb-2 block">Resource *</Label>
-              <Select
+              <ResourceCombobox
                 value={allocForm.resource_id}
-                onValueChange={(value) => setAllocForm({ ...allocForm, resource_id: value })}
+                onChange={(value) => setAllocForm({ ...allocForm, resource_id: value })}
+                resources={resources || []}
                 disabled={!!editingAlloc}
-              >
-                <SelectTrigger data-testid="alloc-resource-select">
-                  <SelectValue placeholder="Select a resource" />
-                </SelectTrigger>
-                <SelectContent>
-                  {resources?.filter((resource) => resource.active !== false).map((resource) => {
-                    const capacityInfo = resource.standard_capacity ? ` (${resource.standard_capacity}% capacity)` : '';
-                    return (
-                      <SelectItem key={resource.id} value={resource.id}>
-                        {resource.name} — {resource.role}{capacityInfo}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+                placeholder="Select resource..."
+                testId="alloc-resource-combobox"
+              />
             </div>
 
             {/* Dates */}
@@ -3443,6 +3530,17 @@ const ProjectDetail = () => {
                 editingAlloc ? 'Save Changes' : 'Add Allocation'
               )}
             </Button>
+            {!editingAlloc && (
+              <Button
+                variant="outline"
+                onClick={() => submitAllocDialog(true)}
+                disabled={createAllocationMutation.isPending || updateAllocationMutation.isPending}
+                data-testid="alloc-save-add-another"
+              >
+                <Plus size={14} className="mr-2" />
+                Save &amp; Add Another
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

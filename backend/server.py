@@ -124,6 +124,43 @@ async def tenant_context_middleware(request: Request, call_next):
         reset_current_tenant_db(token)
     return response
 
+
+# ============================================================================
+# DEMO READ-ONLY WRITE-BLOCK MIDDLEWARE
+# ----------------------------------------------------------------------------
+# Blocks all mutating HTTP methods (POST, PUT, PATCH, DELETE) when the JWT
+# contains a "demo": True claim. This is the SERVER-SIDE ENFORCEMENT that
+# guarantees the public demo cannot write data, regardless of what the UI does.
+#
+# Exempts /api/auth/demo-login itself (so it can issue tokens).
+# ============================================================================
+@app.middleware("http")
+async def demo_write_block_middleware(request: Request, call_next):
+    """Block write operations for demo tokens."""
+    # Only enforce on mutating methods to /api paths
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path.startswith("/api"):
+        # Exempt the demo-login endpoint itself (it issues the token)
+        if request.url.path == "/api/auth/demo-login":
+            return await call_next(request)
+        
+        # Check for demo token
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.replace("Bearer ", "")
+            try:
+                from auth.dependencies import decode_token
+                payload = decode_token(token)
+                if payload and payload.get("demo") is True:
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "This is a read-only demo. Sign up to make changes."}
+                    )
+            except Exception:
+                # Invalid/expired token - let normal auth handle it
+                pass
+    
+    return await call_next(request)
+
 # Include all routers
 app.include_router(auth_router)
 app.include_router(resources_router)

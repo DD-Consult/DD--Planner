@@ -113,6 +113,8 @@ export const login = (email, password) => {
   return api.post('/auth/login', formData);
 };
 
+export const demoLogin = () => api.post('/auth/demo-login');
+
 export const getMe = () => api.get('/auth/me');
 
 // Multi-tenant modules (Step 6): fetch the enabled/disabled status of all
@@ -216,6 +218,10 @@ export const getAllocationsByCell = (resourceId, date) =>
 export const getLeaves = () => api.get('/leaves');
 export const createLeave = (data) => api.post('/leaves', data);
 export const deleteLeave = (id) => api.delete(`/leaves/${id}`);
+export const getPendingLeaves = () => api.get('/leaves/pending');
+export const approveLeave = (id, note) => api.put(`/leaves/${id}/approve`, note ? { note } : {});
+export const rejectLeave = (id, note) => api.put(`/leaves/${id}/reject`, note ? { note } : {});
+
 
 // Holidays
 export const getHolidays = () => api.get('/holidays');
@@ -431,6 +437,9 @@ export const cascadeTaskDates = (taskId, newEndDate) =>
 // WBS Baseline — snapshot current dates as the committed (planned) schedule
 export const setWBSTaskBaseline = (taskId) =>
   api.post(`/wbs/tasks/${taskId}/set-baseline`);
+
+export const getCriticalPath = (projectId) =>
+  api.get(`/projects/${projectId}/wbs/critical-path`);
 
 export const setProjectWBSBaseline = (projectId) =>
   api.post(`/projects/${projectId}/wbs/set-baseline`);
