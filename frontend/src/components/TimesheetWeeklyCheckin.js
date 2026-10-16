@@ -115,16 +115,27 @@ const TimesheetWeeklyCheckin = () => {
     },
   });
 
-  // Active projects with phases (for the add entry dropdown)
+  // Projects available for timesheet entry.
+  // IMPORTANT: `projects` is already scoped to the user's allocated/led projects
+  // (backend get_projects, scope="mine"). We must NOT additionally filter by
+  // status === 'Active' or require phases — staff can be allocated to Pipeline
+  // projects or projects without phases, and still need to log time against them.
+  // We only hide Completed projects (nothing to log against anymore).
   const activeProjects = useMemo(() => {
-    return projects.filter(p => p.status === 'Active' && p.phases?.length > 0);
+    return projects.filter(p => p.status !== 'Completed');
   }, [projects]);
 
-  // Phases for selected project
+  // Phases for selected project.
+  // Fall back to a synthetic "General" phase when a project has no phases so that
+  // allocated-but-phase-less projects remain selectable (backend accepts phase_id="general").
   const selectedProjectPhases = useMemo(() => {
     if (!newEntry.project_id) return [];
     const project = projects.find(p => p.id === newEntry.project_id);
-    return project?.phases || [];
+    const phases = project?.phases || [];
+    if (phases.length === 0) {
+      return [{ id: 'general', name: 'General' }];
+    }
+    return phases;
   }, [newEntry.project_id, projects]);
 
   // WBS tasks for selected project (for task dropdown in Add Entry)
@@ -393,7 +404,15 @@ const TimesheetWeeklyCheckin = () => {
                 <Label className="text-xs">Project *</Label>
                 <Select
                   value={newEntry.project_id}
-                  onValueChange={(value) => setNewEntry({ ...newEntry, project_id: value, phase_id: '', task_id: '', task_name: '' })}
+                  onValueChange={(value) => {
+                    // Auto-select the phase when the project has exactly one option
+                    // (covers phase-less projects that fall back to synthetic "General"
+                    // and single-phase projects) so staff aren't blocked by a required field.
+                    const proj = projects.find((p) => p.id === value);
+                    const phases = proj?.phases || [];
+                    const autoPhaseId = phases.length === 0 ? 'general' : (phases.length === 1 ? phases[0].id : '');
+                    setNewEntry({ ...newEntry, project_id: value, phase_id: autoPhaseId, task_id: '', task_name: '' });
+                  }}
                 >
                   <SelectTrigger data-testid="add-entry-project-select">
                     <SelectValue placeholder="Select project" />
