@@ -24,6 +24,38 @@ from services.ai_providers import get_ai_config, call_openai_api, call_gemini_ap
 
 router = APIRouter()
 
+
+def _build_project_match_query(raw_project_ids):
+    """Build a Mongo query that matches projects by BOTH ObjectId `_id` and string `id`.
+
+    Allocations/leads may reference a project either by its Mongo ObjectId (`_id`) or by a
+    string `id` field (common for AI/wizard-created projects). Matching only on `_id` after
+    ObjectId() conversion silently drops — or crashes on — string-id projects, which made some
+    assigned projects disappear from a resource's list. This mirrors the dual-match pattern
+    already used in allocations.py.
+
+    Returns a query dict, or {"_id": None} (matches nothing) when there are no ids.
+    """
+    obj_ids = []
+    str_ids = []
+    for pid in raw_project_ids:
+        pid_str = str(pid)
+        str_ids.append(pid_str)
+        try:
+            obj_ids.append(ObjectId(pid_str))
+        except Exception:
+            # Not a valid ObjectId (e.g. UUID string id) — the `id` match below will catch it
+            pass
+    or_clauses = []
+    if obj_ids:
+        or_clauses.append({"_id": {"$in": obj_ids}})
+    if str_ids:
+        or_clauses.append({"id": {"$in": str_ids}})
+    if not or_clauses:
+        return {"_id": None}
+    return {"$or": or_clauses}
+
+
 @router.get("/api/projects/all-active-summary")
 async def get_all_active_projects_summary(current_user: dict = Depends(get_current_user)):
     """Return minimal project list (id, name, client, phases) for timesheet entry.
@@ -60,15 +92,17 @@ async def get_projects(current_user: dict = Depends(get_current_user), scope: st
                 allocs = await allocations_collection.find(
                     {"resource_id": str(resource["_id"])}
                 ).to_list(length=1000)
-                project_ids = list({ObjectId(a["project_id"]) for a in allocs})
-                # Also include projects where they are the lead
+                # Collect raw project id strings from allocations (may be ObjectId or string `id`)
+                raw_ids = {a.get("project_id") for a in allocs if a.get("project_id")}
+                # Also include projects where they are the lead (matched by both _id and id)
                 lead_projects = await projects_collection.find(
                     {"project_lead_id": str(resource["_id"])}
                 ).to_list(length=1000)
                 for lp in lead_projects:
-                    if lp["_id"] not in project_ids:
-                        project_ids.append(lp["_id"])
-                query = {"_id": {"$in": project_ids}} if project_ids else {"_id": None}
+                    raw_ids.add(str(lp["_id"]))
+                    if lp.get("id"):
+                        raw_ids.add(str(lp["id"]))
+                query = _build_project_match_query(raw_ids)
             else:
                 query = {"_id": None}  # No resource link → no projects
     elif current_user["role"] == UserRole.CONTRACTOR:
@@ -78,15 +112,16 @@ async def get_projects(current_user: dict = Depends(get_current_user), scope: st
             allocs = await allocations_collection.find(
                 {"resource_id": str(resource["_id"])}
             ).to_list(length=1000)
-            project_ids = list({ObjectId(a["project_id"]) for a in allocs})
-            # Also include projects where they are the lead
+            raw_ids = {a.get("project_id") for a in allocs if a.get("project_id")}
+            # Also include projects where they are the lead (matched by both _id and id)
             lead_projects = await projects_collection.find(
                 {"project_lead_id": str(resource["_id"])}
             ).to_list(length=1000)
             for lp in lead_projects:
-                if lp["_id"] not in project_ids:
-                    project_ids.append(lp["_id"])
-            query = {"_id": {"$in": project_ids}} if project_ids else {"_id": None}
+                raw_ids.add(str(lp["_id"]))
+                if lp.get("id"):
+                    raw_ids.add(str(lp["id"]))
+            query = _build_project_match_query(raw_ids)
         else:
             query = {"_id": None}  # No resource link → no projects
     
