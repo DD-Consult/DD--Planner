@@ -93,19 +93,45 @@ async def demo_login(request: Request):
     # Look up the demo user
     demo_user = await users_collection.find_one({"email": "demo@ddplanner.app"})
     if not demo_user:
-        # Self-heal: attempt an idempotent demo seed once, then retry the lookup.
-        # This keeps the public "Launch Live Demo" flow working even on a fresh
-        # deploy where the startup seed hasn't run yet.
+        # Self-heal (robust): create the demo user DIRECTLY via the SAME
+        # users_collection handle used for the lookup above. The previous
+        # approach called an external seed script that opened its own Mongo
+        # client from DB_NAME/.env — on some deploys that resolved to a
+        # DIFFERENT database than this handle, so the seed "succeeded" yet the
+        # lookup still failed ("Demo not available"). Creating the user through
+        # this exact handle guarantees it lands where demo-login reads it.
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
+        try:
+            import uuid as _uuid
+            demo_doc = {
+                "email": "demo@ddplanner.app",
+                "password_hash": get_password_hash(str(_uuid.uuid4())),  # random; demo-login needs no password
+                "role": "admin",            # admin so the demo tour can see the whole app
+                "is_demo": True,
+                "allowed_project_ids": [],
+            }
+            await users_collection.update_one(
+                {"email": "demo@ddplanner.app"},
+                {"$setOnInsert": demo_doc},
+                upsert=True,
+            )
+            demo_user = await users_collection.find_one({"email": "demo@ddplanner.app"})
+            _log.info("Demo user self-healed (created via users_collection handle)")
+        except Exception as e:
+            _log.error(f"Demo user self-heal (direct create) failed: {e}")
+
+        # Best-effort: also seed the demo DATASET (projects/resources/etc.) so the
+        # tour has content. This is NON-CRITICAL — login already works once the
+        # user exists above. Never let a seed failure block the demo.
         try:
             import sys as _sys
             if "/app/scripts" not in _sys.path:
                 _sys.path.insert(0, "/app/scripts")
             from seed_demo import seed_demo as _seed_demo
             await _seed_demo()
-            demo_user = await users_collection.find_one({"email": "demo@ddplanner.app"})
         except BaseException as seed_err:
-            import logging
-            logging.getLogger(__name__).error(f"Demo self-seed failed: {seed_err}")
+            _log.warning(f"Demo dataset seed skipped (non-critical): {seed_err}")
 
     if not demo_user:
         raise HTTPException(
