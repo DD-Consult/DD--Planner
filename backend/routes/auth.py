@@ -90,61 +90,64 @@ async def demo_login(request: Request):
     No credentials required. Returns a JWT with a 'demo: true' claim that is
     blocked from making any write operations by the server-side middleware.
     """
-    # Look up the demo user
-    demo_user = await users_collection.find_one({"email": "demo@ddplanner.app"})
-    if not demo_user:
-        # Self-heal (robust): create the demo user DIRECTLY via the SAME
-        # users_collection handle used for the lookup above. The previous
-        # approach called an external seed script that opened its own Mongo
-        # client from DB_NAME/.env — on some deploys that resolved to a
-        # DIFFERENT database than this handle, so the seed "succeeded" yet the
-        # lookup still failed ("Demo not available"). Creating the user through
-        # this exact handle guarantees it lands where demo-login reads it.
-        import logging as _logging
-        _log = _logging.getLogger(__name__)
-        try:
-            import uuid as _uuid
-            demo_doc = {
-                "email": "demo@ddplanner.app",
-                "password_hash": get_password_hash(str(_uuid.uuid4())),  # random; demo-login needs no password
-                "role": "admin",            # admin so the demo tour can see the whole app
-                "is_demo": True,
-                "allowed_project_ids": [],
-            }
-            await users_collection.update_one(
-                {"email": "demo@ddplanner.app"},
-                {"$setOnInsert": demo_doc},
-                upsert=True,
+    # Bind the ISOLATED demo database for the whole body of this endpoint. The
+    # demo-login request has no demo JWT yet (it issues one), so without this
+    # explicit bind it would read/write the real default DB. Binding here means
+    # the demo user + seeded dataset are created in the demo DB — the same DB
+    # that every subsequent demo-token request is routed to by middleware. This
+    # is what guarantees the demo only ever sees walled-off dummy data.
+    from database import set_current_tenant_db, reset_current_tenant_db, get_demo_db
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    _db_token = set_current_tenant_db(get_demo_db())
+    try:
+        # Look up the demo user (in the demo DB)
+        demo_user = await users_collection.find_one({"email": "demo@ddplanner.app"})
+        if not demo_user:
+            # Self-heal: create the demo user directly via the (demo-DB-bound)
+            # users_collection handle, guaranteeing it lands where we read it.
+            try:
+                import uuid as _uuid
+                demo_doc = {
+                    "email": "demo@ddplanner.app",
+                    "password_hash": get_password_hash(str(_uuid.uuid4())),  # random; demo-login needs no password
+                    "role": "admin",            # admin so the demo tour can see the whole app
+                    "is_demo": True,
+                    "allowed_project_ids": [],
+                }
+                await users_collection.update_one(
+                    {"email": "demo@ddplanner.app"},
+                    {"$setOnInsert": demo_doc},
+                    upsert=True,
+                )
+                demo_user = await users_collection.find_one({"email": "demo@ddplanner.app"})
+                _log.info("Demo user self-healed in isolated demo DB")
+            except Exception as e:
+                _log.error(f"Demo user self-heal (direct create) failed: {e}")
+
+            # Seed the isolated demo DATASET via LazyCollections (routes to the
+            # demo DB under this context bind). Idempotent. Non-critical — login
+            # already works once the user exists above.
+            try:
+                from services.demo_seed import seed_demo_dataset
+                await seed_demo_dataset()
+            except BaseException as seed_err:
+                _log.warning(f"Demo dataset seed skipped (non-critical): {seed_err}")
+
+        if not demo_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Demo not available. Please try again."
             )
-            demo_user = await users_collection.find_one({"email": "demo@ddplanner.app"})
-            _log.info("Demo user self-healed (created via users_collection handle)")
-        except Exception as e:
-            _log.error(f"Demo user self-heal (direct create) failed: {e}")
 
-        # Best-effort: also seed the demo DATASET (projects/resources/etc.) so the
-        # tour has content. This is NON-CRITICAL — login already works once the
-        # user exists above. Never let a seed failure block the demo.
-        try:
-            import sys as _sys
-            if "/app/scripts" not in _sys.path:
-                _sys.path.insert(0, "/app/scripts")
-            from seed_demo import seed_demo as _seed_demo
-            await _seed_demo()
-        except BaseException as seed_err:
-            _log.warning(f"Demo dataset seed skipped (non-critical): {seed_err}")
-
-    if not demo_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Demo not available. Run: python3 /app/scripts/seed_demo.py"
-        )
-    
-    # Check for disabled status
-    if demo_user.get("disabled"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Demo account is disabled"
-        )
+        # Check for disabled status
+        if demo_user.get("disabled"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Demo account is disabled"
+            )
+    finally:
+        reset_current_tenant_db(_db_token)
     
     # Build JWT payload with demo claim (CRITICAL for write-block middleware)
     jwt_payload = {

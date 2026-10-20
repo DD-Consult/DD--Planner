@@ -9,6 +9,7 @@ import { Switch } from './ui/switch';
 import { Label } from './ui/label';
 import ChatPanel from './ChatPanel';
 import CommandPalette from './CommandPalette';
+import DemoTour from './DemoTour';
 import {
   Tooltip,
   TooltipContent,
@@ -823,6 +824,9 @@ const Layout = ({ children, token, onLogout }) => {
         {/* AI Chat Panel - accessible from every page */}
         <ChatPanel />
         <CommandPalette />
+        
+        {/* Demo Tour - only visible for demo users */}
+        <DemoTour user={user} />
       </div>
     </TooltipProvider>
   );

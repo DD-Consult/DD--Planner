@@ -12,7 +12,7 @@ import logging
 from database import (
     allocations_collection, projects_collection, users_collection, resources_collection,
     client as mongo_client,
-    set_current_tenant_db, reset_current_tenant_db, get_db_for_tenant_slug,
+    set_current_tenant_db, reset_current_tenant_db, get_db_for_tenant_slug, get_demo_db,
 )
 from models.schemas import UserRole, ProjectStatus
 from auth.dependencies import get_password_hash
@@ -124,6 +124,38 @@ async def tenant_context_middleware(request: Request, call_next):
     finally:
         reset_current_tenant_db(token)
     return response
+
+
+# ============================================================================
+# DEMO DB-ISOLATION MIDDLEWARE
+# ----------------------------------------------------------------------------
+# The public demo must ONLY ever see seeded dummy data. Any request carrying a
+# demo JWT (claim "demo": true) is routed to a fully separate `demo` database
+# via the same ContextVar used for tenants. Because every LazyCollection
+# resolves its DB at call-time, this transparently walls the demo session off
+# from all real/tenant data with no changes to any route handler.
+#
+# The demo-login endpoint itself binds the demo DB explicitly (it has no token
+# yet), so the demo user + seeded dataset are created in the demo DB too.
+# ============================================================================
+@app.middleware("http")
+async def demo_db_context_middleware(request: Request, call_next):
+    if request.url.path.startswith("/api"):
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            tok = auth_header.replace("Bearer ", "")
+            try:
+                from auth.dependencies import decode_token
+                payload = decode_token(tok)
+                if payload and payload.get("demo") is True:
+                    db_token = set_current_tenant_db(get_demo_db())
+                    try:
+                        return await call_next(request)
+                    finally:
+                        reset_current_tenant_db(db_token)
+            except Exception:
+                pass
+    return await call_next(request)
 
 
 # ============================================================================
@@ -390,27 +422,43 @@ async def startup_event():
             except Exception as e:
                 print(f"[STARTUP-BG] Baseline backfill skipped due to error: {e}")
 
-            # --- Public demo seed (idempotent, self-healing) ---
-            # Ensures the public /demo "Launch Live Demo" flow always works after a
-            # fresh deploy without a manual script run. seed_demo() is idempotent and
-            # only creates missing data. Guarded so a failure never blocks startup.
+            # --- Public demo seed into the ISOLATED demo DB (idempotent) ---
+            # Pre-populates the walled-off demo database so the public "Launch
+            # Live Demo" flow is instant and always shows dummy data only. Binds
+            # the demo DB context so LazyCollections write to the demo DB (never
+            # the real/default DB). Guarded so a failure never blocks startup.
             try:
                 import os as _os
                 if _os.environ.get("DEMO_SEED_ON_STARTUP", "true").lower() != "false":
-                    from database import users_collection as _uc
-                    existing_demo = await _uc.find_one({"email": "demo@ddplanner.app"})
-                    if existing_demo:
-                        print("[STARTUP-BG] Demo user already present; skipping demo seed")
-                    else:
-                        import sys as _sys
-                        if "/app/scripts" not in _sys.path:
-                            _sys.path.insert(0, "/app/scripts")
-                        from seed_demo import seed_demo as _seed_demo
-                        await _seed_demo()
-                        print("[STARTUP-BG] Public demo seeded successfully")
+                    from database import (
+                        set_current_tenant_db as _set_db,
+                        reset_current_tenant_db as _reset_db,
+                        get_demo_db as _get_demo_db,
+                        users_collection as _uc,
+                    )
+                    from auth.dependencies import get_password_hash as _gph
+                    import uuid as _uuid
+                    _tok = _set_db(_get_demo_db())
+                    try:
+                        existing_demo = await _uc.find_one({"email": "demo@ddplanner.app"})
+                        if not existing_demo:
+                            await _uc.update_one(
+                                {"email": "demo@ddplanner.app"},
+                                {"$setOnInsert": {
+                                    "email": "demo@ddplanner.app",
+                                    "password_hash": _gph(str(_uuid.uuid4())),
+                                    "role": "admin",
+                                    "is_demo": True,
+                                    "allowed_project_ids": [],
+                                }},
+                                upsert=True,
+                            )
+                        from services.demo_seed import seed_demo_dataset
+                        await seed_demo_dataset()
+                        print("[STARTUP-BG] Isolated demo DB seeded")
+                    finally:
+                        _reset_db(_tok)
             except BaseException as e:
-                # BaseException: seed_demo() may call sys.exit() on internal error —
-                # catch it so the server keeps running regardless.
                 print(f"[STARTUP-BG] Demo seed skipped due to error: {e}")
 
             # --- Knowledge base indexing ---

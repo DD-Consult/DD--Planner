@@ -140,6 +140,20 @@ def get_db_for_tenant_slug(slug: Optional[str]) -> AsyncIOMotorDatabase:
     return client[f"{tenant_prefix}{safe}"]
 
 
+# --- Public DEMO database (fully isolated from real/tenant data) ---
+# The public "Launch Live Demo" flow routes EVERY read/write to this separate
+# database so the demo can only ever show seeded dummy data — real company and
+# client data is never touched or exposed. Reuses the same ContextVar routing as
+# tenants: demo requests bind this DB via set_current_tenant_db(get_demo_db()).
+DEMO_DB_NAME = os.environ.get('DEMO_DB_NAME', 'ddplanner_demo')
+
+
+def get_demo_db() -> AsyncIOMotorDatabase:
+    """Return the isolated demo database handle."""
+    return client[DEMO_DB_NAME]
+
+
+
 class LazyCollection:
     """Proxy that resolves to the current-request tenant's collection on access.
     
