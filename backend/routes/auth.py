@@ -93,6 +93,21 @@ async def demo_login(request: Request):
     # Look up the demo user
     demo_user = await users_collection.find_one({"email": "demo@ddplanner.app"})
     if not demo_user:
+        # Self-heal: attempt an idempotent demo seed once, then retry the lookup.
+        # This keeps the public "Launch Live Demo" flow working even on a fresh
+        # deploy where the startup seed hasn't run yet.
+        try:
+            import sys as _sys
+            if "/app/scripts" not in _sys.path:
+                _sys.path.insert(0, "/app/scripts")
+            from seed_demo import seed_demo as _seed_demo
+            await _seed_demo()
+            demo_user = await users_collection.find_one({"email": "demo@ddplanner.app"})
+        except BaseException as seed_err:
+            import logging
+            logging.getLogger(__name__).error(f"Demo self-seed failed: {seed_err}")
+
+    if not demo_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Demo not available. Run: python3 /app/scripts/seed_demo.py"

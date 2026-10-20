@@ -388,6 +388,29 @@ async def startup_event():
             except Exception as e:
                 print(f"[STARTUP-BG] Baseline backfill skipped due to error: {e}")
 
+            # --- Public demo seed (idempotent, self-healing) ---
+            # Ensures the public /demo "Launch Live Demo" flow always works after a
+            # fresh deploy without a manual script run. seed_demo() is idempotent and
+            # only creates missing data. Guarded so a failure never blocks startup.
+            try:
+                import os as _os
+                if _os.environ.get("DEMO_SEED_ON_STARTUP", "true").lower() != "false":
+                    from database import users_collection as _uc
+                    existing_demo = await _uc.find_one({"email": "demo@ddplanner.app"})
+                    if existing_demo:
+                        print("[STARTUP-BG] Demo user already present; skipping demo seed")
+                    else:
+                        import sys as _sys
+                        if "/app/scripts" not in _sys.path:
+                            _sys.path.insert(0, "/app/scripts")
+                        from seed_demo import seed_demo as _seed_demo
+                        await _seed_demo()
+                        print("[STARTUP-BG] Public demo seeded successfully")
+            except BaseException as e:
+                # BaseException: seed_demo() may call sys.exit() on internal error —
+                # catch it so the server keeps running regardless.
+                print(f"[STARTUP-BG] Demo seed skipped due to error: {e}")
+
             # --- Knowledge base indexing ---
             try:
                 from services.knowledge_base import reindex as _kb_reindex, status as _kb_status
