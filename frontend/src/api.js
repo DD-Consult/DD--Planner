@@ -632,6 +632,7 @@ export const speakVoice = (text, voice) => api.post('/ai/voice/speak', { text, v
 export const getProposals = () => api.get('/proposals');
 export const getProposal = (id) => api.get(`/proposals/${id}`);
 export const createProposal = (payload) => api.post('/proposals', payload); // {client_name?, proposal_title?}
+export const createProposalFromProject = (payload) => api.post('/proposals/from-project', payload); // {project_id, use_ai?} -> proposal + assistant_message
 export const updateProposal = (id, data) => api.put(`/proposals/${id}`, { data }); // data = full brief object
 export const aiDraftProposal = (id, payload) => api.post(`/proposals/${id}/ai-draft`, payload); // {message, current_data?} -> {assistant_message, data, warnings}
 export const previewProposal = (id) => api.post(`/proposals/${id}/preview`, {}, { responseType: 'text' }); // returns HTML string

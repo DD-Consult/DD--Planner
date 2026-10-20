@@ -23,6 +23,8 @@ from database import (
     users_collection,
     report_links_collection,
     notifications_collection,
+    allocations_collection,
+    resources_collection,
     resend,
     SENDER_EMAIL,
     RESEND_API_KEY,
@@ -112,6 +114,138 @@ async def send_proposal_link_email(email: str, link: str, client_name: str, titl
 
 
 # ============================================================
+# AI HELPER (shared by ai-draft and project pre-fill)
+# ============================================================
+
+async def _call_ai_for_text(system_prompt: str, user_message: str) -> Optional[str]:
+    """Call the configured AI provider and return the raw text response.
+
+    Mirrors the provider-selection logic used across the app (ai.py). Falls back
+    to the Emergent LLM on provider failure. Returns None if no AI is available.
+    """
+    ai_config = await get_ai_config()
+    provider = ai_config.get("provider")
+    api_key = ai_config.get("api_key")
+    if not api_key:
+        return None
+
+    if provider == "openai":
+        response = await call_openai_api(api_key, system_prompt, user_message, json_mode=True)
+        if response.status_code == 200:
+            return response.json()["choices"][0]["message"]["content"]
+        fb = await call_emergent_fallback(system_prompt, user_message)
+        return json.dumps(fb) if fb else None
+    if provider == "gemini":
+        response = await call_gemini_api(api_key, system_prompt, user_message, json_mode=True)
+        if response.status_code == 200:
+            return extract_gemini_text(response.json())
+        fb = await call_emergent_fallback(system_prompt, user_message)
+        return json.dumps(fb) if fb else None
+    # emergent (default)
+    fb = await call_emergent_fallback(system_prompt, user_message)
+    return json.dumps(fb) if fb else None
+
+
+def _parse_ai_brief(text: str, fallback_data: dict):
+    """Strip code fences and parse the AI JSON response into (assistant_message, data).
+    Returns (None, None) on parse failure."""
+    if not text:
+        return None, None
+    cleaned = re.sub(r'^```(?:json)?\s*', '', text.strip())
+    cleaned = re.sub(r'\s*```$', '', cleaned)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        return None, None
+    return parsed.get("assistant_message", "Updated"), parsed.get("data", fallback_data)
+
+
+def _deep_merge_onto(base: dict, overlay):
+    """Deep-merge `overlay` onto a deepcopy of `base`.
+
+    Guarantees every key present in `base` survives (so the renderer never hits a
+    missing nested key), while non-empty values from `overlay` win. Empty/None
+    values in the overlay are ignored (scaffold default kept).
+    """
+    import copy
+    result = copy.deepcopy(base)
+    if not isinstance(overlay, dict):
+        return result
+    for k, v in overlay.items():
+        if isinstance(v, dict) and isinstance(result.get(k), dict):
+            result[k] = _deep_merge_onto(result[k], v)
+        elif v in (None, "", [], {}):
+            # keep scaffold default for empty/missing overlay values
+            if k not in result:
+                result[k] = v
+        else:
+            result[k] = v
+    return result
+
+
+def _coerce_valid_brief(ai_data: dict, scaffold: dict) -> dict:
+    """Guarantee a schema-valid, fully-renderable brief.
+
+    Smaller/cheaper models sometimes omit nested fields (e.g.
+    understanding.challenges) or return structurally-invalid parts (e.g. options
+    with a single made-up path), which break the renderer/validator. We:
+      1. DEEP-MERGE the AI output onto the complete scaffold skeleton so EVERY
+         key the renderer touches always exists (AI prose wins where present).
+      2. Repair the STRUCTURAL fields the v4 validator enforces.
+    """
+    import copy
+    if not isinstance(ai_data, dict):
+        return copy.deepcopy(scaffold)
+
+    # 1. Deep merge — fills any missing nested keys from the scaffold.
+    data = _deep_merge_onto(scaffold, ai_data)
+
+    # 2. Structural repairs (deep-merge can't guarantee these).
+    # recommended_path must be a / b / c
+    if data.get("recommended_path") not in ("a", "b", "c"):
+        data["recommended_path"] = scaffold.get("recommended_path", "a")
+
+    # options must be exactly paths a, b, c. Carry AI prose onto the scaffold's
+    # 3-path skeleton when the AI returned the wrong shape.
+    def _options_ok(opts):
+        return (
+            isinstance(opts, list)
+            and {o.get("path") for o in opts if isinstance(o, dict)} == {"a", "b", "c"}
+        )
+    if not _options_ok(data.get("options")):
+        base_opts = copy.deepcopy(scaffold.get("options", []))
+        ai_opts = ai_data.get("options") if isinstance(ai_data.get("options"), list) else []
+        for i, bo in enumerate(base_opts):
+            if i < len(ai_opts) and isinstance(ai_opts[i], dict):
+                for key in ("name", "tagline", "who_for", "includes"):
+                    if ai_opts[i].get(key):
+                        bo[key] = ai_opts[i][key]
+        data["options"] = base_opts
+
+    # pricing_model must have path_a/b/c
+    pm = data.get("pricing_model")
+    if not isinstance(pm, dict) or not all(f"path_{k}" in pm for k in ("a", "b", "c")):
+        data["pricing_model"] = copy.deepcopy(scaffold.get("pricing_model", {}))
+
+    # plan.stage_deliverables must have keys "1".."4"
+    plan = data.get("plan", {})
+    sd = plan.get("stage_deliverables") if isinstance(plan, dict) else None
+    if not isinstance(sd, dict) or not all(str(k) in sd for k in ("1", "2", "3", "4")):
+        data.setdefault("plan", {})["stage_deliverables"] = copy.deepcopy(
+            scaffold.get("plan", {}).get("stage_deliverables", {})
+        )
+
+    # success.gates must have exactly 4 entries
+    gates = data.get("success", {}).get("gates") if isinstance(data.get("success"), dict) else None
+    if not isinstance(gates, list) or len(gates) != 4:
+        data.setdefault("success", {})["gates"] = copy.deepcopy(
+            scaffold.get("success", {}).get("gates", [])
+        )
+
+    return data
+
+
+# ============================================================
 # PYDANTIC MODELS
 # ============================================================
 
@@ -127,6 +261,11 @@ class ProposalUpdateRequest(BaseModel):
 class AIDraftRequest(BaseModel):
     message: str
     current_data: Optional[dict] = None
+
+
+class ProposalFromProjectRequest(BaseModel):
+    project_id: str
+    use_ai: bool = True  # if True, AI polishes the mapped facts into on-brand prose
 
 
 # ============================================================
@@ -180,6 +319,186 @@ async def create_proposal(
     proposal_doc["_id"] = result.inserted_id
     
     return serialize_doc(proposal_doc)
+
+
+def _weeks_between(start, end) -> int:
+    """Whole weeks between two datetimes (min 1)."""
+    try:
+        if isinstance(start, str):
+            start = dateutil_parse(start)
+        if isinstance(end, str):
+            end = dateutil_parse(end)
+        days = max(1, (end - start).days)
+        return max(1, round(days / 7))
+    except Exception:
+        return 8
+
+
+@router.post("/api/proposals/from-project")
+async def create_proposal_from_project(
+    req: ProposalFromProjectRequest,
+    admin: dict = Depends(require_admin),
+):
+    """Create a new proposal PRE-FILLED from an existing DD project (Phase 2a).
+
+    Maps real project facts (client, title, timeline, phases, team, budget) onto
+    the v4 brief scaffold, then (optionally) uses the AI to turn those facts into
+    on-brand proposal prose. The PM refines the result in the builder.
+    """
+    # Fetch the project
+    try:
+        project = await projects_collection.find_one({"_id": ObjectId(req.project_id)})
+    except Exception:
+        project = await projects_collection.find_one({"id": req.project_id})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Build a facts dict from the project
+    pname = project.get("name", "")
+    client = project.get("client_name", "")
+    objective = project.get("project_objective") or ""
+    start = project.get("start_date")
+    end = project.get("end_date")
+    weeks = _weeks_between(start, end)
+    budgeted_hours = project.get("budgeted_hours")
+    phases = project.get("phases", []) or []
+    phase_names = [p.get("name", f"Phase {i+1}") for i, p in enumerate(phases)]
+
+    # Team from allocations -> resource names/roles
+    team_facts = []
+    try:
+        pid_str = str(project["_id"])
+        allocs = await allocations_collection.find(
+            {"project_id": {"$in": [pid_str, str(project.get("id") or "")]}}
+        ).to_list(length=50)
+        res_ids = list({a.get("resource_id") for a in allocs if a.get("resource_id")})
+        obj_ids = []
+        for rid in res_ids:
+            try:
+                obj_ids.append(ObjectId(rid))
+            except Exception:
+                pass
+        res_map = {}
+        if obj_ids:
+            async for r in resources_collection.find({"_id": {"$in": obj_ids}}):
+                res_map[str(r["_id"])] = {"name": r.get("name", ""), "role": r.get("role", "")}
+        seen = set()
+        for a in allocs:
+            info = res_map.get(a.get("resource_id"))
+            if info and info["name"] and info["name"] not in seen:
+                seen.add(info["name"])
+                initials = "".join(w[0] for w in info["name"].split()[:2]).upper() or "DD"
+                team_facts.append({
+                    "initials": initials,
+                    "name": info["name"],
+                    "role": a.get("role") or info["role"] or "Team member",
+                    "focus": "",
+                })
+    except Exception as e:
+        print(f"[PROPOSALS] team mapping skipped: {e}")
+
+    # Start from the scaffold and overlay concrete facts
+    data = load_sample_brief()
+    data["client_name"] = client or data.get("client_name", "")
+    data["proposal_title"] = pname or data.get("proposal_title", "")
+    client_slug = (client or pname or "proposal").lower().replace(" ", "-")
+    data["proposal_slug"] = f"{client_slug}-{str(uuid_module.uuid4())[:8]}"
+    if team_facts:
+        data["team"] = team_facts
+    # Reflect timeline length in the recommended path's duration label
+    try:
+        rec = data.get("recommended_path", "a")
+        data["pricing_model"][f"path_{rec}"]["duration_label"] = f"{weeks} weeks"
+    except Exception:
+        pass
+
+    warnings = []
+    assistant_note = "Pre-filled from project facts (client, title, timeline, team)."
+
+    # Optionally let the AI turn the project facts into on-brand proposal prose
+    if req.use_ai:
+        sample_brief = load_sample_brief()
+        facts = {
+            "project_name": pname,
+            "client_name": client,
+            "objective": objective,
+            "timeline_weeks": weeks,
+            "phase_names": phase_names,
+            "budgeted_hours": budgeted_hours,
+            "team": team_facts,
+            "status_summary": project.get("status_summary") or "",
+        }
+        system_prompt = f"""You are an AI proposal assistant for DD Consulting, a digital transformation consultancy.
+You will turn FACTS about an existing project into a complete, on-brand client proposal brief.
+
+## PROPOSAL BRIEF SCHEMA (return EXACTLY this structure, every key present)
+{json.dumps(sample_brief, indent=2)}
+
+## BRAND & WORDING GUARDRAILS (CRITICAL)
+1. AWS Funding: always "positioned to apply for" / "if approved"; never "funded"/"guaranteed".
+2. Credentials order: PMP, Prosci/ADKAR, ISO 42001, AWS, HubSpot.
+3. Public refs use ddconsult.com.au; ddconsult.tech only for the contact email.
+4. Pricing entered ONLY as hours/rate/percentages/tier_fee — never finished totals or bare multipliers.
+5. options must contain EXACTLY paths a, b, c. success.gates EXACTLY 4. stage_deliverables keys "1".."4".
+
+## TASK
+Use the FACTS to populate client_name, proposal_title, understanding, vision, options, plan (timeline/stages that reflect the project's phases and {facts['timeline_weeks']}-week timeline), team (use the provided team members), and realistic pricing. Where facts are missing, write sensible, conservative placeholder prose the PM can refine. Keep every field valid.
+
+Return ONLY valid JSON: {{"assistant_message": "<1-2 sentence summary>", "data": {{<full brief>}}}}"""
+        user_message = f"FACTS about the project:\n{json.dumps(facts, indent=2, default=str)}\n\nProduce the full proposal brief."
+        try:
+            text = await _call_ai_for_text(system_prompt, user_message)
+            msg, new_data = _parse_ai_brief(text, data)
+            if new_data:
+                # Repair any structural issues so the brief is always schema-valid.
+                new_data = _coerce_valid_brief(new_data, sample_brief)
+                # keep our deterministic slug
+                new_data["proposal_slug"] = data["proposal_slug"]
+                # keep the mapped team if the AI dropped it
+                if team_facts and not new_data.get("team"):
+                    new_data["team"] = team_facts
+                data = new_data
+                assistant_note = msg or assistant_note
+                try:
+                    warnings = validate_brief(data)
+                except SystemExit as e:
+                    # Should be rare after coercion; fall back to mapped-facts scaffold.
+                    print(f"[PROPOSALS] from-project brief still invalid after coercion: {e}")
+                    warnings.append("AI output could not be fully validated; used mapped facts.")
+            else:
+                assistant_note += " (AI polish unavailable — used mapped facts; refine in the builder.)"
+        except Exception as e:
+            print(f"[PROPOSALS] from-project AI polish failed: {e}")
+            assistant_note += " (AI polish failed — used mapped facts.)"
+
+    proposal_doc = {
+        "token": generate_secure_token(32),
+        "status": "Draft",
+        "data": data,
+        "created_by": admin.get("email", ""),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+        "sent_at": None,
+        "valid_until_date": None,
+        "accepted_by": None,
+        "accepted_path": None,
+        "accepted_at": None,
+        "decline_reason": None,
+        "declined_at": None,
+        "confirmed_at": None,
+        "linked_project_id": str(project["_id"]),
+        "linked_client_user_id": None,
+        "linked_report_token": None,
+        "last_client_activity_at": None,
+        "source": {"type": "project", "project_id": str(project["_id"])},
+    }
+    result = await proposals_collection.insert_one(proposal_doc)
+    proposal_doc["_id"] = result.inserted_id
+
+    out = serialize_doc(proposal_doc)
+    out["assistant_message"] = assistant_note
+    out["warnings"] = warnings
+    return out
 
 
 @router.get("/api/proposals")
@@ -330,20 +649,28 @@ Please update the brief according to the notes and return the complete updated b
         if not api_key:
             raise HTTPException(status_code=500, detail="No AI provider configured. Ask a super admin to set up AI settings.")
         
+        # Graceful degradation: if the AI is momentarily unavailable, do NOT 500.
+        # Return the unchanged current data with a friendly retry message.
+        def _ai_unavailable():
+            return {
+                "assistant_message": "The AI assistant is briefly unavailable — your content is unchanged. Please try again in a moment.",
+                "data": current_data,
+                "warnings": ["AI temporarily unavailable"],
+            }
+
         ai_response_text = None
-        
+
         if provider == "openai":
             response = await call_openai_api(api_key, system_prompt, user_message, json_mode=True)
             if response.status_code == 200:
                 result = response.json()
                 ai_response_text = result["choices"][0]["message"]["content"]
             else:
-                # Fallback to emergent
                 fallback = await call_emergent_fallback(system_prompt, user_message)
                 if fallback:
                     ai_response_text = json.dumps(fallback)
                 else:
-                    raise HTTPException(status_code=500, detail="AI service failed")
+                    return _ai_unavailable()
         
         elif provider == "gemini":
             response = await call_gemini_api(api_key, system_prompt, user_message, json_mode=True)
@@ -354,17 +681,17 @@ Please update the brief according to the notes and return the complete updated b
                 if fallback:
                     ai_response_text = json.dumps(fallback)
                 else:
-                    raise HTTPException(status_code=500, detail="AI service failed")
+                    return _ai_unavailable()
         
         else:  # emergent
             fallback = await call_emergent_fallback(system_prompt, user_message)
             if fallback:
                 ai_response_text = json.dumps(fallback)
             else:
-                raise HTTPException(status_code=500, detail="AI service unavailable")
+                return _ai_unavailable()
         
         if not ai_response_text:
-            raise HTTPException(status_code=500, detail="No AI response received")
+            return _ai_unavailable()
         
         # Parse the AI response (strip code fences if present)
         cleaned = re.sub(r'^```(?:json)?\s*', '', ai_response_text.strip())
@@ -383,12 +710,15 @@ Please update the brief according to the notes and return the complete updated b
         assistant_message = ai_parsed.get("assistant_message", "Updated successfully")
         new_data = ai_parsed.get("data", current_data)
         
+        # Repair any structural issues so the brief is always schema-valid.
+        new_data = _coerce_valid_brief(new_data, sample_brief)
+        
         # Validate the new brief
         warnings = []
         try:
             warnings = validate_brief(new_data)
         except SystemExit as e:
-            # Hard validation error from the v4 validator
+            # Hard validation error from the v4 validator (rare after coercion)
             warnings.append(f"Validation error: {str(e)}")
             assistant_message += f" (Warning: {str(e)})"
         

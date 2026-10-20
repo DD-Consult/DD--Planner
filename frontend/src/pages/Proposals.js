@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { 
   getProposals, 
   createProposal, 
+  createProposalFromProject,
+  getProjects,
   deleteProposal, 
   sendProposal,
   confirmProposal 
@@ -29,6 +31,14 @@ import {
   TableRow,
 } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import {
   Tooltip,
   TooltipContent,
@@ -54,6 +64,8 @@ const Proposals = () => {
     client_name: '',
     proposal_title: '',
   });
+  const [createMode, setCreateMode] = useState('blank'); // 'blank' | 'project'
+  const [selectedProjectId, setSelectedProjectId] = useState('');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -62,6 +74,15 @@ const Proposals = () => {
     queryKey: ['proposals'],
     queryFn: async () => {
       const response = await getProposals();
+      return response.data;
+    },
+  });
+
+  // Fetch projects (for "start from project" pre-fill)
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects', 'all'],
+    queryFn: async () => {
+      const response = await getProjects('all');
       return response.data;
     },
   });
@@ -79,6 +100,21 @@ const Proposals = () => {
     },
     onError: () => {
       toast.error('Failed to create proposal');
+    },
+  });
+
+  // Create-from-project mutation (Phase 2a pre-fill)
+  const fromProjectMutation = useMutation({
+    mutationFn: createProposalFromProject,
+    onSuccess: (response) => {
+      queryClient.invalidateQueries(['proposals']);
+      setIsCreateDialogOpen(false);
+      setSelectedProjectId('');
+      toast.success(response.data?.assistant_message || 'Proposal pre-filled from project');
+      navigate(`/proposals/${response.data.id}/builder`);
+    },
+    onError: (err) => {
+      toast.error(err?.response?.data?.detail || 'Failed to create from project');
     },
   });
 
@@ -335,48 +371,86 @@ const Proposals = () => {
             <DialogHeader>
               <DialogTitle>New Proposal</DialogTitle>
               <DialogDescription>
-                Create a new client proposal. You can fill in more details in the builder.
+                Start blank, or pre-fill from an existing project. You can refine everything in the builder.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="client_name">Client Name (optional)</Label>
-                <Input
-                  id="client_name"
-                  value={newProposal.client_name}
-                  onChange={(e) => setNewProposal({ ...newProposal, client_name: e.target.value })}
-                  placeholder="Acme Corp"
-                  data-testid="client-name-input"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="proposal_title">Proposal Title (optional)</Label>
-                <Input
-                  id="proposal_title"
-                  value={newProposal.proposal_title}
-                  onChange={(e) => setNewProposal({ ...newProposal, proposal_title: e.target.value })}
-                  placeholder="Digital Transformation Initiative"
-                  data-testid="proposal-title-input"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setIsCreateDialogOpen(false)}
-                data-testid="cancel-create-button"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleCreate}
-                disabled={createMutation.isPending}
-                className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
-                data-testid="create-submit-button"
-              >
-                {createMutation.isPending ? 'Creating...' : 'Create & Open Builder'}
-              </Button>
-            </div>
+
+            <Tabs value={createMode} onValueChange={setCreateMode} className="py-2">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="blank" data-testid="create-mode-blank">Blank</TabsTrigger>
+                <TabsTrigger value="project" data-testid="create-mode-project">From a project</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="blank" className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="client_name">Client Name (optional)</Label>
+                  <Input
+                    id="client_name"
+                    value={newProposal.client_name}
+                    onChange={(e) => setNewProposal({ ...newProposal, client_name: e.target.value })}
+                    placeholder="Acme Corp"
+                    data-testid="client-name-input"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="proposal_title">Proposal Title (optional)</Label>
+                  <Input
+                    id="proposal_title"
+                    value={newProposal.proposal_title}
+                    onChange={(e) => setNewProposal({ ...newProposal, proposal_title: e.target.value })}
+                    placeholder="Digital Transformation Initiative"
+                    data-testid="proposal-title-input"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)} data-testid="cancel-create-button">
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleCreate}
+                    disabled={createMutation.isPending}
+                    className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
+                    data-testid="create-submit-button"
+                  >
+                    {createMutation.isPending ? 'Creating...' : 'Create & Open Builder'}
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="project" className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label>Source project</Label>
+                  <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                    <SelectTrigger data-testid="from-project-select">
+                      <SelectValue placeholder="Choose a project to pre-fill from" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {projects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}{p.client_name ? ` — ${p.client_name}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-[#667085]">
+                    We&apos;ll pre-fill the client, title, timeline, team and pricing from this project, then the AI drafts on-brand proposal content for you to refine.
+                  </p>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)} data-testid="cancel-from-project-button">
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => fromProjectMutation.mutate({ project_id: selectedProjectId, use_ai: true })}
+                    disabled={!selectedProjectId || fromProjectMutation.isPending}
+                    className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
+                    data-testid="create-from-project-submit"
+                  >
+                    {fromProjectMutation.isPending ? 'Pre-filling…' : 'Pre-fill & Open Builder'}
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
           </DialogContent>
         </Dialog>
 
