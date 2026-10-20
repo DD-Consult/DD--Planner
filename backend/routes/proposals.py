@@ -4,7 +4,7 @@ This module provides a full proposal lifecycle: AI-guided drafting, admin editin
 secure public sharing, client engagement tracking, and auto-provisioning of projects
 and client access upon acceptance.
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -19,6 +19,7 @@ from dateutil.parser import parse as dateutil_parse
 from database import (
     proposals_collection,
     proposal_events_collection,
+    proposal_templates_collection,
     projects_collection,
     users_collection,
     report_links_collection,
@@ -36,6 +37,7 @@ from services.proposals.renderer import (
     validate_brief,
     render_proposal_html,
 )
+from services.proposals.doc_ingest import extract_text
 from services.ai_providers import get_ai_config, call_openai_api, call_gemini_api, call_emergent_fallback, extract_gemini_text
 
 router = APIRouter()
@@ -266,6 +268,26 @@ class AIDraftRequest(BaseModel):
 class ProposalFromProjectRequest(BaseModel):
     project_id: str
     use_ai: bool = True  # if True, AI polishes the mapped facts into on-brand prose
+
+
+class TemplateCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    # If provided, snapshot this proposal's data as the template; else snapshot `data`.
+    from_proposal_id: Optional[str] = None
+    data: Optional[dict] = None
+
+
+class TemplateUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    data: Optional[dict] = None
+
+
+class ProposalFromTemplateRequest(BaseModel):
+    template_id: str
+    client_name: Optional[str] = None
+    proposal_title: Optional[str] = None
 
 
 # ============================================================
@@ -526,6 +548,270 @@ async def list_proposals(admin: dict = Depends(require_admin)):
         })
     
     return summaries
+
+
+# ============================================================
+# REUSABLE TEMPLATES (Phase 2b)
+# ============================================================
+
+@router.post("/api/proposal-templates")
+async def create_template(req: TemplateCreateRequest, admin: dict = Depends(require_admin)):
+    """Save a reusable proposal template (admin only).
+
+    Snapshot comes from an existing proposal (from_proposal_id) or an explicit
+    `data` brief. The stored data is coerced to a valid brief so it always
+    produces a renderable proposal when instantiated.
+    """
+    if not req.name or not req.name.strip():
+        raise HTTPException(status_code=400, detail="Template name is required")
+
+    data = None
+    if req.from_proposal_id:
+        src = await proposals_collection.find_one({"_id": ObjectId(req.from_proposal_id)})
+        if not src:
+            raise HTTPException(status_code=404, detail="Source proposal not found")
+        data = src.get("data")
+    elif req.data:
+        data = req.data
+
+    if not data:
+        # Start from the v4 sample as a sensible default template.
+        data = load_sample_brief()
+
+    # Ensure the template data is always valid/renderable.
+    data = _coerce_valid_brief(data, load_sample_brief())
+
+    doc = {
+        "name": req.name.strip(),
+        "description": req.description or "",
+        "data": data,
+        "created_by": admin.get("email", ""),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    result = await proposal_templates_collection.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return serialize_doc(doc)
+
+
+@router.get("/api/proposal-templates")
+async def list_templates(admin: dict = Depends(require_admin)):
+    """List reusable templates (admin only) — summary fields only."""
+    cursor = proposal_templates_collection.find().sort("created_at", -1)
+    templates = await cursor.to_list(length=500)
+    return [
+        {
+            "id": str(t["_id"]),
+            "name": t.get("name", ""),
+            "description": t.get("description", ""),
+            "created_by": t.get("created_by", ""),
+            "created_at": t.get("created_at"),
+            "updated_at": t.get("updated_at"),
+        }
+        for t in templates
+    ]
+
+
+@router.get("/api/proposal-templates/{template_id}")
+async def get_template(template_id: str, admin: dict = Depends(require_admin)):
+    """Get a full template (admin only)."""
+    t = await proposal_templates_collection.find_one({"_id": ObjectId(template_id)})
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return serialize_doc(t)
+
+
+@router.put("/api/proposal-templates/{template_id}")
+async def update_template(template_id: str, req: TemplateUpdateRequest, admin: dict = Depends(require_admin)):
+    """Update a template's name/description/data (admin only)."""
+    update = {}
+    if req.name is not None:
+        update["name"] = req.name.strip()
+    if req.description is not None:
+        update["description"] = req.description
+    if req.data is not None:
+        update["data"] = _coerce_valid_brief(req.data, load_sample_brief())
+    if not update:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    update["updated_at"] = datetime.now(timezone.utc)
+    result = await proposal_templates_collection.find_one_and_update(
+        {"_id": ObjectId(template_id)},
+        {"$set": update},
+        return_document=True,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return serialize_doc(result)
+
+
+@router.delete("/api/proposal-templates/{template_id}")
+async def delete_template(template_id: str, admin: dict = Depends(require_admin)):
+    """Delete a template (admin only)."""
+    result = await proposal_templates_collection.delete_one({"_id": ObjectId(template_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return {"message": "Template deleted"}
+
+
+@router.post("/api/proposals/from-template")
+async def create_proposal_from_template(req: ProposalFromTemplateRequest, admin: dict = Depends(require_admin)):
+    """Create a new proposal pre-filled from a saved template (Phase 2b)."""
+    template = await proposal_templates_collection.find_one({"_id": ObjectId(req.template_id)})
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    import copy
+    data = _coerce_valid_brief(copy.deepcopy(template.get("data") or {}), load_sample_brief())
+
+    # Overlay optional client/title and a fresh unique slug
+    if req.client_name:
+        data["client_name"] = req.client_name
+    if req.proposal_title:
+        data["proposal_title"] = req.proposal_title
+    client_slug = (req.client_name or data.get("client_name") or "proposal").lower().replace(" ", "-")
+    data["proposal_slug"] = f"{client_slug}-{str(uuid_module.uuid4())[:8]}"
+
+    proposal_doc = {
+        "token": generate_secure_token(32),
+        "status": "Draft",
+        "data": data,
+        "created_by": admin.get("email", ""),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+        "sent_at": None,
+        "valid_until_date": None,
+        "accepted_by": None,
+        "accepted_path": None,
+        "accepted_at": None,
+        "decline_reason": None,
+        "declined_at": None,
+        "confirmed_at": None,
+        "linked_project_id": None,
+        "linked_client_user_id": None,
+        "linked_report_token": None,
+        "last_client_activity_at": None,
+        "source": {"type": "template", "template_id": req.template_id},
+    }
+    result = await proposals_collection.insert_one(proposal_doc)
+    proposal_doc["_id"] = result.inserted_id
+    return serialize_doc(proposal_doc)
+
+
+# ============================================================
+# DOCUMENT INGESTION (Phase 2c — upload .docx/.pdf/.txt)
+# ============================================================
+
+@router.post("/api/proposals/from-document")
+async def create_proposal_from_document(
+    file: UploadFile = File(...),
+    use_ai: bool = Form(True),
+    admin: dict = Depends(require_admin),
+):
+    """Create a new proposal by ingesting an uploaded source document (Phase 2c).
+
+    Accepts .docx / .pdf / .txt / .md. Extracts the text and (by default) uses
+    the AI to map it into the nine-chapter brief. The PM refines in the builder.
+    Falls back to the scaffold with the raw text in the understanding section if
+    the AI is unavailable.
+    """
+    # Read the file (cap size to protect the server/proxy).
+    content = await file.read()
+    MAX_BYTES = 15 * 1024 * 1024  # 15 MB
+    if len(content) > MAX_BYTES:
+        raise HTTPException(status_code=400, detail="File too large (max 15 MB).")
+
+    try:
+        source_text = extract_text(file.filename or "", content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read the document: {e}")
+
+    scaffold = load_sample_brief()
+    data = scaffold
+    assistant_note = "Imported from uploaded document."
+    warnings = []
+
+    if use_ai:
+        system_prompt = f"""You are an AI proposal assistant for DD Consulting, a digital transformation consultancy.
+You will turn the CONTENT of an uploaded source document into a complete, on-brand client proposal brief.
+
+## PROPOSAL BRIEF SCHEMA (return EXACTLY this structure, every key present)
+{json.dumps(scaffold, indent=2)}
+
+## BRAND & WORDING GUARDRAILS (CRITICAL)
+1. AWS Funding: always "positioned to apply for" / "if approved"; never "funded"/"guaranteed".
+2. Credentials order: PMP, Prosci/ADKAR, ISO 42001, AWS, HubSpot.
+3. Public refs use ddconsult.com.au; ddconsult.tech only for the contact email.
+4. Pricing entered ONLY as hours/rate/percentages/tier_fee — never finished totals or bare multipliers.
+5. options must contain EXACTLY paths a, b, c. success.gates EXACTLY 4. stage_deliverables keys "1".."4".
+
+## TASK
+Read the document content and populate the brief: client_name, proposal_title, understanding (their situation, challenges), vision, options (3 paths), plan (stages/timeline), success, pricing and team where the document implies them. Where the document is silent, write sensible conservative placeholder prose the PM can refine. Keep every field valid.
+
+Return ONLY valid JSON: {{"assistant_message": "<1-2 sentence summary of what you mapped>", "data": {{<full brief>}}}}"""
+        user_message = f"SOURCE DOCUMENT CONTENT:\n\n{source_text}\n\nProduce the full proposal brief."
+        try:
+            text = await _call_ai_for_text(system_prompt, user_message)
+            msg, new_data = _parse_ai_brief(text, scaffold)
+            if new_data:
+                data = _coerce_valid_brief(new_data, scaffold)
+                assistant_note = msg or assistant_note
+                try:
+                    warnings = validate_brief(data)
+                except SystemExit as e:
+                    warnings.append(f"Validation note: {str(e)}")
+            else:
+                data = _coerce_valid_brief(
+                    {"understanding": {"paragraphs": [source_text[:4000]]}}, scaffold
+                )
+                assistant_note = "AI mapping unavailable — imported the raw document text into the Understanding section; please refine in the builder."
+        except Exception as e:
+            print(f"[PROPOSALS] from-document AI mapping failed: {e}")
+            data = _coerce_valid_brief(
+                {"understanding": {"paragraphs": [source_text[:4000]]}}, scaffold
+            )
+            assistant_note = "AI mapping failed — imported the raw document text into the Understanding section; please refine in the builder."
+    else:
+        # No AI: drop the raw text into the understanding section.
+        data = _coerce_valid_brief(
+            {"understanding": {"paragraphs": [source_text[:4000]]}}, scaffold
+        )
+
+    # Unique slug
+    client_slug = (data.get("client_name") or "proposal").lower().replace(" ", "-")
+    data["proposal_slug"] = f"{client_slug}-{str(uuid_module.uuid4())[:8]}"
+
+    proposal_doc = {
+        "token": generate_secure_token(32),
+        "status": "Draft",
+        "data": data,
+        "created_by": admin.get("email", ""),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+        "sent_at": None,
+        "valid_until_date": None,
+        "accepted_by": None,
+        "accepted_path": None,
+        "accepted_at": None,
+        "decline_reason": None,
+        "declined_at": None,
+        "confirmed_at": None,
+        "linked_project_id": None,
+        "linked_client_user_id": None,
+        "linked_report_token": None,
+        "last_client_activity_at": None,
+        "source": {"type": "document", "filename": file.filename},
+    }
+    result = await proposals_collection.insert_one(proposal_doc)
+    proposal_doc["_id"] = result.inserted_id
+
+    out = serialize_doc(proposal_doc)
+    out["assistant_message"] = assistant_note
+    out["warnings"] = warnings
+    return out
+
+
 
 
 @router.get("/api/proposals/{id}")

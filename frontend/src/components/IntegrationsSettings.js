@@ -5,6 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import { Switch } from '../components/ui/switch';
+import { Textarea } from '../components/ui/textarea';
 import {
   getIntegrationSettings, updateIntegrationSettings,
   testHubSpotConnection, regenerateAgentApiKey, getIntegrationSyncLogs,
@@ -13,7 +14,7 @@ import { toast } from 'sonner';
 import {
   Loader2, CheckCircle2, XCircle, Copy, RefreshCw, Eye, EyeOff,
   Link2, Webhook, Bot, AlertTriangle, Clock, ChevronDown, ChevronUp,
-  Zap, Globe,
+  Zap, Globe, HardDrive,
 } from 'lucide-react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -107,6 +108,11 @@ export default function IntegrationsSettings() {
   const [newApiKey, setNewApiKey] = useState('');
   const [showLogs, setShowLogs] = useState(false);
 
+  // ── Google Drive state ────────────────────────────────────────────────────
+  const [gdriveEnabled, setGdriveEnabled] = useState(false);
+  const [gdriveSaJson, setGdriveSaJson] = useState('');
+  const [gdriveFolder, setGdriveFolder] = useState('');
+
   // Populate from fetched settings
   useEffect(() => {
     if (!settings) return;
@@ -118,6 +124,9 @@ export default function IntegrationsSettings() {
     setHsDefaultStatus(hs.default_project_status || 'Pipeline');
     const agent = settings.agent_api || {};
     setAgentEnabled(agent.enabled ?? false);
+    const gdrive = settings.google_drive || {};
+    setGdriveEnabled(gdrive.enabled ?? false);
+    setGdriveFolder(gdrive.default_folder_id || '');
   }, [settings]);
 
   // ── Save HubSpot settings ──────────────────────────────────────────────────
@@ -160,6 +169,24 @@ export default function IntegrationsSettings() {
     mutationFn: () => updateIntegrationSettings({ agent_api: { enabled: agentEnabled } }),
     onSuccess: () => {
       toast.success('Agent API settings saved');
+      qc.invalidateQueries(['integrationSettings']);
+    },
+    onError: (err) => toast.error(err.response?.data?.detail || 'Save failed'),
+  });
+
+  // ── Google Drive save ──────────────────────────────────────────────────────
+  const saveGdriveMutation = useMutation({
+    mutationFn: () => updateIntegrationSettings({
+      google_drive: {
+        enabled: gdriveEnabled,
+        // Only send a new secret if the user typed one; '' preserves the saved value.
+        service_account_json: gdriveSaJson || '',
+        default_folder_id: gdriveFolder || '',
+      },
+    }),
+    onSuccess: () => {
+      toast.success('Google Drive settings saved');
+      setGdriveSaJson('');
       qc.invalidateQueries(['integrationSettings']);
     },
     onError: (err) => toast.error(err.response?.data?.detail || 'Save failed'),
@@ -393,7 +420,7 @@ export default function IntegrationsSettings() {
                   <CopyButton value={newApiKey} label="Copy" />
                 </div>
                 <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
-                  <AlertTriangle size={12} /> Save this key now — it won't be shown in full again
+                  <AlertTriangle size={12} /> Save this key now — it won&apos;t be shown in full again
                 </p>
               </div>
             ) : (
@@ -455,8 +482,69 @@ export default function IntegrationsSettings() {
               <li>Copy the MCP Server Endpoint URL</li>
               <li>In Gemini: Agents → Tools → Add MCP Server → enter the URL + API key in <code className="bg-white px-1 rounded">X-Agent-Key</code> header</li>
               <li>In Copilot Studio: Actions → Add MCP Server → Streamable HTTP → paste URL</li>
-              <li>Ask your AI agent: <em>"What's the status of the Website Redesign project?"</em></li>
+              <li>Ask your AI agent: <em>&quot;What&apos;s the status of the Website Redesign project?&quot;</em></li>
             </ol>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Google Drive ── */}
+      <div className="bg-white border border-[#E6E8EC] rounded-lg p-6" data-testid="gdrive-settings">
+        <SectionHeader
+          icon={HardDrive}
+          color="#1570EF"
+          title="Google Drive"
+          description="Import proposals directly from Google Drive"
+        />
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm font-medium text-[#0B1220]">Enable Google Drive</p>
+            <p className="text-xs text-[#667085]">Connect a Google service account to import source docs from Drive.</p>
+          </div>
+          <Switch checked={gdriveEnabled} onCheckedChange={setGdriveEnabled} data-testid="gdrive-enabled-toggle" />
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <Label className="text-sm">Service account JSON</Label>
+            {settings?.google_drive?.has_credentials && (
+              <div className="flex items-center gap-2 text-xs text-green-700 mt-1 mb-1">
+                <CheckCircle2 size={12} /> Credentials saved
+              </div>
+            )}
+            <Textarea
+              value={gdriveSaJson}
+              onChange={(e) => setGdriveSaJson(e.target.value)}
+              rows={4}
+              className="font-mono text-xs"
+              placeholder={settings?.google_drive?.has_credentials
+                ? '••••• (saved — paste to replace)'
+                : 'Paste service account JSON'}
+              data-testid="gdrive-sa-input"
+            />
+          </div>
+          <div>
+            <Label className="text-sm">Default folder ID (optional)</Label>
+            <Input
+              value={gdriveFolder}
+              onChange={(e) => setGdriveFolder(e.target.value)}
+              placeholder="e.g. 1A2b3C4d5E6f..."
+              data-testid="gdrive-folder-input"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-[#667085] max-w-md">
+              Connect a Google service account to import proposals directly from Drive.
+              Document upload works today without this.
+            </p>
+            <Button
+              onClick={() => saveGdriveMutation.mutate()}
+              disabled={saveGdriveMutation.isPending}
+              className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
+              data-testid="gdrive-save-btn"
+            >
+              {saveGdriveMutation.isPending ? <><Loader2 size={14} className="mr-2 animate-spin" />Saving...</> : 'Save Google Drive Settings'}
+            </Button>
           </div>
         </div>
       </div>

@@ -9,6 +9,7 @@ import {
   sendProposal,
   confirmProposal,
   getProposalEvents,
+  createProposalTemplate,
 } from '../api';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
@@ -60,6 +61,9 @@ const ProposalBuilder = () => {
   const [sendResult, setSendResult] = useState(null);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [confirmResult, setConfirmResult] = useState(null);
+  const [isSaveTemplateDialogOpen, setIsSaveTemplateDialogOpen] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateDescription, setTemplateDescription] = useState('');
   const [openSections, setOpenSections] = useState({
     cover: true,
     understanding: false,
@@ -223,6 +227,27 @@ const ProposalBuilder = () => {
     },
   });
 
+  // Save as template mutation
+  const saveTemplateMutation = useMutation({
+    mutationFn: async () => {
+      await createProposalTemplate({
+        name: templateName,
+        description: templateDescription || undefined,
+        from_proposal_id: id,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['proposalTemplates']);
+      setIsSaveTemplateDialogOpen(false);
+      setTemplateName('');
+      setTemplateDescription('');
+      toast.success('Template saved');
+    },
+    onError: () => {
+      toast.error('Failed to save template');
+    },
+  });
+
   const handleSave = () => {
     saveMutation.mutate();
   };
@@ -299,6 +324,14 @@ const ProposalBuilder = () => {
             {getStatusBadge(proposal.status)}
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsSaveTemplateDialogOpen(true)}
+              data-testid="save-as-template-btn"
+            >
+              Save as template
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -667,6 +700,60 @@ const ProposalBuilder = () => {
                 Open Project
               </Button>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save Template Dialog */}
+      <Dialog open={isSaveTemplateDialogOpen} onOpenChange={setIsSaveTemplateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save as Template</DialogTitle>
+            <DialogDescription>
+              This will snapshot the current proposal as a reusable template.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="template-name">Template Name *</Label>
+              <Input
+                id="template-name"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="e.g., Standard Cloud Migration Proposal"
+                data-testid="template-name-input"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="template-desc">Description (optional)</Label>
+              <Input
+                id="template-desc"
+                value={templateDescription}
+                onChange={(e) => setTemplateDescription(e.target.value)}
+                placeholder="Brief description of when to use this template"
+                data-testid="template-desc-input"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsSaveTemplateDialogOpen(false);
+                setTemplateName('');
+                setTemplateDescription('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => saveTemplateMutation.mutate()}
+              disabled={!templateName.trim() || saveTemplateMutation.isPending}
+              className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
+              data-testid="save-template-confirm"
+            >
+              {saveTemplateMutation.isPending ? 'Saving...' : 'Save Template'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

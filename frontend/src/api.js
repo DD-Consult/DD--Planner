@@ -633,6 +633,15 @@ export const getProposals = () => api.get('/proposals');
 export const getProposal = (id) => api.get(`/proposals/${id}`);
 export const createProposal = (payload) => api.post('/proposals', payload); // {client_name?, proposal_title?}
 export const createProposalFromProject = (payload) => api.post('/proposals/from-project', payload); // {project_id, use_ai?} -> proposal + assistant_message
+// Phase 2b templates
+export const getProposalTemplates = () => api.get('/proposal-templates');
+export const getProposalTemplate = (id) => api.get(`/proposal-templates/${id}`);
+export const createProposalTemplate = (payload) => api.post('/proposal-templates', payload); // {name, description?, from_proposal_id?|data?}
+export const updateProposalTemplate = (id, payload) => api.put(`/proposal-templates/${id}`, payload);
+export const deleteProposalTemplate = (id) => api.delete(`/proposal-templates/${id}`);
+export const createProposalFromTemplate = (payload) => api.post('/proposals/from-template', payload); // {template_id, client_name?, proposal_title?}
+// Phase 2c document ingestion (multipart). pass a FormData with file + use_ai
+export const createProposalFromDocument = (formData) => api.post('/proposals/from-document', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 export const updateProposal = (id, data) => api.put(`/proposals/${id}`, { data }); // data = full brief object
 export const aiDraftProposal = (id, payload) => api.post(`/proposals/${id}/ai-draft`, payload); // {message, current_data?} -> {assistant_message, data, warnings}
 export const previewProposal = (id) => api.post(`/proposals/${id}/preview`, {}, { responseType: 'text' }); // returns HTML string

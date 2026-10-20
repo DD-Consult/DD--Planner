@@ -8,7 +8,10 @@ import {
   getProjects,
   deleteProposal, 
   sendProposal,
-  confirmProposal 
+  confirmProposal,
+  getProposalTemplates,
+  createProposalFromTemplate,
+  createProposalFromDocument
 } from '../api';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
@@ -64,8 +67,10 @@ const Proposals = () => {
     client_name: '',
     proposal_title: '',
   });
-  const [createMode, setCreateMode] = useState('blank'); // 'blank' | 'project'
+  const [createMode, setCreateMode] = useState('blank'); // 'blank' | 'project' | 'template' | 'document'
   const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [uploadFile, setUploadFile] = useState(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -83,6 +88,15 @@ const Proposals = () => {
     queryKey: ['projects', 'all'],
     queryFn: async () => {
       const response = await getProjects('all');
+      return response.data;
+    },
+  });
+
+  // Fetch templates (for "start from template" pre-fill)
+  const { data: templates = [] } = useQuery({
+    queryKey: ['proposalTemplates'],
+    queryFn: async () => {
+      const response = await getProposalTemplates();
       return response.data;
     },
   });
@@ -115,6 +129,37 @@ const Proposals = () => {
     },
     onError: (err) => {
       toast.error(err?.response?.data?.detail || 'Failed to create from project');
+    },
+  });
+
+  // Create-from-template mutation (Phase 2b)
+  const fromTemplateMutation = useMutation({
+    mutationFn: createProposalFromTemplate,
+    onSuccess: (response) => {
+      queryClient.invalidateQueries(['proposals']);
+      setIsCreateDialogOpen(false);
+      setSelectedTemplateId('');
+      setNewProposal({ client_name: '', proposal_title: '' });
+      toast.success('Proposal created from template');
+      navigate(`/proposals/${response.data.id}/builder`);
+    },
+    onError: (err) => {
+      toast.error(err?.response?.data?.detail || 'Failed to create from template');
+    },
+  });
+
+  // Create-from-document mutation (Phase 2c)
+  const fromDocumentMutation = useMutation({
+    mutationFn: createProposalFromDocument,
+    onSuccess: (response) => {
+      queryClient.invalidateQueries(['proposals']);
+      setIsCreateDialogOpen(false);
+      setUploadFile(null);
+      toast.success(response.data?.assistant_message || 'Proposal drafted from document');
+      navigate(`/proposals/${response.data.id}/builder`);
+    },
+    onError: (err) => {
+      toast.error(err?.response?.data?.detail || 'Failed to create from document');
     },
   });
 
@@ -222,14 +267,23 @@ const Proposals = () => {
             <h1 className="text-3xl font-bold text-[#0B1220]">Proposals</h1>
             <p className="text-[#667085] mt-1">Create and send AI-guided secure client proposals</p>
           </div>
-          <Button
-            onClick={() => setIsCreateDialogOpen(true)}
-            className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
-            data-testid="new-proposal-button"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            New Proposal
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => navigate('/proposals/templates')}
+              data-testid="manage-templates-btn"
+            >
+              Templates
+            </Button>
+            <Button
+              onClick={() => setIsCreateDialogOpen(true)}
+              className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
+              data-testid="new-proposal-button"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New Proposal
+            </Button>
+          </div>
         </div>
 
         {/* Empty State */}
@@ -376,9 +430,11 @@ const Proposals = () => {
             </DialogHeader>
 
             <Tabs value={createMode} onValueChange={setCreateMode} className="py-2">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="blank" data-testid="create-mode-blank">Blank</TabsTrigger>
                 <TabsTrigger value="project" data-testid="create-mode-project">From a project</TabsTrigger>
+                <TabsTrigger value="template" data-testid="create-mode-template">From template</TabsTrigger>
+                <TabsTrigger value="document" data-testid="create-mode-document">Upload document</TabsTrigger>
               </TabsList>
 
               <TabsContent value="blank" className="space-y-4 pt-4">
@@ -447,6 +503,102 @@ const Proposals = () => {
                     data-testid="create-from-project-submit"
                   >
                     {fromProjectMutation.isPending ? 'Pre-filling…' : 'Pre-fill & Open Builder'}
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="template" className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label>Choose a template</Label>
+                  {templates.length === 0 ? (
+                    <p className="text-sm text-[#667085] py-4 text-center">
+                      No templates yet — save one from the builder.
+                    </p>
+                  ) : (
+                    <>
+                      <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+                        <SelectTrigger data-testid="from-template-select">
+                          <SelectValue placeholder="Select a template" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {templates.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.name}{t.description ? ` — ${t.description}` : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="space-y-2">
+                        <Label htmlFor="template_client_name">Client Name (optional)</Label>
+                        <Input
+                          id="template_client_name"
+                          value={newProposal.client_name}
+                          onChange={(e) => setNewProposal({ ...newProposal, client_name: e.target.value })}
+                          placeholder="Acme Corp"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="template_proposal_title">Proposal Title (optional)</Label>
+                        <Input
+                          id="template_proposal_title"
+                          value={newProposal.proposal_title}
+                          onChange={(e) => setNewProposal({ ...newProposal, proposal_title: e.target.value })}
+                          placeholder="Digital Transformation Initiative"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => fromTemplateMutation.mutate({ 
+                      template_id: selectedTemplateId,
+                      client_name: newProposal.client_name || undefined,
+                      proposal_title: newProposal.proposal_title || undefined
+                    })}
+                    disabled={!selectedTemplateId || fromTemplateMutation.isPending}
+                    className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
+                    data-testid="create-from-template-submit"
+                  >
+                    {fromTemplateMutation.isPending ? 'Creating…' : 'Create from Template'}
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="document" className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="upload-doc">Upload a document</Label>
+                  <Input
+                    id="upload-doc"
+                    type="file"
+                    accept=".docx,.pdf,.txt,.md"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                    data-testid="upload-doc-input"
+                  />
+                  <p className="text-xs text-[#667085]">
+                    We&apos;ll read the document and let AI draft the proposal — refine it after.
+                  </p>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (!uploadFile) return;
+                      const fd = new FormData();
+                      fd.append('file', uploadFile);
+                      fd.append('use_ai', 'true');
+                      fromDocumentMutation.mutate(fd);
+                    }}
+                    disabled={!uploadFile || fromDocumentMutation.isPending}
+                    className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
+                    data-testid="create-from-document-submit"
+                  >
+                    {fromDocumentMutation.isPending ? 'Reading & drafting… this can take ~30–60s' : 'Upload & Draft'}
                   </Button>
                 </div>
               </TabsContent>

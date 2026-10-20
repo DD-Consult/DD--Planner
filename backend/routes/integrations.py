@@ -93,9 +93,19 @@ class AgentApiConfig(BaseModel):
     enabled: bool = False
 
 
+class GoogleDriveConfig(BaseModel):
+    enabled: bool = False
+    # Service-account JSON (or OAuth client) — stored encrypted-at-rest by Mongo;
+    # masked on read. Live Drive fetch is wired when credentials are present.
+    service_account_json: str = ""
+    # Optional: a default Drive folder ID proposals can be imported from.
+    default_folder_id: str = ""
+
+
 class IntegrationSettingsPayload(BaseModel):
     hubspot: Optional[HubSpotConfig] = None
     agent_api: Optional[AgentApiConfig] = None
+    google_drive: Optional[GoogleDriveConfig] = None
 
 
 # ─── GET settings ─────────────────────────────────────────────────────────────
@@ -116,6 +126,8 @@ async def get_integration_settings(current_user: dict = Depends(get_current_user
         }
     if "agent_api" not in settings:
         settings["agent_api"] = {"enabled": False, "api_key": ""}
+    if "google_drive" not in settings:
+        settings["google_drive"] = {"enabled": False, "service_account_json": "", "default_folder_id": ""}
 
     # Mask the token for display
     hs = settings.get("hubspot", {})
@@ -134,6 +146,12 @@ async def get_integration_settings(current_user: dict = Depends(get_current_user
     else:
         settings["agent_api"]["api_key_masked"] = ""
     settings["agent_api"]["api_key"] = bool(api_key)
+
+    # Google Drive: mask the service-account secret, expose only a boolean.
+    gd = settings.get("google_drive", {})
+    sa = gd.get("service_account_json", "") or ""
+    settings["google_drive"]["has_credentials"] = bool(sa)
+    settings["google_drive"]["service_account_json"] = ""  # never return the raw secret
 
     return settings
 
@@ -165,6 +183,13 @@ async def update_integration_settings(
             }
         else:
             update_doc["agent_api"] = {"enabled": payload.agent_api.enabled, "api_key": ""}
+
+    if payload.google_drive:
+        gd_data = payload.google_drive.model_dump()
+        # Preserve the existing secret when an empty string is submitted.
+        if existing and not gd_data.get("service_account_json"):
+            gd_data["service_account_json"] = existing.get("google_drive", {}).get("service_account_json", "")
+        update_doc["google_drive"] = gd_data
 
     await integration_settings_collection.update_one(
         {"org_id": ORG_ID},

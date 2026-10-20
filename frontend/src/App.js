@@ -34,6 +34,7 @@ import Help from './pages/Help';
 import AIIntelligence from './pages/AIIntelligence';
 import Proposals from './pages/Proposals';
 import ProposalBuilder from './pages/ProposalBuilder';
+import ProposalTemplates from './pages/ProposalTemplates';
 import PublicProposal from './pages/PublicProposal';
 import Layout from './components/Layout';
 import ModuleRoute from './components/ModuleRoute';
@@ -317,6 +318,14 @@ function App() {
                       element={
                         <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                           <Proposals />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/proposals/templates"
+                      element={
+                        <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                          <ProposalTemplates />
                         </ProtectedRoute>
                       }
                     />
