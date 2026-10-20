@@ -32,6 +32,9 @@ import TimesheetReports from './pages/TimesheetReports';
 import PrintReport from './pages/PrintReport';
 import Help from './pages/Help';
 import AIIntelligence from './pages/AIIntelligence';
+import Proposals from './pages/Proposals';
+import ProposalBuilder from './pages/ProposalBuilder';
+import PublicProposal from './pages/PublicProposal';
 import Layout from './components/Layout';
 import ModuleRoute from './components/ModuleRoute';
 import { getMe, setAuthToken } from './api';
@@ -128,6 +131,9 @@ function App() {
             
             {/* Client Portal Magic Link - PUBLIC route for secure report sharing */}
             <Route path="/portal/:token" element={<ClientPortalMagicLink />} />
+
+            {/* Public Proposal View - PUBLIC route for secure proposal sharing */}
+            <Route path="/proposal/:token" element={<PublicProposal />} />
 
             <Route
               path="/login"
@@ -303,6 +309,22 @@ function App() {
                       element={
                         <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                           <ModuleRoute module="ai_intelligence"><AIIntelligence /></ModuleRoute>
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/proposals"
+                      element={
+                        <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                          <Proposals />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/proposals/:id/builder"
+                      element={
+                        <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                          <ProposalBuilder />
                         </ProtectedRoute>
                       }
                     />

@@ -205,6 +205,8 @@ ai_health_reports_collection = LazyCollection('ai_health_reports')
 integration_settings_collection = LazyCollection('integration_settings')
 integration_sync_logs_collection = LazyCollection('integration_sync_logs')
 ai_knowledge_base_collection = LazyCollection('ai_knowledge_base')
+proposals_collection = LazyCollection('proposals')
+proposal_events_collection = LazyCollection('proposal_events')
 
 # --- Email Configuration (unchanged) ---
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')

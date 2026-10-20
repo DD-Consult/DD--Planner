@@ -626,4 +626,18 @@ export const getVoiceStatus = () => api.get('/ai/voice/status');
 export const transcribeVoice = (audio_base64, mime_type) => api.post('/ai/voice/transcribe', { audio_base64, mime_type });
 export const speakVoice = (text, voice) => api.post('/ai/voice/speak', { text, voice });
 
+// ─────────────────────────────────────────────────────────────
+// Proposals — AI-Guided Secure Proposal Module
+// ─────────────────────────────────────────────────────────────
+export const getProposals = () => api.get('/proposals');
+export const getProposal = (id) => api.get(`/proposals/${id}`);
+export const createProposal = (payload) => api.post('/proposals', payload); // {client_name?, proposal_title?}
+export const updateProposal = (id, data) => api.put(`/proposals/${id}`, { data }); // data = full brief object
+export const aiDraftProposal = (id, payload) => api.post(`/proposals/${id}/ai-draft`, payload); // {message, current_data?} -> {assistant_message, data, warnings}
+export const previewProposal = (id) => api.post(`/proposals/${id}/preview`, {}, { responseType: 'text' }); // returns HTML string
+export const sendProposal = (id) => api.post(`/proposals/${id}/send`); // -> {proposal_link, email_sent}
+export const confirmProposal = (id) => api.post(`/proposals/${id}/confirm`); // -> {project_id, client_user_id, report_link, magic_link_sent}
+export const deleteProposal = (id) => api.delete(`/proposals/${id}`);
+export const getProposalEvents = (id) => api.get(`/proposals/${id}/events`); // -> {events:[], summary:{opened, sections_viewed, interested_path, accept_clicked, accepted}
+
 export default api;

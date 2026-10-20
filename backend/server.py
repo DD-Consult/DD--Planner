@@ -51,6 +51,7 @@ from routes.tenant import router as tenant_router
 from routes.tenant_signup import router as tenant_signup_router
 from routes.ai_voice import router as ai_voice_router
 from routes.internal_render import router as internal_render_router
+from routes.proposals import router as proposals_router
 
 # Multi-tenant platform layer (Step 1 of MULTITENANT_PLAN.md)
 from platform_db import seed_platform_if_empty, create_platform_indexes, MULTI_TENANT_ENABLED
@@ -193,6 +194,7 @@ app.include_router(tenant_router)
 app.include_router(tenant_signup_router)
 app.include_router(ai_voice_router)
 app.include_router(internal_render_router)
+app.include_router(proposals_router)
 
 
 # ============================================================================

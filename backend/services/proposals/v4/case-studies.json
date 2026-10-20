@@ -1,0 +1,57 @@
+{
+  "_readme": "DD's approved case-study library. Source: Master Capability & Service Offering, section 10. Edit here once; each proposal picks entries by id in its own brief (case_study_ids). Keep wording attributable and conservative. Never state a bare multiplier outside the named case it came from, and keep withheld client names withheld.",
+  "healthcare-retirement-stack": {
+    "sector": "Healthcare & retirement living",
+    "title": "Application ecosystem modernisation",
+    "challenge": "Disconnected applications across CRM, HR, Finance, Supplier, Risk, Sustainability and Asset Management created data silos and constant re-keying.",
+    "result": "A unified operational environment and the end of manual data re-keying, delivered from audit and process redesign through to full-lifecycle implementation."
+  },
+  "aged-care-transformation": {
+    "sector": "Aged care & community care",
+    "title": "Operational transformation with full staff adoption",
+    "challenge": "Legacy manual processes, non-compliant SIRS and AN-ACC reporting, and staff resistance to change.",
+    "result": "Full staff adoption, zero SIRS reporting non-compliance and streamlined Care Minutes data capture, through process audits, software selection, embedded PMO/BA, ADKAR change management and workforce training."
+  },
+  "early-childhood-workforce": {
+    "sector": "Early childhood workforce",
+    "title": "Multi-agent rostering with a managed change programme",
+    "challenge": "Matching demand and worker availability under strict child-safety compliance requirements.",
+    "result": "90% roster automation, 520 hours saved annually and complete staff adoption."
+  },
+  "usg-tradeflow": {
+    "sector": "Trades & contractor coordination",
+    "title": "USG TradeFlow / TradesX platform",
+    "challenge": "Manual, fragmented contractor coordination, paper-based safety checks and slow invoicing.",
+    "result": "A multi-agent AWS Bedrock framework that achieved 10x job throughput capacity in this engagement, with zero manual data re-entry and automated Xero billing."
+  },
+  "ellerston-capital": {
+    "sector": "Financial services",
+    "title": "Ellerston Capital reporting automation",
+    "challenge": "Monthly newsletter generation took 78 hours and quarterly fund evaluation reports took 10 days across 15 funds, fed by 14+ unstable platform exports.",
+    "result": "Newsletter generation cut from 78 hours to 1 hour and quarterly reports from 10 days to 1 day, on a serverless AWS data platform covering $1.17B in funds under management at 99% balance accuracy."
+  },
+  "civium": {
+    "sector": "Not-for-profit",
+    "title": "Civium workforce & grant automation",
+    "challenge": "Volunteer compliance checks took up to 14 days each, and grant research and drafting were largely manual.",
+    "result": "Onboarding cut from 14 days to under 48 hours, a 60% reduction in grant-matching and drafting overhead, and 100% automated compliance gating, on a serverless AWS platform in Sydney."
+  },
+  "nsw-health-assets": {
+    "sector": "Public health",
+    "title": "NSW Health enterprise asset management",
+    "challenge": "Disconnected, manually maintained asset records across a large multi-site public health environment created reporting gaps and compliance exposure.",
+    "result": "IBM Tririga implemented and optimised, modernising asset tracking and reporting across the estate."
+  },
+  "legal-intake": {
+    "sector": "Professional services",
+    "title": "Fixed-fee legal practice intake",
+    "challenge": "Manual document handling slowed client intake.",
+    "result": "An automated NetDocuments API integration that compressed intake 'time to yes' from weeks to under 48 hours."
+  },
+  "b2b-health-governance": {
+    "sector": "Healthcare technology",
+    "title": "Governance before engineering",
+    "challenge": "A B2B healthcare procurement platform needed governance guardrails before any system engineering began.",
+    "result": "A governance roadmap mapping consent, patient records and telehealth AI boundaries, so health-regulation compliance was designed in from day one."
+  }
+}

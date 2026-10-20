@@ -1,0 +1,244 @@
+{
+  "proposal_slug": "meridian-health-care-operations",
+  "client_name": "Meridian Health Group",
+  "proposal_date": "4 October 2026",
+  "valid_until": "4 November 2026",
+  "currency": "AUD",
+
+  "prepared_by_name": "Doneet Dass",
+  "prepared_by_title": "Principal Consultant",
+  "contact_email": "doneet.dass@ddconsult.tech",
+  "contact_phone": "+61 2 0000 0000",
+
+  "proposal_title": "Connecting Meridian's care operations",
+  "proposal_subtitle": "An AI and digital transformation proposal: strategy first, then build.",
+
+  "recommended_path": "a",
+  "vectors_in_focus": ["lead", "design"],
+  "stages_in_scope": [1, 2],
+
+  "understanding": {
+    "paragraphs": [
+      "Meridian Health Group delivers aged care and community care services across New South Wales. Your care, rostering, finance and HR teams each rely on a different system, and none of them talks to the others. The same information is typed in several times, and compliance reporting is assembled by hand.",
+      "Your leadership team is hearing a lot about AI, and several vendors have already pitched. What's missing is an independent view of where AI genuinely pays back, how it fits your regulatory obligations, and who owns the change. You asked us for that view before committing capital."
+    ],
+    "client_quote": {
+      "text": "We keep buying software and the manual work just moves somewhere else.",
+      "attribution": "Chief Operating Officer, Meridian Health Group (from our discovery call)"
+    },
+    "challenges": [
+      {"icon": "i-grid", "title": "Systems that don't connect", "description": "Four core systems, no shared data. Admissions, rosters and funding claims are re-keyed by hand."},
+      {"icon": "i-clipboard", "title": "Reporting by hand", "description": "SIRS and Care Minutes data is assembled from several sources every cycle, adding effort and compliance risk."},
+      {"icon": "i-bulb", "title": "AI without direction", "description": "Vendor pitches and internal enthusiasm, but no agreed use cases, owner or governance."},
+      {"icon": "i-users", "title": "Change fatigue", "description": "Staff have lived through tools that added work. Adoption has to be designed in, not hoped for."}
+    ]
+  },
+
+  "readiness_snapshot": [
+    {"dimension": "Process Standardization", "level_number": 2, "note": "Core care processes are documented at some sites, but each site runs them differently."},
+    {"dimension": "System Integration", "level_number": 1, "note": "The care, rostering, finance and HR systems share no data layer; information moves by re-keying and spreadsheets."},
+    {"dimension": "Automation Readiness", "level_number": 1, "note": "A few scheduled exports exist. Intake, rostering and reporting steps are almost entirely manual."}
+  ],
+
+  "vision": {
+    "headline": "From four disconnected systems to one joined-up operation",
+    "from_title": "Today",
+    "from_points": [
+      "Information is typed in again at every handover",
+      "Compliance reports are built by hand each cycle",
+      "AI is pitched tool by tool, without a plan",
+      "New software lands without a change plan"
+    ],
+    "to_title": "With DD",
+    "to_points": [
+      "Enter it once; it flows to rostering, finance and reporting",
+      "Reports assembled from live records and reviewed by your people",
+      "A ranked, costed AI roadmap with clear guardrails",
+      "Roles remapped and teams trained before go-live"
+    ]
+  },
+
+  "options_intro": "You don't have to commit to the whole journey. Each option stands on its own, and each earns the right to the next. We recommend starting with Path A, because the biggest risk in any AI programme is building the wrong thing.",
+  "options": [
+    {
+      "path": "a",
+      "name": "Discovery & Assessment",
+      "tagline": "A fast, evidence-based read of where AI and process change will actually pay back.",
+      "who_for": "Best for validating scope before committing further budget.",
+      "includes": [
+        "7-pillar AI maturity scorecard and executive risk summary",
+        "Application and workflow audit across your four core systems",
+        "Target operating architecture and buy-vs-build recommendation",
+        "Costed roadmap and ROI business case for the build phase"
+      ],
+      "stages": [1, 2]
+    },
+    {
+      "path": "b",
+      "name": "Foundation Proof-of-Value",
+      "tagline": "Prove the highest-value workflow works end to end, before you scale it.",
+      "who_for": "Best for a working proof on your highest-value care workflow.",
+      "includes": [
+        "Production-grade build of one priority workflow, such as rostering to payroll",
+        "Integration with your existing care management and finance systems",
+        "Telemetry, security sign-off and a production blueprint",
+        "Staff walkthroughs and a Day-30 results review"
+      ],
+      "stages": [2, 3]
+    },
+    {
+      "path": "c",
+      "name": "Enterprise Transformation",
+      "tagline": "Roll the proven approach across your care operations, with change management built in.",
+      "who_for": "Best for a full rollout across sites, with adoption and hypercare.",
+      "includes": [
+        "Multi-workflow build and integration across the operating stack",
+        "ADKAR change management, role remapping and training sandboxes",
+        "Zero-downtime cutover with hypercare",
+        "Managed assurance and FinOps handover"
+      ],
+      "stages": [1, 2, 3, 4]
+    }
+  ],
+  "options_note": "Paths B and C are planning estimates built from hours and rates. We reconfirm them at the end of Stage 2, once the architecture is signed off.",
+
+  "add_ons": [
+    {"icon": "i-compass", "title": "Fractional CIO / CTO / PMO", "description": "A dedicated senior executive on call: IT audits, vendor procurement, process-architecture governance and scope defence, 40 to 100 hours a month.", "price_from": 6240, "price_to": 25000, "price_unit": "per month"},
+    {"icon": "i-users", "title": "Change & adoption (Prosci / ADKAR)", "description": "Role-by-role task remapping (My Work, With Me, For Me), training sandboxes and hypercare, so the change sticks.", "price_label": "Scoped with the option you choose"},
+    {"icon": "i-shield", "title": "AI governance & ISO 42001 design", "description": "An AI management-system operating model, policy pack and risk taxonomy aligned to ISO 42001 and APRA CPS 234 / APP.", "price_label": "Custom quoted"},
+    {"icon": "i-search", "title": "Buy vs build feasibility sprint", "description": "An evaluation matrix, API capability assessment and three-year TCO model before you commit to a platform or a build.", "price_from": 1200, "price_unit": "per day", "price_note": "typically 5 to 10 days"}
+  ],
+
+  "plan": {
+    "headline": "Path A: three weeks to a costed roadmap",
+    "intro": "We recommend starting with Discovery & Assessment. It covers the first two stages of our operating system, gives you a signed-off baseline and blueprint, and may be fully offset by AWS funding, subject to approval. Later stages are shown so you can see where it leads.",
+    "stage_deliverables": {
+      "1": [
+        "Stakeholder interviews across care, finance, HR and IT",
+        "Ground-truth audit of the systems and workflows your staff actually use",
+        "7-pillar AI maturity scorecard and executive risk summary"
+      ],
+      "2": [
+        "Target process architecture and swimlane maps",
+        "Buy-vs-build view and ranked AI use-case shortlist",
+        "Costed roadmap and ROI business case for Path B or C"
+      ],
+      "3": [
+        "Build and integrate the prioritised workflows",
+        "Legacy data migration and API middleware",
+        "User acceptance testing and zero-downtime cutover"
+      ],
+      "4": [
+        "ADKAR role remapping and training sandboxes",
+        "Go-live hypercare",
+        "Day-30 review and ongoing assurance retainer"
+      ]
+    },
+    "timeline_title": "{weeks} weeks from kickoff to a costed roadmap",
+    "timeline": [
+      {"weeks": 1, "label": "Week 1", "title": "Align & Audit", "detail": "Kickoff, stakeholder interviews and a ground-truth audit of your four core systems."},
+      {"weeks": 1, "label": "Week 2", "title": "Architect & Select", "detail": "Target process architecture, buy-vs-build view and the AI use-case shortlist."},
+      {"weeks": 1, "label": "Week 3", "title": "Roadmap & business case", "detail": "Costed roadmap, ROI case and the executive readout."},
+      {"weeks": 1, "label": "Then", "title": "Your decision", "detail": "Choose Path B, Path C or pause, with a costed plan in hand.", "on": false}
+    ]
+  },
+
+  "success": {
+    "outcomes_caption": "Targets we will baseline together in Stage 1. None is promised until you have signed off the baseline.",
+    "outcomes": [
+      {"value": "4 → 1", "label": "Systems of record for care and roster data", "detail": "Target: staff enter information once, not four times."},
+      {"value": "Days → hours", "label": "Compliance reporting preparation", "detail": "Target for assembling SIRS and Care Minutes data; baselined in Stage 1."},
+      {"value": "7", "label": "Pillars scored with evidence", "detail": "A maturity scorecard built from system logs and workflow audits, not interviews alone."},
+      {"value": "Top 3", "label": "AI use cases, ranked and costed", "detail": "Each with a buy-or-build call, a risk view and a return estimate."}
+    ],
+    "gates": [
+      {"title": "Baseline signed off", "evidence": "7-pillar scorecard and executive risk summary delivered. You sign off the baseline before we design anything."},
+      {"title": "Blueprint approved", "evidence": "You approve the target process maps, the stack or build approach and the security architecture (ISO 42001 / APRA CPS 234 alignment)."},
+      {"title": "Live and verified", "evidence": "User acceptance testing passed, zero-downtime cutover and automated workflows verified in your live environment."},
+      {"title": "Adopted and handed over", "evidence": "Target adoption reached, the legacy process retired and a formal handover to ongoing support."}
+    ]
+  },
+
+  "pricing_model": {
+    "path_a": {
+      "tier_label": "Small",
+      "tier_fee": 9200,
+      "duration_label": "3 weeks"
+    },
+    "path_b": {
+      "hours": 300,
+      "hourly_rate": 196,
+      "governance_pct": 0.15,
+      "contingency_pct": 0.10,
+      "duration_label": "10 weeks"
+    },
+    "path_c": {
+      "hours": 630,
+      "hourly_rate": 196,
+      "governance_pct": 0.15,
+      "contingency_pct": 0.10,
+      "duration_label": "16 weeks"
+    }
+  },
+  "investment_note": "All figures exclude GST. Path A is a fixed fee. Paths B and C are planning estimates, reconfirmed at the end of Stage 2. Ongoing AWS infrastructure and API usage costs are separate from these professional-services fees.",
+
+  "assumptions": [
+    "Meridian provides timely access to relevant systems, documentation and subject-matter experts throughout the engagement.",
+    "Scope covers the care, rostering, finance and HR systems named in this proposal. Other systems are out of scope unless agreed in writing.",
+    "AWS funding is subject to AWS's own review and eligibility. DD Consulting submits the application but does not control AWS's decision or timeline.",
+    "Path B and Path C figures are planning estimates and are reconfirmed before any work begins.",
+    "Cloud hosting, API usage and software licences remain Meridian's direct responsibility."
+  ],
+
+  "case_study_ids": ["healthcare-retirement-stack", "aged-care-transformation", "early-childhood-workforce"],
+
+  "team": [
+    {"initials": "DD", "name": "Doneet Dass", "role": "Principal Consultant, engagement lead", "focus": "Your single point of accountability. Runs the Stage 1 diagnostic and the executive readouts."},
+    {"initials": "BA", "name": "", "role": "Senior Business Analyst", "focus": "Interviews, swimlane process maps and requirements. Named at kickoff."},
+    {"initials": "SA", "name": "", "role": "Senior Cloud Architect", "focus": "Target architecture, buy-vs-build analysis and security alignment. Named at kickoff."}
+  ],
+
+  "next_steps_intro": "Pick the option that fits and accept below, or talk it through with us first.",
+  "next_steps": [
+    {"title": "Confirm your option", "description": "Choose Path A, B or C, or ask us to shape something in between."},
+    {"title": "We apply for AWS funding", "description": "For Path A we submit the AWS AIAF application on your behalf, typically a 3 to 5 business day turnaround."},
+    {"title": "Services agreement", "description": "A separate agreement is sent for signature ahead of kickoff."},
+    {"title": "Kickoff", "description": "We run an alignment workshop and start Stage 1."}
+  ],
+
+  "appendix": {
+    "friction_matrix": [
+      {"step": "Admission & care planning", "system": "Care management system", "friction": "Assessment data is re-typed into the rostering and finance systems.", "impact": "Double entry on every admission."},
+      {"step": "Rostering", "system": "Spreadsheet + rostering tool", "friction": "Shift changes are phoned through and updated by hand; skills and credentials are checked manually.", "impact": "Coordinator time lost to manual dispatch."},
+      {"step": "Care delivery & notes", "system": "Care management + paper", "friction": "Progress notes are captured on paper at some sites and keyed in later.", "impact": "Delayed and incomplete care records."},
+      {"step": "Incident & compliance reporting", "system": "Spreadsheets + email", "friction": "SIRS and Care Minutes data is assembled by hand from several systems.", "impact": "Days of preparation each reporting cycle."},
+      {"step": "Funding & billing", "system": "Finance system", "friction": "Funding claims are reconciled manually against care records.", "impact": "Reconciliation delays and leakage risk."}
+    ],
+    "target_state": [
+      {"requirement": "One source of truth for care and roster data", "solution": "An integration layer that syncs admissions, rosters and finance, so information is entered once."},
+      {"requirement": "Compliance reporting without the scramble", "solution": "Automated assembly of SIRS and Care Minutes data from live records, with human review before submission."},
+      {"requirement": "AI where it pays back, under clear guardrails", "solution": "Prioritised use cases with deterministic policy checks and human-in-the-loop approval for high-risk decisions, aligned to ISO 42001."},
+      {"requirement": "Safe, auditable change", "solution": "Staged releases, audit logging and Australian data residency in AWS Sydney (ap-southeast-2)."}
+    ],
+    "aws_footprint": [
+      {"layer": "Integration", "service": "Amazon API Gateway + Amazon EventBridge", "function": "Connects care, rostering, finance and HR systems through one event-driven layer."},
+      {"layer": "Orchestration", "service": "AWS Step Functions + AWS Lambda", "function": "Runs workflows such as roster changes and reporting assembly, with deterministic rules."},
+      {"layer": "Intelligence", "service": "Amazon Bedrock", "function": "Reads and drafts from unstructured content under human review. No decisions are delegated to the model."},
+      {"layer": "Data", "service": "Amazon Aurora PostgreSQL", "function": "Governed data store for the integrated care and roster record."},
+      {"layer": "Security & audit", "service": "AWS IAM, KMS and CloudTrail", "function": "Role-based access, encryption and a full audit trail."}
+    ]
+  },
+
+  "aws_funding_details": {
+    "account_id": "(provided by Meridian at kickoff)",
+    "partner_of_record": "DD Consulting Pty Ltd",
+    "location": "Sydney, NSW, Australia",
+    "customer_segment": "Mid-Market",
+    "workload_name": "Care Operations Modernisation — Discovery & Assessment",
+    "driver": "Fragmented care systems, manual compliance reporting and readiness for AI adoption",
+    "start_date": "13 October 2026",
+    "end_date": "31 October 2026"
+  },
+
+  "tracking_webhook_url": "https://example.ddconsult.tech/api/proposal-events"
+}

@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { setAuthToken, getMe, getResources, getProjects, getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead } from '../api';
 import { useEnabledModules } from '../hooks/useEnabledModules';
-import { LayoutDashboard, Users, Briefcase, Calendar, LogOut, Settings as SettingsIcon, CalendarOff, CalendarDays, FlaskConical, Clock, Sparkles, BarChart3, Bell, Check, X, User, Building2, Menu, ClipboardList, HelpCircle, Search, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, Users, Briefcase, Calendar, LogOut, Settings as SettingsIcon, CalendarOff, CalendarDays, FlaskConical, Clock, Sparkles, BarChart3, Bell, Check, X, User, Building2, Menu, ClipboardList, HelpCircle, Search, RefreshCw, FileText } from 'lucide-react';
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
@@ -457,6 +457,7 @@ const Layout = ({ children, token, onLogout }) => {
     { path: '/portal', label: 'My Projects', icon: Briefcase, roles: ['client'], tooltip: 'View your assigned projects' },
     { path: '/resources', label: 'Resources', icon: Users, roles: ['admin', 'super_admin'], module: 'resources', tooltip: 'Manage team members' },
     { path: '/projects', label: 'Projects', icon: Briefcase, roles: ['admin', 'super_admin', 'resource'], module: 'projects', tooltip: 'View and manage all projects' },
+    { path: '/proposals', label: 'Proposals', icon: FileText, roles: ['admin', 'super_admin'], tooltip: 'Create and send client proposals' },
     { path: '/portfolio', label: 'Portfolio', icon: Building2, roles: ['admin', 'super_admin'], module: 'projects', tooltip: 'Company-wide portfolio view with timeline and hours analysis' },
     { path: '/my-allocations', label: 'My Allocations', icon: User, roles: ['resource', 'contractor'], module: 'allocations', tooltip: 'View your project allocations and capacity' },
     { path: '/allocations', label: 'Capacity', icon: Calendar, roles: ['admin', 'super_admin', 'resource', 'contractor'], module: 'allocations', tooltip: 'Team capacity view (next 8 weeks)' },
