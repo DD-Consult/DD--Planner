@@ -36,9 +36,9 @@ const Leaves = () => {
       return res.data;
     },
   });
-  const isAdmin = meData?.role === 'admin' || meData?.role === 'super_admin';
   const isSuperAdmin = meData?.role === 'super_admin';
-  const isResource = !isAdmin && (meData?.role === 'resource' || meData?.role === 'contractor');
+  // Everyone except super admin now has an OWN-ONLY view (incl. regular admins).
+  const ownOnly = !isSuperAdmin;
 
   // Fetch pending leaves for the approval queue (super_admin only — only they can approve)
   const { data: pendingLeaves } = useQuery({
@@ -50,7 +50,7 @@ const Leaves = () => {
     enabled: isSuperAdmin,
   });
 
-  // Fetch leaves (backend already scopes for non-admins)
+  // Fetch leaves (backend scopes: super_admin sees all, everyone else own-only)
   const { data: leaves, isLoading: leavesLoading } = useQuery({
     queryKey: ['leaves'],
     queryFn: async () => {
@@ -59,28 +59,31 @@ const Leaves = () => {
     },
   });
 
-  // Fetch resources for the dialog — admins get full list, resources get own
+  // Full resource list is only needed by super admins (for the Resource column
+  // name lookup and the request-for-anyone picker).
   const { data: resources } = useQuery({
     queryKey: ['resources'],
     queryFn: async () => {
       const response = await getResources();
       return response.data;
     },
-    enabled: isAdmin,
+    enabled: isSuperAdmin,
   });
 
-  // Resource user: fetch own resource profile for the dialog
+  // Own resource profile — needed by everyone who is own-only (staff, contractors
+  // AND regular admins) so they can request their OWN time off.
   const { data: ownResourceData } = useQuery({
     queryKey: ['myResource'],
     queryFn: async () => {
       const res = await getMyResource();
       return res.data;
     },
-    enabled: isResource,
+    enabled: ownOnly,
   });
 
-  // Build resource list for AddLeaveDialog
-  const dialogResources = isAdmin
+  // Build resource list for AddLeaveDialog — super admin can pick anyone;
+  // everyone else can only request for themselves.
+  const dialogResources = isSuperAdmin
     ? (resources || []).filter((r) => r.active !== false)
     : ownResourceData
     ? [{ id: ownResourceData.id, name: ownResourceData.name, role: ownResourceData.role }]
@@ -205,20 +208,18 @@ const Leaves = () => {
         <div>
           <h1 className="text-3xl font-semibold flex items-center gap-3" style={{ fontFamily: 'Space Grotesk' }}>
             <CalendarOff size={32} />
-            {isAdmin ? 'Time Off Management' : 'My Time Off'}
+            {isSuperAdmin ? 'Time Off Management' : 'My Time Off'}
           </h1>
           <p className="text-sm text-[#667085] mt-1">
             {isSuperAdmin
               ? 'Review and approve time off requests. All requests require approval.'
-              : isAdmin
-              ? 'Submit time off requests — all requests are reviewed and approved by a super admin'
-              : 'Submit time off requests for approval'}
+              : 'Submit time off requests — all requests are reviewed and approved by a super admin'}
           </p>
         </div>
         <Button
           onClick={() => setIsDialogOpen(true)}
           data-testid="add-leave-button"
-          disabled={isResource && !ownResourceData}
+          disabled={ownOnly && !ownResourceData}
         >
           <Plus size={16} className="mr-2" />
           Request Time Off
@@ -304,7 +305,7 @@ const Leaves = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                {isAdmin && <TableHead>Resource</TableHead>}
+                {isSuperAdmin && <TableHead>Resource</TableHead>}
                 <TableHead>Type</TableHead>
                 <TableHead>Start Date</TableHead>
                 <TableHead>End Date</TableHead>
@@ -317,7 +318,7 @@ const Leaves = () => {
             <TableBody>
               {leaves?.map((leave) => (
                 <TableRow key={leave._id || leave.id} data-testid={`leave-row-${leave._id || leave.id}`}>
-                  {isAdmin && (
+                  {isSuperAdmin && (
                     <TableCell className="font-medium">
                       {getResourceName(leave.resource_id)}
                     </TableCell>
@@ -420,7 +421,7 @@ const Leaves = () => {
         isOpen={isDialogOpen}
         onClose={() => setIsDialogOpen(false)}
         resources={dialogResources}
-        preselectedResourceId={isResource ? ownResourceData?.id : undefined}
+        preselectedResourceId={ownOnly ? ownResourceData?.id : undefined}
       />
     </div>
   );

@@ -82,18 +82,31 @@ async def clear_ai_settings(current_user: dict = Depends(require_super_admin)):
 @router.get("/api/leaves", response_model=List[LeaveResponse])
 async def get_leaves(current_user: dict = Depends(get_current_user)):
     role = current_user.get("role", "")
-    is_admin = role in ("admin", "super_admin")
-    if is_admin:
+    is_super_admin = role == "super_admin"
+
+    from utils import find_user_resource
+    own_resource = await find_user_resource(current_user)
+    own_resource_id = str(own_resource["_id"]) if own_resource else None
+
+    if is_super_admin:
+        # Super admins see the full organisation-wide list.
         cursor = leaves_collection.find()
     else:
-        # Resources see only their own leaves
-        from utils import find_user_resource
-        resource = await find_user_resource(current_user)
-        if not resource:
+        # Everyone else — including REGULAR ADMINS — sees ONLY their own leaves.
+        if not own_resource_id:
             return []
-        cursor = leaves_collection.find({"resource_id": str(resource["_id"])})
+        cursor = leaves_collection.find({"resource_id": own_resource_id})
     leaves = await cursor.to_list(length=10000)
-    return serialize_doc(leaves)
+
+    # Privacy: the note/reason is only ever returned to the requester (owner of
+    # the resource) and to super admins. Strip it from any other entry.
+    result = []
+    for lv in leaves:
+        doc = serialize_doc(lv)
+        if not is_super_admin and doc.get("resource_id") != own_resource_id:
+            doc["notes"] = None
+        result.append(doc)
+    return result
 
 
 @router.post("/api/leaves", response_model=LeaveResponse)
