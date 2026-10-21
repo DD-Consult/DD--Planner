@@ -221,6 +221,7 @@ export const deleteLeave = (id) => api.delete(`/leaves/${id}`);
 export const getPendingLeaves = () => api.get('/leaves/pending');
 export const approveLeave = (id, note) => api.put(`/leaves/${id}/approve`, note ? { note } : {});
 export const rejectLeave = (id, note) => api.put(`/leaves/${id}/reject`, note ? { note } : {});
+export const setLeaveStatus = (id, status, note) => api.put(`/leaves/${id}/set-status`, { status, ...(note ? { note } : {}) });
 
 
 // Holidays

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getLeaves, deleteLeave, getResources, getMyResource, getPendingLeaves, approveLeave, rejectLeave } from '../api';
+import { getLeaves, deleteLeave, getResources, getMyResource, getPendingLeaves, approveLeave, rejectLeave, setLeaveStatus } from '../api';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import {
@@ -11,7 +11,13 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
-import { CalendarOff, Plus, Trash2, Loader2 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
+import { CalendarOff, Plus, Trash2, Loader2, MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { AddLeaveDialog } from '../components/AddLeaveDialog';
@@ -121,6 +127,20 @@ const Leaves = () => {
     },
   });
 
+  // Change status of ANY leave (super_admin) — approve/reject/re-open already-decided entries
+  const setStatusMutation = useMutation({
+    mutationFn: ({ id, status, note }) => setLeaveStatus(id, status, note),
+    onSuccess: (_res, variables) => {
+      toast.success(`Leave set to ${variables.status}`);
+      queryClient.invalidateQueries({ queryKey: ['pendingLeaves'] });
+      queryClient.invalidateQueries({ queryKey: ['leaves'] });
+      queryClient.invalidateQueries({ queryKey: ['capacity'] });
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.detail || 'Failed to update leave status');
+    },
+  });
+
   const handleDelete = (id) => {
     if (window.confirm('Are you sure you want to delete this time off entry?')) {
       deleteMutation.mutate(id);
@@ -136,6 +156,19 @@ const Leaves = () => {
     // User can cancel (null) or provide empty/non-empty string
     if (reason !== null) {
       rejectMutation.mutate({ id, note: reason || undefined });
+    }
+  };
+
+  // Super_admin: change the decision on any leave (incl. already-approved / legacy)
+  const handleSetStatus = (id, status) => {
+    if (status === 'Approved') {
+      setStatusMutation.mutate({ id, status });
+      return;
+    }
+    const label = status === 'Rejected' ? 'revoke / reject' : 're-open to pending';
+    const reason = window.prompt(`Optional note for this change (${label}):`);
+    if (reason !== null) {
+      setStatusMutation.mutate({ id, status, note: reason || undefined });
     }
   };
 
@@ -322,15 +355,58 @@ const Leaves = () => {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(leave._id || leave.id)}
-                      disabled={deleteMutation.isPending}
-                      data-testid={`delete-leave-${leave._id || leave.id}`}
-                    >
-                      <Trash2 size={16} className="text-[#EF4444]" />
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      {isSuperAdmin && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              data-testid={`change-status-${leave._id || leave.id}`}
+                              title="Change status"
+                            >
+                              <MoreHorizontal size={16} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {(leave.status || 'Approved') !== 'Approved' && (
+                              <DropdownMenuItem
+                                data-testid={`set-approved-${leave._id || leave.id}`}
+                                onClick={() => handleSetStatus(leave._id || leave.id, 'Approved')}
+                              >
+                                Approve
+                              </DropdownMenuItem>
+                            )}
+                            {(leave.status || 'Approved') !== 'Rejected' && (
+                              <DropdownMenuItem
+                                data-testid={`set-rejected-${leave._id || leave.id}`}
+                                onClick={() => handleSetStatus(leave._id || leave.id, 'Rejected')}
+                                className="text-red-600"
+                              >
+                                {(leave.status || 'Approved') === 'Approved' ? 'Revoke (reject)' : 'Reject'}
+                              </DropdownMenuItem>
+                            )}
+                            {(leave.status || 'Approved') !== 'Pending' && (
+                              <DropdownMenuItem
+                                data-testid={`set-pending-${leave._id || leave.id}`}
+                                onClick={() => handleSetStatus(leave._id || leave.id, 'Pending')}
+                              >
+                                Re-open to Pending
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(leave._id || leave.id)}
+                        disabled={deleteMutation.isPending}
+                        data-testid={`delete-leave-${leave._id || leave.id}`}
+                      >
+                        <Trash2 size={16} className="text-[#EF4444]" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

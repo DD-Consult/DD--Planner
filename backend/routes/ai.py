@@ -274,6 +274,67 @@ async def reject_leave(leave_id: str, payload: Optional[dict] = Body(default=Non
     return serialize_doc(updated_leave)
 
 
+@router.put("/api/leaves/{leave_id}/set-status", response_model=LeaveResponse)
+async def set_leave_status(leave_id: str, payload: Optional[dict] = Body(default=None), admin: dict = Depends(require_super_admin)):
+    """Set ANY leave's status to Approved / Rejected / Pending (super_admin only).
+
+    Lets a super_admin change an already-decided (or legacy auto-approved) leave,
+    always recording who changed it and when. Only Approved leave affects capacity
+    and timesheet auto-fill, so revoking an approval (→ Rejected/Pending) frees
+    capacity automatically — those calculations already filter to Approved.
+    """
+    new_status = (payload or {}).get("status")
+    note = (payload or {}).get("note")
+    valid = {"Approved", "Rejected", "Pending"}
+    if new_status not in valid:
+        raise HTTPException(status_code=400, detail=f"status must be one of {', '.join(sorted(valid))}")
+
+    leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave not found")
+
+    update_doc = {"status": new_status}
+    if new_status == "Pending":
+        # Re-opening clears the prior decision so it returns to the queue.
+        update_doc["approver_email"] = None
+        update_doc["decided_at"] = None
+    else:
+        update_doc["approver_email"] = admin.get("email")
+        update_doc["decided_at"] = datetime.now(timezone.utc).isoformat()
+    update_doc["decision_note"] = note if note else None
+
+    await leaves_collection.update_one({"_id": ObjectId(leave_id)}, {"$set": update_doc})
+    updated_leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
+
+    # Notify the resource's user of the change (non-fatal)
+    try:
+        from database import users_collection, resources_collection, notifications_collection
+        resource_id = leave.get("resource_id")
+        if resource_id:
+            user = await users_collection.find_one({"resource_id": resource_id})
+            if user:
+                resource_doc = await resources_collection.find_one({"_id": ObjectId(resource_id)})
+                resource_name = resource_doc.get("name", "Your") if resource_doc else "Your"
+                msg = f"{resource_name} time off request from {str(leave['start_date'])[:10]} to {str(leave['end_date'])[:10]} was changed to {new_status}."
+                if note:
+                    msg += f" Note: {note}"
+                await notifications_collection.insert_one({
+                    "user_id": str(user["_id"]),
+                    "type": f"leave_{new_status.lower()}",
+                    "title": f"Time Off Request {new_status}",
+                    "message": msg,
+                    "related_id": leave_id,
+                    "priority": "high" if new_status == "Rejected" else "normal",
+                    "read": False,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                })
+    except Exception as e:
+        print(f"[Leave] Failed to notify resource user on status change: {e}")
+
+    return serialize_doc(updated_leave)
+
+
+
 @router.get("/api/leaves/pending")
 async def get_pending_leaves(admin: dict = Depends(require_admin)):
     """Get all pending leave requests (admin only), enriched with resource name."""
