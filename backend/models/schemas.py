@@ -325,6 +325,10 @@ class LeaveResponse(BaseModel):
     approver_email: Optional[str] = None
     decided_at: Optional[str] = None
     decision_note: Optional[str] = None
+    # Request metadata (NEW): who submitted the request and when.
+    created_at: Optional[str] = None
+    submitted_by: Optional[str] = None
+    submitted_by_role: Optional[str] = None
 
 
 class HolidayCreate(BaseModel):

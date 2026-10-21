@@ -31,16 +31,17 @@ const Leaves = () => {
     },
   });
   const isAdmin = meData?.role === 'admin' || meData?.role === 'super_admin';
+  const isSuperAdmin = meData?.role === 'super_admin';
   const isResource = !isAdmin && (meData?.role === 'resource' || meData?.role === 'contractor');
 
-  // Fetch pending leaves for admin approval queue
+  // Fetch pending leaves for the approval queue (super_admin only — only they can approve)
   const { data: pendingLeaves } = useQuery({
     queryKey: ['pendingLeaves'],
     queryFn: async () => {
       const response = await getPendingLeaves();
       return response.data;
     },
-    enabled: isAdmin,
+    enabled: isSuperAdmin,
   });
 
   // Fetch leaves (backend already scopes for non-admins)
@@ -174,9 +175,11 @@ const Leaves = () => {
             {isAdmin ? 'Time Off Management' : 'My Time Off'}
           </h1>
           <p className="text-sm text-[#667085] mt-1">
-            {isAdmin
-              ? 'Manage vacation, sick leave, and other time off for resources'
-              : 'Submit time off requests for manager approval'}
+            {isSuperAdmin
+              ? 'Review and approve time off requests. All requests require approval.'
+              : isAdmin
+              ? 'Submit time off requests — all requests are reviewed and approved by a super admin'
+              : 'Submit time off requests for approval'}
           </p>
         </div>
         <Button
@@ -185,12 +188,12 @@ const Leaves = () => {
           disabled={isResource && !ownResourceData}
         >
           <Plus size={16} className="mr-2" />
-          {isResource ? 'Request Time Off' : 'Add Time Off'}
+          Request Time Off
         </Button>
       </div>
 
-      {/* Pending Approvals Section (Admin Only) */}
-      {isAdmin && pendingLeaves && pendingLeaves.length > 0 && (
+      {/* Pending Approvals Section (super_admin only — only they can approve) */}
+      {isSuperAdmin && pendingLeaves && pendingLeaves.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4" data-testid="pending-approvals-section">
           <h2 className="text-lg font-semibold mb-3 text-amber-900" style={{ fontFamily: 'Space Grotesk' }}>
             Pending Approvals ({pendingLeaves.length})
@@ -215,6 +218,10 @@ const Leaves = () => {
                   {leave.notes && (
                     <div className="text-xs text-[#667085] mt-1 italic">&quot;{leave.notes}&quot;</div>
                   )}
+                  <div className="text-xs text-[#98A2B3] mt-1" data-testid={`pending-leave-meta-${leave._id || leave.id}`}>
+                    Requested{leave.created_at ? ` on ${format(new Date(leave.created_at), 'MMM d, yyyy h:mm a')}` : ''}
+                    {leave.submitted_by ? ` by ${leave.submitted_by}` : ''}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 ml-4">
                   <Button
@@ -269,6 +276,7 @@ const Leaves = () => {
                 <TableHead>Start Date</TableHead>
                 <TableHead>End Date</TableHead>
                 <TableHead>Notes</TableHead>
+                <TableHead>Requested</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -294,6 +302,16 @@ const Leaves = () => {
                   </TableCell>
                   <TableCell className="text-[#667085] text-sm">
                     {leave.notes || '—'}
+                  </TableCell>
+                  <TableCell className="text-[#667085] text-xs" data-testid={`leave-requested-${leave._id || leave.id}`}>
+                    {leave.created_at ? (
+                      <>
+                        <div>{format(new Date(leave.created_at), 'MMM d, yyyy h:mm a')}</div>
+                        {leave.submitted_by && <div className="text-[#98A2B3]">by {leave.submitted_by}</div>}
+                      </>
+                    ) : (
+                      '—'
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge

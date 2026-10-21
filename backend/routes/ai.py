@@ -119,44 +119,45 @@ async def create_leave(leave: LeaveCreate, current_user: dict = Depends(get_curr
     if isinstance(leave_doc.get("end_date"), date):
         leave_doc["end_date"] = datetime.combine(leave_doc["end_date"], datetime.min.time())
     
-    # Set status based on role
-    if is_admin:
-        # Admin creates leave for someone → auto-approved
-        leave_doc["status"] = "Approved"
-        leave_doc["approver_email"] = current_user.get("email")
-        leave_doc["decided_at"] = datetime.now(timezone.utc).isoformat()
-    else:
-        # Resource/contractor self-submit → pending approval
-        leave_doc["status"] = "Pending"
+    # Set status — ALL time-off now starts Pending and requires explicit
+    # approval by a super_admin (owner decision). Nothing is auto-approved,
+    # including requests entered by admins/super_admins for themselves or others.
+    leave_doc["status"] = "Pending"
+    # Capture request metadata so approvers can see who requested it and when.
+    leave_doc["created_at"] = datetime.now(timezone.utc).isoformat()
+    leave_doc["submitted_by"] = current_user.get("email")
+    leave_doc["submitted_by_role"] = role
+    # Ensure decision fields start empty (set on approve/reject).
+    leave_doc["approver_email"] = None
+    leave_doc["decided_at"] = None
     
     result = await leaves_collection.insert_one(leave_doc)
     leave_doc["_id"] = result.inserted_id
     
-    # Notify admins if status is Pending (non-fatal)
-    if leave_doc.get("status") == "Pending":
-        try:
-            from database import users_collection, resources_collection, notifications_collection
-            # Get resource name
-            resource_doc = await resources_collection.find_one({"_id": ObjectId(leave_doc["resource_id"])})
-            resource_name = resource_doc.get("name", "Unknown") if resource_doc else "Unknown"
-            
-            # Notify all admins
-            admin_users = await users_collection.find({"role": {"$in": ["admin", "super_admin"]}}).to_list(length=100)
-            for admin_user in admin_users:
-                notification = {
-                    "user_id": str(admin_user["_id"]),
-                    "type": "leave_request",
-                    "title": "New Time Off Request",
-                    "message": f"{resource_name} has requested time off from {str(leave_doc['start_date'])[:10]} to {str(leave_doc['end_date'])[:10]} ({leave_doc.get('type', 'Leave')}).",
-                    "related_id": str(leave_doc["_id"]),
-                    "priority": "normal",
-                    "read": False,
-                    "created_at": datetime.now(timezone.utc).isoformat()
-                }
-                await notifications_collection.insert_one(notification)
-        except Exception as e:
-            # Non-fatal: log but don't break leave creation
-            print(f"[Leave] Failed to notify admins: {e}")
+    # Notify super_admins of the new pending request (non-fatal)
+    try:
+        from database import users_collection, resources_collection, notifications_collection
+        # Get resource name
+        resource_doc = await resources_collection.find_one({"_id": ObjectId(leave_doc["resource_id"])})
+        resource_name = resource_doc.get("name", "Unknown") if resource_doc else "Unknown"
+        
+        # Notify all super_admins (only they can approve)
+        approver_users = await users_collection.find({"role": "super_admin"}).to_list(length=100)
+        for admin_user in approver_users:
+            notification = {
+                "user_id": str(admin_user["_id"]),
+                "type": "leave_request",
+                "title": "New Time Off Request",
+                "message": f"{resource_name} requested time off {str(leave_doc['start_date'])[:10]} to {str(leave_doc['end_date'])[:10]} ({leave_doc.get('type', 'Leave')}), submitted by {leave_doc.get('submitted_by')}.",
+                "related_id": str(leave_doc["_id"]),
+                "priority": "normal",
+                "read": False,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await notifications_collection.insert_one(notification)
+    except Exception as e:
+        # Non-fatal: log but don't break leave creation
+        print(f"[Leave] Failed to notify approvers: {e}")
     
     return serialize_doc(leave_doc)
 
@@ -179,8 +180,8 @@ async def delete_leave(leave_id: str, current_user: dict = Depends(get_current_u
 
 
 @router.put("/api/leaves/{leave_id}/approve", response_model=LeaveResponse)
-async def approve_leave(leave_id: str, payload: Optional[dict] = Body(default=None), admin: dict = Depends(require_admin)):
-    """Approve a pending leave request (admin only)."""
+async def approve_leave(leave_id: str, payload: Optional[dict] = Body(default=None), admin: dict = Depends(require_super_admin)):
+    """Approve a pending leave request (super_admin only)."""
     note = (payload or {}).get("note")
     leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
     if not leave:
@@ -225,8 +226,8 @@ async def approve_leave(leave_id: str, payload: Optional[dict] = Body(default=No
 
 
 @router.put("/api/leaves/{leave_id}/reject", response_model=LeaveResponse)
-async def reject_leave(leave_id: str, payload: Optional[dict] = Body(default=None), admin: dict = Depends(require_admin)):
-    """Reject a pending leave request (admin only)."""
+async def reject_leave(leave_id: str, payload: Optional[dict] = Body(default=None), admin: dict = Depends(require_super_admin)):
+    """Reject a pending leave request (super_admin only)."""
     note = (payload or {}).get("note")
     leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
     if not leave:
