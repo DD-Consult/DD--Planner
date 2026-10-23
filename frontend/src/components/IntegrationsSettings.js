@@ -9,12 +9,13 @@ import { Textarea } from '../components/ui/textarea';
 import {
   getIntegrationSettings, updateIntegrationSettings,
   testHubSpotConnection, regenerateAgentApiKey, getIntegrationSyncLogs,
+  testEmailConfig,
 } from '../api';
 import { toast } from 'sonner';
 import {
   Loader2, CheckCircle2, XCircle, Copy, RefreshCw, Eye, EyeOff,
   Link2, Webhook, Bot, AlertTriangle, Clock, ChevronDown, ChevronUp,
-  Zap, Globe, HardDrive,
+  Zap, Globe, HardDrive, Mail,
 } from 'lucide-react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -113,6 +114,13 @@ export default function IntegrationsSettings() {
   const [gdriveSaJson, setGdriveSaJson] = useState('');
   const [gdriveFolder, setGdriveFolder] = useState('');
 
+  // ── Email (Resend) state ──────────────────────────────────────────────────
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [emailApiKey, setEmailApiKey] = useState('');
+  const [emailFrom, setEmailFrom] = useState('');
+  const [emailReplyTo, setEmailReplyTo] = useState('');
+  const [emailTestResult, setEmailTestResult] = useState(null);
+
   // Populate from fetched settings
   useEffect(() => {
     if (!settings) return;
@@ -127,7 +135,12 @@ export default function IntegrationsSettings() {
     const gdrive = settings.google_drive || {};
     setGdriveEnabled(gdrive.enabled ?? false);
     setGdriveFolder(gdrive.default_folder_id || '');
+    const email = settings.email || {};
+    setEmailEnabled(email.enabled ?? false);
+    setEmailFrom(email.from_email || '');
+    setEmailReplyTo(email.reply_to || '');
   }, [settings]);
+
 
   // ── Save HubSpot settings ──────────────────────────────────────────────────
   const saveHsMutation = useMutation({
@@ -191,6 +204,38 @@ export default function IntegrationsSettings() {
     },
     onError: (err) => toast.error(err.response?.data?.detail || 'Save failed'),
   });
+
+  // ── Email (Resend) save + test ─────────────────────────────────────────────
+  const saveEmailMutation = useMutation({
+    mutationFn: () => updateIntegrationSettings({
+      email: {
+        enabled: emailEnabled,
+        api_key: emailApiKey || '',   // '' preserves the saved key
+        from_email: emailFrom || '',
+        reply_to: emailReplyTo || '',
+      },
+    }),
+    onSuccess: () => {
+      toast.success('Email settings saved');
+      setEmailApiKey('');
+      qc.invalidateQueries(['integrationSettings']);
+    },
+    onError: (err) => toast.error(err.response?.data?.detail || 'Save failed'),
+  });
+
+  const [isEmailTesting, setIsEmailTesting] = useState(false);
+  const handleTestEmail = async () => {
+    setIsEmailTesting(true);
+    setEmailTestResult(null);
+    try {
+      const r = await testEmailConfig();
+      setEmailTestResult(r.data);
+    } catch (err) {
+      setEmailTestResult({ ok: false, message: err.response?.data?.detail || 'Test failed' });
+    } finally {
+      setIsEmailTesting(false);
+    }
+  };
 
   // ── Regenerate agent key ───────────────────────────────────────────────────
   const regenMutation = useMutation({
@@ -546,6 +591,93 @@ export default function IntegrationsSettings() {
               {saveGdriveMutation.isPending ? <><Loader2 size={14} className="mr-2 animate-spin" />Saving...</> : 'Save Google Drive Settings'}
             </Button>
           </div>
+        </div>
+      </div>
+
+      {/* ── Email (Resend) ── */}
+      <div className="bg-white border border-[#E6E8EC] rounded-lg p-6" data-testid="email-settings">
+        <SectionHeader
+          icon={Mail}
+          color="#12B76A"
+          title="Email (Resend)"
+          description="Send proposal links and client report links straight to the client's inbox"
+        />
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm font-medium text-[#0B1220]">Enable email sending</p>
+            <p className="text-xs text-[#667085]">When off, links are still generated to copy and share manually.</p>
+          </div>
+          <Switch checked={emailEnabled} onCheckedChange={setEmailEnabled} data-testid="email-enabled-toggle" />
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <Label className="text-sm">Resend API key</Label>
+            {settings?.email?.has_api_key && (
+              <div className="flex items-center gap-2 text-xs text-green-700 mt-1 mb-1">
+                <CheckCircle2 size={12} /> Key saved {settings.email.api_key_masked ? `(${settings.email.api_key_masked})` : ''}
+              </div>
+            )}
+            <Input
+              type="password"
+              value={emailApiKey}
+              onChange={(e) => setEmailApiKey(e.target.value)}
+              placeholder={settings?.email?.has_api_key ? '••••••••••••• (saved — paste to replace)' : 're_xxxxxxxxxxxxxxxxxxxx'}
+              className="font-mono text-xs"
+              data-testid="email-api-key-input"
+            />
+            <p className="text-xs text-[#667085] mt-1">
+              Get it from <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-[#1570EF] hover:underline">Resend → API Keys</a>
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-sm">From address</Label>
+              <Input
+                value={emailFrom}
+                onChange={(e) => setEmailFrom(e.target.value)}
+                placeholder="proposals@yourdomain.com"
+                data-testid="email-from-input"
+              />
+            </div>
+            <div>
+              <Label className="text-sm">Reply-to (optional)</Label>
+              <Input
+                value={emailReplyTo}
+                onChange={(e) => setEmailReplyTo(e.target.value)}
+                placeholder="hello@yourdomain.com"
+                data-testid="email-replyto-input"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-[#667085]">
+            Your sender domain must be verified in Resend. Until it is, Resend may only let you email your own address — use &quot;Send test email&quot; to check.
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => saveEmailMutation.mutate()}
+              disabled={saveEmailMutation.isPending}
+              className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
+              data-testid="email-save-btn"
+            >
+              {saveEmailMutation.isPending ? <><Loader2 size={14} className="mr-2 animate-spin" />Saving...</> : 'Save Email Settings'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleTestEmail}
+              disabled={isEmailTesting}
+              data-testid="email-test-btn"
+            >
+              {isEmailTesting ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Mail size={14} className="mr-2" />}
+              Send test email
+            </Button>
+          </div>
+          {emailTestResult && (
+            <div className={`mt-1 flex items-start gap-2 text-sm ${emailTestResult.ok ? 'text-green-700' : 'text-red-700'}`} data-testid="email-test-result">
+              {emailTestResult.ok ? <CheckCircle2 size={14} className="mt-0.5" /> : <XCircle size={14} className="mt-0.5" />}
+              <span>{emailTestResult.message}</span>
+            </div>
+          )}
         </div>
       </div>
 

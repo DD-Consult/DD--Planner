@@ -54,85 +54,53 @@ def _public_base_url(request: Request) -> str:
 
 
 async def send_verification_email(email: str, code: str, project_name: str):
-    """Send verification code email using Resend"""
-    if not RESEND_API_KEY or not resend.api_key:
-        print(f"[EMAIL] Resend not configured. Verification code: {code}")
-        return False
-    
-    try:
-        html_content = f"""
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #1B2A47;">Project Report Access</h2>
-            <p>Hi,</p>
-            <p>You've been sent a secure link to view the project report for <strong>{project_name}</strong>.</p>
-            <p>Please use this verification code to access the report:</p>
-            <div style="background: #f3f4f6; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
-                <h1 style="color: #1B2A47; font-size: 32px; letter-spacing: 4px; margin: 0;">{code}</h1>
-            </div>
-            <p style="color: #666; font-size: 14px;">This code is valid for 1 hour and can be used up to 3 times.</p>
-            <p style="color: #666; font-size: 14px;">If you didn't request this, please ignore this email.</p>
-            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
-            <p style="color: #999; font-size: 12px;">DD Consulting - Project Management Platform</p>
+    """Send verification code email via the per-workspace Resend config.
+    Returns (sent, message). Best-effort."""
+    from services.email_config import send_email
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1B2A47;">Project Report Access</h2>
+        <p>Hi,</p>
+        <p>You've been sent a secure link to view the project report for <strong>{project_name}</strong>.</p>
+        <p>Please use this verification code to access the report:</p>
+        <div style="background: #f3f4f6; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
+            <h1 style="color: #1B2A47; font-size: 32px; letter-spacing: 4px; margin: 0;">{code}</h1>
         </div>
-        """
-        
-        params = {
-            "from": SENDER_EMAIL,
-            "to": [email],
-            "subject": f"Verification Code - {project_name} Report",
-            "html": html_content,
-        }
-        
-        response = resend.Emails.send(params)
-        print(f"[EMAIL] Verification code sent to {email}: {response}")
-        return True
-    except Exception as e:
-        print(f"[EMAIL ERROR] Failed to send verification: {e}")
-        return False
+        <p style="color: #666; font-size: 14px;">This code is valid for 1 hour and can be used up to 3 times.</p>
+        <p style="color: #666; font-size: 14px;">If you didn't request this, please ignore this email.</p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
+        <p style="color: #999; font-size: 12px;">DD Consulting - Project Management Platform</p>
+    </div>
+    """
+    return await send_email(email, f"Verification Code - {project_name} Report", html_content)
 
 
 async def send_magic_link_email(email: str, magic_link: str, project_name: str):
-    """Send magic link notification email"""
-    if not RESEND_API_KEY or not resend.api_key:
-        print(f"[EMAIL] Resend not configured. Magic link: {magic_link}")
-        return False
-    
-    try:
-        html_content = f"""
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #1B2A47;">Project Report - {project_name}</h2>
-            <p>Hi,</p>
-            <p>Your project status report for <strong>{project_name}</strong> is ready to view.</p>
-            <div style="text-align: center; margin: 30px 0;">
-                <a href="{magic_link}" style="background: #1570EF; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600;">
-                    View Report Online
-                </a>
-            </div>
-            <p style="background: #EFF6FF; padding: 15px; border-left: 4px solid #1570EF; border-radius: 4px; font-size: 14px;">
-                <strong>🔒 Security:</strong> This link is valid for 30 days and requires email verification to access.
-            </p>
-            <p style="color: #666; font-size: 14px;">You can also copy this link:</p>
-            <p style="background: #f3f4f6; padding: 10px; border-radius: 4px; word-break: break-all; font-size: 12px; font-family: monospace;">
-                {magic_link}
-            </p>
-            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
-            <p style="color: #999; font-size: 12px;">DD Consulting - Project Management Platform</p>
+    """Send magic link email via the per-workspace Resend config.
+    Returns (sent, message). Best-effort."""
+    from services.email_config import send_email
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1B2A47;">Project Report - {project_name}</h2>
+        <p>Hi,</p>
+        <p>Your project status report for <strong>{project_name}</strong> is ready to view.</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{magic_link}" style="background: #1570EF; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600;">
+                View Report Online
+            </a>
         </div>
-        """
-        
-        params = {
-            "from": SENDER_EMAIL,
-            "to": [email],
-            "subject": f"Project Report - {project_name}",
-            "html": html_content,
-        }
-        
-        response = resend.Emails.send(params)
-        print(f"[EMAIL] Magic link sent to {email}: {response}")
-        return True
-    except Exception as e:
-        print(f"[EMAIL ERROR] Failed to send magic link: {e}")
-        return False
+        <p style="background: #EFF6FF; padding: 15px; border-left: 4px solid #1570EF; border-radius: 4px; font-size: 14px;">
+            <strong>🔒 Security:</strong> This link is valid for 30 days and requires email verification to access.
+        </p>
+        <p style="color: #666; font-size: 14px;">You can also copy this link:</p>
+        <p style="background: #f3f4f6; padding: 10px; border-radius: 4px; word-break: break-all; font-size: 12px; font-family: monospace;">
+            {magic_link}
+        </p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
+        <p style="color: #999; font-size: 12px;">DD Consulting - Project Management Platform</p>
+    </div>
+    """
+    return await send_email(email, f"Project Report - {project_name}", html_content)
 
 
 # ============================================================

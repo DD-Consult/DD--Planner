@@ -72,47 +72,33 @@ def _public_base_url(request: Request) -> str:
 
 
 async def send_proposal_link_email(email: str, link: str, client_name: str, title: str):
-    """Send proposal link notification email"""
-    if not RESEND_API_KEY or not resend.api_key:
-        print(f"[EMAIL] Resend not configured. Proposal link: {link}")
-        return False
-    
-    try:
-        html_content = f"""
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #1B2A47;">Your Proposal from DD Consulting</h2>
-            <p>Hi {client_name},</p>
-            <p>Your proposal <strong>{title}</strong> is ready to view.</p>
-            <div style="text-align: center; margin: 30px 0;">
-                <a href="{link}" style="background: #1570EF; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600;">
-                    View Proposal
-                </a>
-            </div>
-            <p style="background: #EFF6FF; padding: 15px; border-left: 4px solid #1570EF; border-radius: 4px; font-size: 14px;">
-                <strong>🔒 Security:</strong> This is a secure, unique link for your review.
-            </p>
-            <p style="color: #666; font-size: 14px;">You can also copy this link:</p>
-            <p style="background: #f3f4f6; padding: 10px; border-radius: 4px; word-break: break-all; font-size: 12px; font-family: monospace;">
-                {link}
-            </p>
-            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
-            <p style="color: #999; font-size: 12px;">DD Consulting</p>
+    """Send proposal link email via the per-workspace Resend config.
+
+    Returns (sent: bool, message: str). Best-effort — never raises.
+    """
+    from services.email_config import send_email
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1B2A47;">Your Proposal from DD Consulting</h2>
+        <p>Hi {client_name},</p>
+        <p>Your proposal <strong>{title}</strong> is ready to view.</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{link}" style="background: #1570EF; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600;">
+                View Proposal
+            </a>
         </div>
-        """
-        
-        params = {
-            "from": SENDER_EMAIL,
-            "to": [email],
-            "subject": f"Proposal: {title}",
-            "html": html_content,
-        }
-        
-        response = resend.Emails.send(params)
-        print(f"[EMAIL] Proposal link sent to {email}: {response}")
-        return True
-    except Exception as e:
-        print(f"[EMAIL ERROR] Failed to send proposal link: {e}")
-        return False
+        <p style="background: #EFF6FF; padding: 15px; border-left: 4px solid #1570EF; border-radius: 4px; font-size: 14px;">
+            <strong>🔒 Security:</strong> This is a secure, unique link for your review.
+        </p>
+        <p style="color: #666; font-size: 14px;">You can also copy this link:</p>
+        <p style="background: #f3f4f6; padding: 10px; border-radius: 4px; word-break: break-all; font-size: 12px; font-family: monospace;">
+            {link}
+        </p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
+        <p style="color: #999; font-size: 12px;">DD Consulting</p>
+    </div>
+    """
+    return await send_email(email, f"Proposal: {title}", html_content)
 
 
 # ============================================================
@@ -1068,19 +1054,22 @@ async def send_proposal(id: str, request: Request, admin: dict = Depends(require
         }
     )
     
-    # Send email if contact_email present and Resend configured
+    # Send email if contact_email present (email is best-effort; link always returned)
     data = proposal.get("data", {})
     contact_email = data.get("contact_email")
     email_sent = False
-    
-    if contact_email and RESEND_API_KEY:
+    email_message = "No client contact email on the proposal — share the link manually."
+
+    if contact_email:
         client_name = data.get("client_name", "Client")
         title = data.get("proposal_title", "Proposal")
-        email_sent = await send_proposal_link_email(contact_email, proposal_link, client_name, title)
-    
+        email_sent, email_message = await send_proposal_link_email(contact_email, proposal_link, client_name, title)
+
     return {
         "proposal_link": proposal_link,
-        "email_sent": email_sent
+        "email_sent": email_sent,
+        "email_message": email_message,
+        "recipient": contact_email or None,
     }
 
 
@@ -1234,17 +1223,18 @@ async def confirm_proposal(id: str, request: Request, admin: dict = Depends(requ
     base_url = _public_base_url(request)
     report_link = f"{base_url}/portal/{report_token}"
     
-    # Send emails (best-effort)
+    # Send emails (best-effort — report link always returned regardless)
     magic_link_sent = False
-    if RESEND_API_KEY:
-        try:
-            from routes.client_portal import send_magic_link_email, send_verification_email
-            await send_magic_link_email(contact_email, report_link, project_doc["name"])
-            await send_verification_email(contact_email, verification_code, project_doc["name"])
-            magic_link_sent = True
-        except Exception as e:
-            print(f"[PROPOSALS] Email send failed: {e}")
-    
+    email_message = "Email not configured — share the report link manually."
+    try:
+        from routes.client_portal import send_magic_link_email, send_verification_email
+        magic_link_sent, email_message = await send_magic_link_email(contact_email, report_link, project_doc["name"])
+        # Also send the verification code (best-effort, status tracked by magic-link send)
+        await send_verification_email(contact_email, verification_code, project_doc["name"])
+    except Exception as e:
+        print(f"[PROPOSALS] Email send failed: {e}")
+        email_message = f"Email not sent: {e}"
+
     # (d) Update proposal
     await proposals_collection.update_one(
         {"_id": ObjectId(id)},
@@ -1265,6 +1255,7 @@ async def confirm_proposal(id: str, request: Request, admin: dict = Depends(requ
         "client_user_id": client_user_id,
         "report_link": report_link,
         "magic_link_sent": magic_link_sent,
+        "email_message": email_message,
     }
 
 

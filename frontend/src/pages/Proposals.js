@@ -182,7 +182,15 @@ const Proposals = () => {
       queryClient.invalidateQueries(['proposals']);
       const link = response.data.proposal_link;
       navigator.clipboard.writeText(link);
-      toast.success(`Link copied to clipboard${response.data.email_sent ? ' and email sent!' : '!'}`);
+      // Honest status: say whether the email actually went out, or to share manually.
+      if (response.data.email_sent) {
+        toast.success(`Link copied — and emailed to ${response.data.recipient || 'the client'}.`);
+      } else {
+        toast.success('Link copied to clipboard.');
+        if (response.data.email_message) {
+          toast.info(response.data.email_message);
+        }
+      }
     },
     onError: () => {
       toast.error('Failed to send proposal');
@@ -196,7 +204,14 @@ const Proposals = () => {
       queryClient.invalidateQueries(['proposals']);
       setConfirmResult(response.data);
       setIsConfirmDialogOpen(true);
-      toast.success('Proposal confirmed!');
+      if (response.data.magic_link_sent) {
+        toast.success('Proposal confirmed — report link emailed to the client.');
+      } else {
+        toast.success('Proposal confirmed!');
+        if (response.data.email_message) {
+          toast.info(response.data.email_message);
+        }
+      }
     },
     onError: () => {
       toast.error('Failed to confirm proposal');

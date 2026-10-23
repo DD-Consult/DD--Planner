@@ -102,10 +102,18 @@ class GoogleDriveConfig(BaseModel):
     default_folder_id: str = ""
 
 
+class EmailConfig(BaseModel):
+    enabled: bool = False
+    api_key: str = ""           # Resend API key — write-once, masked on read
+    from_email: str = ""        # verified "from" sender address
+    reply_to: str = ""          # optional reply-to
+
+
 class IntegrationSettingsPayload(BaseModel):
     hubspot: Optional[HubSpotConfig] = None
     agent_api: Optional[AgentApiConfig] = None
     google_drive: Optional[GoogleDriveConfig] = None
+    email: Optional[EmailConfig] = None
 
 
 # ─── GET settings ─────────────────────────────────────────────────────────────
@@ -128,6 +136,8 @@ async def get_integration_settings(current_user: dict = Depends(get_current_user
         settings["agent_api"] = {"enabled": False, "api_key": ""}
     if "google_drive" not in settings:
         settings["google_drive"] = {"enabled": False, "service_account_json": "", "default_folder_id": ""}
+    if "email" not in settings:
+        settings["email"] = {"enabled": False, "api_key": "", "from_email": "", "reply_to": ""}
 
     # Mask the token for display
     hs = settings.get("hubspot", {})
@@ -152,6 +162,16 @@ async def get_integration_settings(current_user: dict = Depends(get_current_user
     sa = gd.get("service_account_json", "") or ""
     settings["google_drive"]["has_credentials"] = bool(sa)
     settings["google_drive"]["service_account_json"] = ""  # never return the raw secret
+
+    # Email (Resend): mask the API key, expose only a boolean + masked hint.
+    em = settings.get("email", {})
+    ekey = em.get("api_key", "") or ""
+    settings["email"]["has_api_key"] = bool(ekey)
+    if isinstance(ekey, str) and len(ekey) > 8:
+        settings["email"]["api_key_masked"] = ekey[:5] + "•" * (len(ekey) - 5)
+    else:
+        settings["email"]["api_key_masked"] = ""
+    settings["email"]["api_key"] = ""  # never return the raw key
 
     return settings
 
@@ -191,6 +211,13 @@ async def update_integration_settings(
             gd_data["service_account_json"] = existing.get("google_drive", {}).get("service_account_json", "")
         update_doc["google_drive"] = gd_data
 
+    if payload.email:
+        em_data = payload.email.model_dump()
+        # Preserve the existing API key when an empty string is submitted.
+        if existing and not em_data.get("api_key"):
+            em_data["api_key"] = existing.get("email", {}).get("api_key", "")
+        update_doc["email"] = em_data
+
     await integration_settings_collection.update_one(
         {"org_id": ORG_ID},
         {"$set": update_doc},
@@ -229,6 +256,44 @@ async def test_hubspot(
         detail=result["message"],
     )
     return result
+
+
+# ─── Test Email (Resend) ───────────────────────────────────────────────────────
+
+class TestEmailPayload(BaseModel):
+    to: Optional[str] = None  # if provided, send the test to this address
+
+
+@router.post("/api/integrations/email/test")
+async def test_email(payload: TestEmailPayload, current_user: dict = Depends(get_current_user)):
+    """Send a test email using the currently-saved Email (Resend) config.
+
+    Surfaces Resend's typical responses (e.g. 'verify your domain' / 'can only
+    send to your own address until verified') so the admin knows the real state.
+    """
+    _require_super_admin(current_user)
+    from services.email_config import resolve_email_config, send_email
+
+    cfg = await resolve_email_config()
+    if not cfg:
+        return {"ok": False, "message": "Email is not configured or is disabled. Save a Resend API key and 'from' address, then try again."}
+
+    to_addr = (payload.to or current_user.get("email") or "").strip()
+    if not to_addr:
+        return {"ok": False, "message": "No recipient address available for the test."}
+
+    html = (
+        "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;\">"
+        "<h2 style=\"color:#1570EF;\">DD Planner — test email</h2>"
+        "<p>This is a test email confirming your Resend configuration works.</p>"
+        f"<p style=\"color:#666;font-size:13px;\">Sent from: {cfg['from_email']}</p>"
+        "<hr style=\"border:none;border-top:1px solid #e5e7eb;margin:24px 0;\"/>"
+        "<p style=\"color:#999;font-size:12px;\">DD Consulting — Project Management Platform</p>"
+        "</div>"
+    )
+    sent, message = await send_email(to_addr, "DD Planner — test email", html)
+    return {"ok": sent, "message": (f"Test email sent to {to_addr}." if sent else message)}
+
 
 
 # ─── Generate / rotate agent API key ──────────────────────────────────────────
