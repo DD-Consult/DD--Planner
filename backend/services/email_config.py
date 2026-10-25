@@ -137,42 +137,77 @@ def _send_via_resend(cfg: dict, to_email: str, subject: str, html: str) -> Tuple
 
 
 def _send_via_smtp(cfg: dict, to_email: str, subject: str, html: str) -> Tuple[bool, str]:
+    host = cfg["host"]
+    port = int(cfg["port"])
+    username = cfg["username"]
+    password = cfg["password"]
+    use_tls = cfg.get("use_tls", True)
+    from_email = cfg["from_email"]
+
+    # Envelope MAIL FROM. Gmail / Google Workspace require the envelope sender to
+    # be the AUTHENTICATED account (or a verified "Send mail as" alias) — using a
+    # different envelope sender causes the server to accept the message but then
+    # rewrite or DROP it (the classic "reported sent but never arrives"). So for
+    # Gmail/Workspace hosts we send the envelope as the authenticated username and
+    # keep the user's chosen address in the visible From header.
+    host_l = (host or "").lower()
+    is_gmail = "gmail.com" in host_l or "googlemail.com" in host_l
+    envelope_from = username if is_gmail else from_email
+
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = formataddr(("", cfg["from_email"]))
+        # On Gmail the visible From is forced to the authenticated user unless the
+        # chosen address is a verified alias — so set the header to the account we
+        # actually authenticate as when they differ on Gmail, to avoid confusion.
+        header_from = username if (is_gmail and from_email.lower() != username.lower()) else from_email
+        msg["From"] = formataddr(("", header_from))
         msg["To"] = to_email
         if cfg.get("reply_to"):
             msg["Reply-To"] = cfg["reply_to"]
+        elif is_gmail and from_email.lower() != username.lower():
+            # Preserve the intended address as reply-to so replies still reach it.
+            msg["Reply-To"] = from_email
         msg.attach(MIMEText(html, "html"))
 
-        host = cfg["host"]
-        port = int(cfg["port"])
-        username = cfg["username"]
-        password = cfg["password"]
-        use_tls = cfg.get("use_tls", True)
-
         if port == 465:
-            # Implicit TLS
             context = ssl.create_default_context()
             with smtplib.SMTP_SSL(host, port, timeout=20, context=context) as server:
                 server.login(username, password)
-                server.sendmail(cfg["from_email"], [to_email], msg.as_string())
+                refused = server.sendmail(envelope_from, [to_email], msg.as_string())
         else:
-            # STARTTLS (default for 587)
             with smtplib.SMTP(host, port, timeout=20) as server:
                 server.ehlo()
                 if use_tls:
                     server.starttls(context=ssl.create_default_context())
                     server.ehlo()
                 server.login(username, password)
-                server.sendmail(cfg["from_email"], [to_email], msg.as_string())
-        logger.info(f"[email] (smtp) sent to {to_email} via {host}:{port}")
+                refused = server.sendmail(envelope_from, [to_email], msg.as_string())
+
+        # sendmail returns a dict of recipients the server refused. Empty = all accepted.
+        if refused:
+            logger.warning(f"[email] (smtp) recipients refused: {refused}")
+            return False, f"Email not sent: recipient refused ({refused})."
+
+        logger.info(f"[email] (smtp) accepted to {to_email} via {host}:{port} (envelope from {envelope_from})")
+        if is_gmail and from_email.lower() != username.lower():
+            return True, (
+                f"Email accepted by Gmail — note: it will be sent from {username} (the "
+                f"authenticated account), not {from_email}, unless {from_email} is added as a "
+                f"verified 'Send mail as' alias in that Gmail/Workspace account. Replies go to {from_email}."
+            )
         return True, "Email sent."
     except smtplib.SMTPAuthenticationError as e:
         logger.error(f"[email] (smtp) auth failed: {e}")
         return False, ("Email not sent: SMTP login failed. For Gmail/Workspace use a 16-character "
                        "App Password (not your normal password) with 2-Step Verification enabled.")
+    except smtplib.SMTPSenderRefused as e:
+        logger.error(f"[email] (smtp) sender refused: {e}")
+        return False, (f"Email not sent: the server rejected the sender address '{envelope_from}'. "
+                       f"On Gmail/Workspace the sender must be the authenticated account or a verified alias.")
+    except (smtplib.SMTPRecipientsRefused, smtplib.SMTPDataError) as e:
+        logger.error(f"[email] (smtp) send rejected: {e}")
+        return False, f"Email not sent: {e}"
     except Exception as e:
         logger.error(f"[email] (smtp) send failed to {to_email}: {e}")
         return False, f"Email not sent: {e}"
