@@ -1,16 +1,24 @@
-"""Per-workspace email (Resend) configuration resolver + sender.
+"""Per-workspace email configuration resolver + sender (Resend API or SMTP).
 
 Email credentials are configured per workspace in Settings → Integrations → Email
 (stored on the integration_settings document under the "email" key), resolved at
-SEND TIME. Falls back to the server-wide env vars (RESEND_API_KEY / SENDER_EMAIL)
-for backward compatibility when a workspace hasn't configured its own.
+SEND TIME. A per-workspace `method` selector ("resend" | "smtp") chooses which
+transport is used. Falls back to the server-wide env Resend vars for backward
+compatibility when a workspace hasn't configured its own.
 
 Design goals (owner-approved plan):
   - Email is strictly best-effort: a failed/unconfigured send never blocks the
     core action; callers still return the shareable link.
-  - Secrets never leave the backend; the API key is write-once, masked on read.
+  - Secrets never leave the backend; API key / SMTP password are write-once,
+    masked on read.
+  - SMTP uses the Python stdlib (smtplib) — no new third-party dependency.
 """
 import logging
+import smtplib
+import ssl
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formataddr
 from typing import Optional, Tuple
 
 import resend
@@ -28,12 +36,17 @@ ORG_ID = "default"
 
 async def resolve_email_config() -> Optional[dict]:
     """Return the active email config for the current workspace, or None if email
-    is not usable (disabled / no key).
+    is not usable (disabled / incomplete for the chosen method).
 
-    Resolution order:
-      1. Per-workspace Settings → Integrations → Email block (if enabled + api_key)
-      2. Server-wide env (RESEND_API_KEY + SENDER_EMAIL) — legacy fallback
-    Returns {api_key, from_email, reply_to} or None.
+    Returns one of:
+      {"method": "resend", "api_key", "from_email", "reply_to"}
+      {"method": "smtp", "host", "port", "username", "password", "use_tls",
+       "from_email", "reply_to"}
+    or None.
+
+    Resolution:
+      1. Per-workspace Settings → Integrations → Email block, using its `method`.
+      2. Server-wide env Resend (legacy fallback) when no workspace config.
     """
     try:
         doc = await integration_settings_collection.find_one({"org_id": ORG_ID})
@@ -42,20 +55,50 @@ async def resolve_email_config() -> Optional[dict]:
         doc = None
 
     email_cfg = (doc or {}).get("email") or {}
-    if email_cfg.get("enabled") and email_cfg.get("api_key"):
-        from_email = email_cfg.get("from_email") or ENV_SENDER_EMAIL
-        if not from_email:
-            logger.warning("[email] enabled but no 'from' address set; cannot send")
-            return None
-        return {
-            "api_key": email_cfg["api_key"],
-            "from_email": from_email,
-            "reply_to": email_cfg.get("reply_to") or None,
-        }
+    if email_cfg.get("enabled"):
+        method = (email_cfg.get("method") or "resend").lower()
 
-    # Legacy fallback: server-wide env config.
+        if method == "smtp":
+            smtp = email_cfg.get("smtp") or {}
+            host = smtp.get("host")
+            username = smtp.get("username")
+            password = smtp.get("password")
+            from_email = smtp.get("from_email") or username
+            if host and username and password and from_email:
+                return {
+                    "method": "smtp",
+                    "host": host,
+                    "port": int(smtp.get("port") or 587),
+                    "username": username,
+                    "password": password,
+                    "use_tls": smtp.get("use_tls", True),  # STARTTLS on 587 by default
+                    "from_email": from_email,
+                    "reply_to": smtp.get("reply_to") or None,
+                }
+            logger.warning("[email] SMTP selected but incomplete (host/user/pass/from)")
+            return None
+
+        # method == "resend"
+        resend_cfg = email_cfg.get("resend") or {}
+        # Backward-compat: the earlier single-method shape stored api_key/from_email
+        # at the top level of email_cfg.
+        api_key = resend_cfg.get("api_key") or email_cfg.get("api_key")
+        from_email = resend_cfg.get("from_email") or email_cfg.get("from_email") or ENV_SENDER_EMAIL
+        reply_to = resend_cfg.get("reply_to") or email_cfg.get("reply_to")
+        if api_key and from_email:
+            return {
+                "method": "resend",
+                "api_key": api_key,
+                "from_email": from_email,
+                "reply_to": reply_to or None,
+            }
+        logger.warning("[email] Resend selected but incomplete (api_key/from)")
+        return None
+
+    # Legacy fallback: server-wide env Resend config.
     if ENV_RESEND_API_KEY and ENV_SENDER_EMAIL:
         return {
+            "method": "resend",
             "api_key": ENV_RESEND_API_KEY,
             "from_email": ENV_SENDER_EMAIL,
             "reply_to": None,
@@ -68,21 +111,8 @@ async def is_email_configured() -> bool:
     return (await resolve_email_config()) is not None
 
 
-async def send_email(to_email: str, subject: str, html: str) -> Tuple[bool, str]:
-    """Send an email using the resolved per-workspace Resend config.
-
-    Returns (sent, message). Never raises — email is best-effort.
-      sent=True  → Resend accepted the message.
-      sent=False → not configured, or the provider rejected it (message explains why,
-                   e.g. Resend's "verify your domain" / "can only send to yourself").
-    """
-    cfg = await resolve_email_config()
-    if not cfg:
-        logger.info("[email] not configured; skipping send (link available to copy)")
-        return False, "Email is not configured — share the link manually."
-
+def _send_via_resend(cfg: dict, to_email: str, subject: str, html: str) -> Tuple[bool, str]:
     try:
-        import asyncio
         resend.api_key = cfg["api_key"]
         params = {
             "from": cfg["from_email"],
@@ -92,17 +122,73 @@ async def send_email(to_email: str, subject: str, html: str) -> Tuple[bool, str]
         }
         if cfg.get("reply_to"):
             params["reply_to"] = cfg["reply_to"]
-        result = await asyncio.to_thread(resend.Emails.send, params)
-        # Resend returns a dict with an 'id' on success.
+        result = resend.Emails.send(params)
         if isinstance(result, dict) and result.get("id"):
-            logger.info(f"[email] sent to {to_email}: {result.get('id')}")
+            logger.info(f"[email] (resend) sent to {to_email}: {result.get('id')}")
             return True, "Email sent."
-        # Some error shapes come back as dicts with a message/name.
         msg = ""
         if isinstance(result, dict):
             msg = result.get("message") or result.get("name") or str(result)
-        logger.warning(f"[email] provider did not confirm send to {to_email}: {result}")
+        logger.warning(f"[email] (resend) not confirmed to {to_email}: {result}")
         return False, f"Email not sent: {msg or 'provider did not confirm delivery'}"
     except Exception as e:
-        logger.error(f"[email] send failed to {to_email}: {e}")
+        logger.error(f"[email] (resend) send failed to {to_email}: {e}")
         return False, f"Email not sent: {e}"
+
+
+def _send_via_smtp(cfg: dict, to_email: str, subject: str, html: str) -> Tuple[bool, str]:
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = formataddr(("", cfg["from_email"]))
+        msg["To"] = to_email
+        if cfg.get("reply_to"):
+            msg["Reply-To"] = cfg["reply_to"]
+        msg.attach(MIMEText(html, "html"))
+
+        host = cfg["host"]
+        port = int(cfg["port"])
+        username = cfg["username"]
+        password = cfg["password"]
+        use_tls = cfg.get("use_tls", True)
+
+        if port == 465:
+            # Implicit TLS
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(host, port, timeout=20, context=context) as server:
+                server.login(username, password)
+                server.sendmail(cfg["from_email"], [to_email], msg.as_string())
+        else:
+            # STARTTLS (default for 587)
+            with smtplib.SMTP(host, port, timeout=20) as server:
+                server.ehlo()
+                if use_tls:
+                    server.starttls(context=ssl.create_default_context())
+                    server.ehlo()
+                server.login(username, password)
+                server.sendmail(cfg["from_email"], [to_email], msg.as_string())
+        logger.info(f"[email] (smtp) sent to {to_email} via {host}:{port}")
+        return True, "Email sent."
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"[email] (smtp) auth failed: {e}")
+        return False, ("Email not sent: SMTP login failed. For Gmail/Workspace use a 16-character "
+                       "App Password (not your normal password) with 2-Step Verification enabled.")
+    except Exception as e:
+        logger.error(f"[email] (smtp) send failed to {to_email}: {e}")
+        return False, f"Email not sent: {e}"
+
+
+async def send_email(to_email: str, subject: str, html: str) -> Tuple[bool, str]:
+    """Send an email using the resolved per-workspace config and its active method.
+
+    Returns (sent, message). Never raises — email is best-effort.
+    """
+    cfg = await resolve_email_config()
+    if not cfg:
+        logger.info("[email] not configured; skipping send (link available to copy)")
+        return False, "Email is not configured — share the link manually."
+
+    import asyncio
+    if cfg.get("method") == "smtp":
+        return await asyncio.to_thread(_send_via_smtp, cfg, to_email, subject, html)
+    return await asyncio.to_thread(_send_via_resend, cfg, to_email, subject, html)

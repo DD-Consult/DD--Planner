@@ -114,11 +114,20 @@ export default function IntegrationsSettings() {
   const [gdriveSaJson, setGdriveSaJson] = useState('');
   const [gdriveFolder, setGdriveFolder] = useState('');
 
-  // ── Email (Resend) state ──────────────────────────────────────────────────
+  // ── Email state (method selector: Resend | SMTP) ──────────────────────────
   const [emailEnabled, setEmailEnabled] = useState(false);
+  const [emailMethod, setEmailMethod] = useState('resend');
+  // Resend sub-config
   const [emailApiKey, setEmailApiKey] = useState('');
   const [emailFrom, setEmailFrom] = useState('');
   const [emailReplyTo, setEmailReplyTo] = useState('');
+  // SMTP sub-config
+  const [smtpHost, setSmtpHost] = useState('smtp.gmail.com');
+  const [smtpPort, setSmtpPort] = useState('587');
+  const [smtpUsername, setSmtpUsername] = useState('');
+  const [smtpPassword, setSmtpPassword] = useState('');
+  const [smtpFrom, setSmtpFrom] = useState('');
+  const [smtpReplyTo, setSmtpReplyTo] = useState('');
   const [emailTestResult, setEmailTestResult] = useState(null);
 
   // Populate from fetched settings
@@ -137,9 +146,18 @@ export default function IntegrationsSettings() {
     setGdriveFolder(gdrive.default_folder_id || '');
     const email = settings.email || {};
     setEmailEnabled(email.enabled ?? false);
-    setEmailFrom(email.from_email || '');
-    setEmailReplyTo(email.reply_to || '');
+    setEmailMethod(email.method || 'resend');
+    const r = email.resend || {};
+    setEmailFrom(r.from_email || '');
+    setEmailReplyTo(r.reply_to || '');
+    const s = email.smtp || {};
+    setSmtpHost(s.host || 'smtp.gmail.com');
+    setSmtpPort(String(s.port || 587));
+    setSmtpUsername(s.username || '');
+    setSmtpFrom(s.from_email || '');
+    setSmtpReplyTo(s.reply_to || '');
   }, [settings]);
+
 
 
   // ── Save HubSpot settings ──────────────────────────────────────────────────
@@ -205,19 +223,32 @@ export default function IntegrationsSettings() {
     onError: (err) => toast.error(err.response?.data?.detail || 'Save failed'),
   });
 
-  // ── Email (Resend) save + test ─────────────────────────────────────────────
+  // ── Email save + test (method-aware) ───────────────────────────────────────
   const saveEmailMutation = useMutation({
     mutationFn: () => updateIntegrationSettings({
       email: {
         enabled: emailEnabled,
-        api_key: emailApiKey || '',   // '' preserves the saved key
-        from_email: emailFrom || '',
-        reply_to: emailReplyTo || '',
+        method: emailMethod,
+        resend: {
+          api_key: emailApiKey || '',   // '' preserves the saved key
+          from_email: emailFrom || '',
+          reply_to: emailReplyTo || '',
+        },
+        smtp: {
+          host: smtpHost || 'smtp.gmail.com',
+          port: parseInt(smtpPort, 10) || 587,
+          username: smtpUsername || '',
+          password: smtpPassword || '',   // '' preserves the saved password
+          use_tls: (parseInt(smtpPort, 10) || 587) !== 465,
+          from_email: smtpFrom || '',
+          reply_to: smtpReplyTo || '',
+        },
       },
     }),
     onSuccess: () => {
       toast.success('Email settings saved');
       setEmailApiKey('');
+      setSmtpPassword('');
       qc.invalidateQueries(['integrationSettings']);
     },
     onError: (err) => toast.error(err.response?.data?.detail || 'Save failed'),
@@ -594,12 +625,12 @@ export default function IntegrationsSettings() {
         </div>
       </div>
 
-      {/* ── Email (Resend) ── */}
+      {/* ── Email (SMTP or Resend) ── */}
       <div className="bg-white border border-[#E6E8EC] rounded-lg p-6" data-testid="email-settings">
         <SectionHeader
           icon={Mail}
           color="#12B76A"
-          title="Email (Resend)"
+          title="Email"
           description="Send proposal links and client report links straight to the client's inbox"
         />
         <div className="flex items-center justify-between mb-4">
@@ -610,75 +641,150 @@ export default function IntegrationsSettings() {
           <Switch checked={emailEnabled} onCheckedChange={setEmailEnabled} data-testid="email-enabled-toggle" />
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <Label className="text-sm">Resend API key</Label>
-            {settings?.email?.has_api_key && (
-              <div className="flex items-center gap-2 text-xs text-green-700 mt-1 mb-1">
-                <CheckCircle2 size={12} /> Key saved {settings.email.api_key_masked ? `(${settings.email.api_key_masked})` : ''}
+        {/* Method selector */}
+        <div className="mb-4">
+          <Label className="text-sm">Email method</Label>
+          <div className="flex gap-2 mt-1" data-testid="email-method-selector">
+            <button
+              type="button"
+              onClick={() => setEmailMethod('smtp')}
+              data-testid="email-method-smtp"
+              className={`flex-1 border rounded-lg px-4 py-3 text-left transition-colors ${emailMethod === 'smtp' ? 'border-[#1570EF] bg-[#F2F7FF]' : 'border-[#E6E8EC] hover:bg-slate-50'}`}
+            >
+              <div className="text-sm font-medium text-[#0B1220]">SMTP (your own mailbox)</div>
+              <div className="text-xs text-[#667085]">Gmail / Workspace, Microsoft 365, or any SMTP server</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setEmailMethod('resend')}
+              data-testid="email-method-resend"
+              className={`flex-1 border rounded-lg px-4 py-3 text-left transition-colors ${emailMethod === 'resend' ? 'border-[#1570EF] bg-[#F2F7FF]' : 'border-[#E6E8EC] hover:bg-slate-50'}`}
+            >
+              <div className="text-sm font-medium text-[#0B1220]">Resend (API)</div>
+              <div className="text-xs text-[#667085]">Email-sending vendor via API key</div>
+            </button>
+          </div>
+        </div>
+
+        {/* SMTP sub-panel */}
+        {emailMethod === 'smtp' && (
+          <div className="space-y-4" data-testid="email-smtp-panel">
+            <div className="bg-[#F2F7FF] border border-[#C9DEFF] rounded-lg p-3 text-xs text-[#475467]">
+              <strong className="text-[#1570EF]">Gmail / Google Workspace:</strong> enable 2-Step Verification on the account, then create a 16-character{' '}
+              <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="text-[#1570EF] hover:underline">App Password</a>{' '}
+              and use it as the password below (your normal password will not work). Host/port are prefilled for Gmail; change them for other providers.
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm">SMTP host</Label>
+                <Input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.gmail.com" data-testid="smtp-host-input" />
               </div>
-            )}
-            <Input
-              type="password"
-              value={emailApiKey}
-              onChange={(e) => setEmailApiKey(e.target.value)}
-              placeholder={settings?.email?.has_api_key ? '••••••••••••• (saved — paste to replace)' : 're_xxxxxxxxxxxxxxxxxxxx'}
-              className="font-mono text-xs"
-              data-testid="email-api-key-input"
-            />
-            <p className="text-xs text-[#667085] mt-1">
-              Get it from <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-[#1570EF] hover:underline">Resend → API Keys</a>
+              <div>
+                <Label className="text-sm">Port</Label>
+                <Input value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} placeholder="587" data-testid="smtp-port-input" />
+                <p className="text-xs text-[#667085] mt-1">587 = STARTTLS (default), 465 = implicit TLS</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm">Username</Label>
+                <Input value={smtpUsername} onChange={(e) => setSmtpUsername(e.target.value)} placeholder="you@yourdomain.com" data-testid="smtp-username-input" />
+              </div>
+              <div>
+                <Label className="text-sm">Password / App Password</Label>
+                {settings?.email?.smtp?.has_password && (
+                  <div className="flex items-center gap-2 text-xs text-green-700 mt-1 mb-1">
+                    <CheckCircle2 size={12} /> Password saved
+                  </div>
+                )}
+                <Input
+                  type="password"
+                  value={smtpPassword}
+                  onChange={(e) => setSmtpPassword(e.target.value)}
+                  placeholder={settings?.email?.smtp?.has_password ? '•••••••••••• (saved — paste to replace)' : 'App password'}
+                  className="font-mono text-xs"
+                  data-testid="smtp-password-input"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm">From address</Label>
+                <Input value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} placeholder="proposals@yourdomain.com" data-testid="smtp-from-input" />
+                <p className="text-xs text-[#667085] mt-1">Defaults to the username if left blank</p>
+              </div>
+              <div>
+                <Label className="text-sm">Reply-to (optional)</Label>
+                <Input value={smtpReplyTo} onChange={(e) => setSmtpReplyTo(e.target.value)} placeholder="hello@yourdomain.com" data-testid="smtp-replyto-input" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Resend sub-panel */}
+        {emailMethod === 'resend' && (
+          <div className="space-y-4" data-testid="email-resend-panel">
+            <div>
+              <Label className="text-sm">Resend API key</Label>
+              {settings?.email?.resend?.has_api_key && (
+                <div className="flex items-center gap-2 text-xs text-green-700 mt-1 mb-1">
+                  <CheckCircle2 size={12} /> Key saved {settings.email.resend.api_key_masked ? `(${settings.email.resend.api_key_masked})` : ''}
+                </div>
+              )}
+              <Input
+                type="password"
+                value={emailApiKey}
+                onChange={(e) => setEmailApiKey(e.target.value)}
+                placeholder={settings?.email?.resend?.has_api_key ? '••••••••••••• (saved — paste to replace)' : 're_xxxxxxxxxxxxxxxxxxxx'}
+                className="font-mono text-xs"
+                data-testid="email-api-key-input"
+              />
+              <p className="text-xs text-[#667085] mt-1">
+                Get it from <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-[#1570EF] hover:underline">Resend → API Keys</a>
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm">From address</Label>
+                <Input value={emailFrom} onChange={(e) => setEmailFrom(e.target.value)} placeholder="proposals@yourdomain.com" data-testid="email-from-input" />
+              </div>
+              <div>
+                <Label className="text-sm">Reply-to (optional)</Label>
+                <Input value={emailReplyTo} onChange={(e) => setEmailReplyTo(e.target.value)} placeholder="hello@yourdomain.com" data-testid="email-replyto-input" />
+              </div>
+            </div>
+            <p className="text-xs text-[#667085]">
+              Your sender domain must be verified in Resend. Until it is, Resend may only let you email your own address — use &quot;Send test email&quot; to check.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label className="text-sm">From address</Label>
-              <Input
-                value={emailFrom}
-                onChange={(e) => setEmailFrom(e.target.value)}
-                placeholder="proposals@yourdomain.com"
-                data-testid="email-from-input"
-              />
-            </div>
-            <div>
-              <Label className="text-sm">Reply-to (optional)</Label>
-              <Input
-                value={emailReplyTo}
-                onChange={(e) => setEmailReplyTo(e.target.value)}
-                placeholder="hello@yourdomain.com"
-                data-testid="email-replyto-input"
-              />
-            </div>
-          </div>
-          <p className="text-xs text-[#667085]">
-            Your sender domain must be verified in Resend. Until it is, Resend may only let you email your own address — use &quot;Send test email&quot; to check.
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={() => saveEmailMutation.mutate()}
-              disabled={saveEmailMutation.isPending}
-              className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
-              data-testid="email-save-btn"
-            >
-              {saveEmailMutation.isPending ? <><Loader2 size={14} className="mr-2 animate-spin" />Saving...</> : 'Save Email Settings'}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleTestEmail}
-              disabled={isEmailTesting}
-              data-testid="email-test-btn"
-            >
-              {isEmailTesting ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Mail size={14} className="mr-2" />}
-              Send test email
-            </Button>
-          </div>
-          {emailTestResult && (
-            <div className={`mt-1 flex items-start gap-2 text-sm ${emailTestResult.ok ? 'text-green-700' : 'text-red-700'}`} data-testid="email-test-result">
-              {emailTestResult.ok ? <CheckCircle2 size={14} className="mt-0.5" /> : <XCircle size={14} className="mt-0.5" />}
-              <span>{emailTestResult.message}</span>
-            </div>
-          )}
+        )}
+
+        {/* Shared actions */}
+        <div className="flex items-center gap-2 mt-4">
+          <Button
+            onClick={() => saveEmailMutation.mutate()}
+            disabled={saveEmailMutation.isPending}
+            className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
+            data-testid="email-save-btn"
+          >
+            {saveEmailMutation.isPending ? <><Loader2 size={14} className="mr-2 animate-spin" />Saving...</> : 'Save Email Settings'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleTestEmail}
+            disabled={isEmailTesting}
+            data-testid="email-test-btn"
+          >
+            {isEmailTesting ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Mail size={14} className="mr-2" />}
+            Send test email
+          </Button>
         </div>
+        {emailTestResult && (
+          <div className={`mt-2 flex items-start gap-2 text-sm ${emailTestResult.ok ? 'text-green-700' : 'text-red-700'}`} data-testid="email-test-result">
+            {emailTestResult.ok ? <CheckCircle2 size={14} className="mt-0.5" /> : <XCircle size={14} className="mt-0.5" />}
+            <span>{emailTestResult.message}</span>
+          </div>
+        )}
       </div>
 
       {/* ── Coming Soon CRMs ── */}

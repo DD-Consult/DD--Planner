@@ -102,11 +102,32 @@ class GoogleDriveConfig(BaseModel):
     default_folder_id: str = ""
 
 
+class ResendConfig(BaseModel):
+    api_key: str = ""           # Resend API key — write-once, masked on read
+    from_email: str = ""
+    reply_to: str = ""
+
+
+class SmtpConfig(BaseModel):
+    host: str = "smtp.gmail.com"
+    port: int = 587
+    username: str = ""
+    password: str = ""          # write-once, masked on read
+    use_tls: bool = True        # STARTTLS on 587; port 465 uses implicit TLS
+    from_email: str = ""
+    reply_to: str = ""
+
+
 class EmailConfig(BaseModel):
     enabled: bool = False
-    api_key: str = ""           # Resend API key — write-once, masked on read
-    from_email: str = ""        # verified "from" sender address
-    reply_to: str = ""          # optional reply-to
+    method: str = "resend"      # "resend" | "smtp" — which transport is active
+    # Backward-compat flat Resend fields (still accepted):
+    api_key: str = ""
+    from_email: str = ""
+    reply_to: str = ""
+    # Nested per-method config (preferred):
+    resend: Optional[ResendConfig] = None
+    smtp: Optional[SmtpConfig] = None
 
 
 class IntegrationSettingsPayload(BaseModel):
@@ -137,7 +158,12 @@ async def get_integration_settings(current_user: dict = Depends(get_current_user
     if "google_drive" not in settings:
         settings["google_drive"] = {"enabled": False, "service_account_json": "", "default_folder_id": ""}
     if "email" not in settings:
-        settings["email"] = {"enabled": False, "api_key": "", "from_email": "", "reply_to": ""}
+        settings["email"] = {
+            "enabled": False, "method": "resend",
+            "resend": {"api_key": "", "from_email": "", "reply_to": ""},
+            "smtp": {"host": "smtp.gmail.com", "port": 587, "username": "", "password": "",
+                     "use_tls": True, "from_email": "", "reply_to": ""},
+        }
 
     # Mask the token for display
     hs = settings.get("hubspot", {})
@@ -163,15 +189,35 @@ async def get_integration_settings(current_user: dict = Depends(get_current_user
     settings["google_drive"]["has_credentials"] = bool(sa)
     settings["google_drive"]["service_account_json"] = ""  # never return the raw secret
 
-    # Email (Resend): mask the API key, expose only a boolean + masked hint.
+    # Email: method selector + per-method secret masking.
     em = settings.get("email", {})
-    ekey = em.get("api_key", "") or ""
-    settings["email"]["has_api_key"] = bool(ekey)
-    if isinstance(ekey, str) and len(ekey) > 8:
-        settings["email"]["api_key_masked"] = ekey[:5] + "•" * (len(ekey) - 5)
-    else:
-        settings["email"]["api_key_masked"] = ""
-    settings["email"]["api_key"] = ""  # never return the raw key
+    em.setdefault("method", "resend")
+    # Normalise nested blocks (handle legacy flat shape).
+    resend_block = em.get("resend") or {
+        "api_key": em.get("api_key", ""),
+        "from_email": em.get("from_email", ""),
+        "reply_to": em.get("reply_to", ""),
+    }
+    smtp_block = em.get("smtp") or {
+        "host": "smtp.gmail.com", "port": 587, "username": "", "password": "",
+        "use_tls": True, "from_email": "", "reply_to": "",
+    }
+    # Resend: mask api_key.
+    rkey = resend_block.get("api_key", "") or ""
+    resend_block["has_api_key"] = bool(rkey)
+    resend_block["api_key_masked"] = (rkey[:5] + "•" * (len(rkey) - 5)) if len(rkey) > 8 else ""
+    resend_block["api_key"] = ""  # never return the raw key
+    # SMTP: mask password.
+    spw = smtp_block.get("password", "") or ""
+    smtp_block["has_password"] = bool(spw)
+    smtp_block["password"] = ""   # never return the raw password
+    # Build the sanitised email response.
+    settings["email"] = {
+        "enabled": em.get("enabled", False),
+        "method": em.get("method", "resend"),
+        "resend": resend_block,
+        "smtp": smtp_block,
+    }
 
     return settings
 
@@ -212,11 +258,47 @@ async def update_integration_settings(
         update_doc["google_drive"] = gd_data
 
     if payload.email:
-        em_data = payload.email.model_dump()
-        # Preserve the existing API key when an empty string is submitted.
-        if existing and not em_data.get("api_key"):
-            em_data["api_key"] = existing.get("email", {}).get("api_key", "")
-        update_doc["email"] = em_data
+        em_in = payload.email.model_dump()
+        existing_email = (existing or {}).get("email", {}) if existing else {}
+        existing_resend = existing_email.get("resend") or {
+            "api_key": existing_email.get("api_key", ""),
+            "from_email": existing_email.get("from_email", ""),
+            "reply_to": existing_email.get("reply_to", ""),
+        }
+        existing_smtp = existing_email.get("smtp") or {}
+
+        # Build the Resend block (accept nested or legacy flat fields).
+        rin = em_in.get("resend") or {}
+        resend_out = {
+            "api_key": rin.get("api_key") or em_in.get("api_key") or "",
+            "from_email": rin.get("from_email") or em_in.get("from_email") or "",
+            "reply_to": rin.get("reply_to") or em_in.get("reply_to") or "",
+        }
+        # Preserve existing Resend key when empty submitted.
+        if not resend_out["api_key"]:
+            resend_out["api_key"] = existing_resend.get("api_key", "")
+
+        # Build the SMTP block.
+        sin = em_in.get("smtp") or {}
+        smtp_out = {
+            "host": sin.get("host") or "smtp.gmail.com",
+            "port": int(sin.get("port") or 587),
+            "username": sin.get("username") or "",
+            "password": sin.get("password") or "",
+            "use_tls": sin.get("use_tls", True),
+            "from_email": sin.get("from_email") or "",
+            "reply_to": sin.get("reply_to") or "",
+        }
+        # Preserve existing SMTP password when empty submitted.
+        if not smtp_out["password"]:
+            smtp_out["password"] = existing_smtp.get("password", "")
+
+        update_doc["email"] = {
+            "enabled": em_in.get("enabled", False),
+            "method": (em_in.get("method") or "resend").lower(),
+            "resend": resend_out,
+            "smtp": smtp_out,
+        }
 
     await integration_settings_collection.update_one(
         {"org_id": ORG_ID},
