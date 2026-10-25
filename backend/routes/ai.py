@@ -369,6 +369,160 @@ async def get_pending_leaves(admin: dict = Depends(require_admin)):
     return result
 
 
+# ============================================================
+# TIME OFF VISIBILITY (Phase 2 "who's out" + Phase 3 team scoping)
+# ============================================================
+
+class TimeOffVisibilityConfig(BaseModel):
+    enabled: bool = False
+    audience: str = "admins"  # "everyone" | "admins" | "leads"
+
+
+async def _get_timeoff_visibility() -> dict:
+    doc = await settings_collection.find_one({"type": "timeoff_visibility"})
+    if not doc:
+        return {"enabled": False, "audience": "admins"}
+    return {"enabled": bool(doc.get("enabled", False)), "audience": doc.get("audience", "admins")}
+
+
+@router.get("/api/settings/timeoff-visibility")
+async def get_timeoff_visibility(current_user: dict = Depends(get_current_user)):
+    """Current 'who's out' visibility config. Readable by any authed user
+    (the UI needs it to decide whether to show the summary)."""
+    return await _get_timeoff_visibility()
+
+
+@router.put("/api/settings/timeoff-visibility")
+async def set_timeoff_visibility(cfg: TimeOffVisibilityConfig, admin: dict = Depends(require_super_admin)):
+    """Configure the opt-in 'who's out this week' summary (super_admin only)."""
+    audience = cfg.audience if cfg.audience in ("everyone", "admins", "leads") else "admins"
+    await settings_collection.update_one(
+        {"type": "timeoff_visibility"},
+        {"$set": {"type": "timeoff_visibility", "enabled": bool(cfg.enabled), "audience": audience}},
+        upsert=True,
+    )
+    return {"enabled": bool(cfg.enabled), "audience": audience}
+
+
+async def _led_resource_ids(current_user: dict) -> set:
+    """Resource ids allocated to projects the current user leads (Phase 3 team view).
+    Returns empty set if the user leads no projects / has no resource profile."""
+    from utils import find_user_resource
+    resource = await find_user_resource(current_user)
+    if not resource:
+        return set()
+    my_rid = str(resource["_id"])
+    led = await projects_collection.find({"project_lead_id": my_rid}).to_list(length=1000)
+    led_project_ids = {str(p["_id"]) for p in led}
+    if not led_project_ids:
+        return set()
+    allocs = await allocations_collection.find(
+        {"project_id": {"$in": list(led_project_ids)}}
+    ).to_list(length=5000)
+    return {a.get("resource_id") for a in allocs if a.get("resource_id")}
+
+
+@router.get("/api/leaves/whos-out")
+async def whos_out(start: Optional[str] = None, end: Optional[str] = None,
+                   current_user: dict = Depends(get_current_user)):
+    """Availability-only summary of who is on APPROVED leave in a date window.
+
+    Returns names + dates + type ONLY — never the private note/reason. Access:
+      - super_admin / admin: always allowed (full org).
+      - project leads: allowed for their team (resources on projects they lead),
+        regardless of the audience setting (Phase 3).
+      - everyone else: allowed ONLY if the 'who's out' summary is enabled AND
+        audience == 'everyone'; scope is still the whole org (names+dates only).
+    Window defaults to the current week (Mon–Sun) if start/end omitted.
+    """
+    from utils import find_user_resource
+
+    role = (current_user.get("role") or "").lower()
+    is_admin = role in ("admin", "super_admin")
+
+    # Resolve window (default: this week Mon..Sun)
+    try:
+        if start:
+            start_d = datetime.strptime(start, "%Y-%m-%d").date()
+        else:
+            today = datetime.now(timezone.utc).date()
+            start_d = today - timedelta(days=today.weekday())
+        if end:
+            end_d = datetime.strptime(end, "%Y-%m-%d").date()
+        else:
+            end_d = start_d + timedelta(days=6)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date; use YYYY-MM-DD")
+
+    cfg = await _get_timeoff_visibility()
+    led_ids = set()
+    if not is_admin:
+        # Non-admins: allowed if (summary enabled & audience everyone) OR they are a lead with a team.
+        led_ids = await _led_resource_ids(current_user)
+        audience_allows = cfg.get("enabled") and cfg.get("audience") == "everyone"
+        leads_allowed = bool(led_ids) and cfg.get("enabled") and cfg.get("audience") in ("everyone", "leads")
+        if not (audience_allows or leads_allowed):
+            # Not permitted to see others' availability.
+            return {"enabled": cfg.get("enabled", False), "audience": cfg.get("audience"),
+                    "scope": "none", "window": {"start": start_d.isoformat(), "end": end_d.isoformat()},
+                    "entries": []}
+
+    # Fetch approved leaves overlapping the window.
+    from utils import coerce_date
+    all_leaves = await leaves_collection.find({}).to_list(length=10000)
+    approved = [lv for lv in all_leaves if (lv.get("status") or "Approved") == "Approved"]
+
+    # Determine scope: admins -> all; leads (non-admin) -> only their team.
+    scope = "all"
+    allowed_rids = None
+    if not is_admin and not (cfg.get("enabled") and cfg.get("audience") == "everyone"):
+        scope = "team"
+        allowed_rids = led_ids
+
+    # Resource name map
+    rids = {lv.get("resource_id") for lv in approved if lv.get("resource_id")}
+    res_map = {}
+    obj_ids = []
+    for rid in rids:
+        try:
+            obj_ids.append(ObjectId(rid))
+        except Exception:
+            pass
+    if obj_ids:
+        async for r in resources_collection.find({"_id": {"$in": obj_ids}}, {"name": 1, "role": 1}):
+            res_map[str(r["_id"])] = {"name": r.get("name", "Unknown"), "role": r.get("role", "")}
+
+    entries = []
+    for lv in approved:
+        rid = lv.get("resource_id")
+        if allowed_rids is not None and rid not in allowed_rids:
+            continue
+        ls = coerce_date(lv.get("start_date"))
+        le = coerce_date(lv.get("end_date"))
+        if not ls or not le:
+            continue
+        if ls <= end_d and le >= start_d:  # overlaps window
+            info = res_map.get(rid, {})
+            entries.append({
+                "resource_id": rid,
+                "name": info.get("name", "Unknown"),
+                "role": info.get("role", ""),
+                "type": lv.get("type", "Leave"),  # availability type only, NOT the private note
+                "start_date": ls.isoformat(),
+                "end_date": le.isoformat(),
+            })
+
+    entries.sort(key=lambda e: (e["start_date"], e["name"]))
+    return {
+        "enabled": cfg.get("enabled", False),
+        "audience": cfg.get("audience"),
+        "scope": scope,
+        "window": {"start": start_d.isoformat(), "end": end_d.isoformat()},
+        "entries": entries,
+    }
+
+
+
 
 # Holiday endpoints
 @router.get("/api/holidays", response_model=List[HolidayResponse])

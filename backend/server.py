@@ -499,10 +499,30 @@ async def startup_event():
                 print(f"[HEALTH MONITOR] Error: {_hme}")
             await asyncio.sleep(24 * 60 * 60)
 
+    async def _periodic_proposal_reminders():
+        """Every ~6 hours, nudge clients on proposals viewed-but-not-accepted.
+        Best-effort; no-op when email isn't configured. Reminder link uses the
+        public host from env fallback (reminders sent without a live request)."""
+        await asyncio.sleep(1800)  # 30 min after boot
+        while True:
+            try:
+                import os as _os
+                if _os.environ.get("PROPOSAL_REMINDERS_ENABLED", "true").lower() != "false":
+                    from routes.proposals import run_proposal_reminders
+                    days = int(_os.environ.get("PROPOSAL_REMINDER_DAYS", "3"))
+                    base = _os.environ.get("PUBLIC_BASE_URL", "")  # optional; link omitted if unset
+                    result = await run_proposal_reminders(days=days, request_base_url=base)
+                    if result.get("reminders_sent"):
+                        print(f"[PROPOSAL REMINDERS] sent {result['reminders_sent']} (checked {result['checked']})")
+            except Exception as _pre:
+                print(f"[PROPOSAL REMINDERS] Error: {_pre}")
+            await asyncio.sleep(6 * 60 * 60)
+
     # Fire everything as background tasks — none block startup
     asyncio.create_task(_full_startup_init())
     asyncio.create_task(_prewarm_playwright())
     asyncio.create_task(_periodic_health_monitor())
+    asyncio.create_task(_periodic_proposal_reminders())
 
 
 @app.get("/health")

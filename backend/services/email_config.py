@@ -35,6 +35,15 @@ logger = logging.getLogger(__name__)
 ORG_ID = "default"
 
 
+async def get_email_settings_block() -> dict:
+    """Return the raw `email` settings block (templates/branding live here), or {}."""
+    try:
+        doc = await integration_settings_collection.find_one({"org_id": ORG_ID})
+    except Exception:
+        doc = None
+    return (doc or {}).get("email") or {}
+
+
 async def resolve_email_config() -> Optional[dict]:
     """Return the active email config for the current workspace, or None if email
     is not usable (disabled / incomplete for the chosen method).
@@ -227,17 +236,56 @@ def _send_via_smtp(cfg: dict, to_email: str, subject: str, html: str) -> Tuple[b
         return False, f"Email not sent: {e}"
 
 
-async def send_email(to_email: str, subject: str, html: str) -> Tuple[bool, str]:
-    """Send an email using the resolved per-workspace config and its active method.
+async def send_email(
+    to_email: str,
+    subject: str,
+    html: str,
+    *,
+    email_type: str = "other",
+    related_id: Optional[str] = None,
+    related_label: Optional[str] = None,
+) -> Tuple[bool, str]:
+    """Send an email using the resolved per-workspace config and its active method,
+    and record the attempt in the email delivery log.
 
     Returns (sent, message). Never raises — email is best-effort.
+    email_type: "proposal_link" | "report_link" | "report_code" | "proposal_reminder" | "test" | "other"
     """
     cfg = await resolve_email_config()
     if not cfg:
         logger.info("[email] not configured; skipping send (link available to copy)")
+        await _log_email(to_email, subject, email_type, related_id, related_label,
+                         method=None, sent=False, message="Email not configured")
         return False, "Email is not configured — share the link manually."
 
     import asyncio
-    if cfg.get("method") == "smtp":
-        return await asyncio.to_thread(_send_via_smtp, cfg, to_email, subject, html)
-    return await asyncio.to_thread(_send_via_resend, cfg, to_email, subject, html)
+    method = cfg.get("method", "resend")
+    if method == "smtp":
+        sent, message = await asyncio.to_thread(_send_via_smtp, cfg, to_email, subject, html)
+    else:
+        sent, message = await asyncio.to_thread(_send_via_resend, cfg, to_email, subject, html)
+
+    await _log_email(to_email, subject, email_type, related_id, related_label,
+                     method=method, sent=sent, message=message)
+    return sent, message
+
+
+async def _log_email(to_email, subject, email_type, related_id, related_label, *, method, sent, message):
+    """Best-effort write to the email delivery log. Never raises."""
+    try:
+        from datetime import datetime, timezone
+        from database import email_log_collection
+        await email_log_collection.insert_one({
+            "to": to_email,
+            "subject": subject,
+            "type": email_type,
+            "related_id": related_id,
+            "related_label": related_label,
+            "method": method,
+            "status": "sent" if sent else "failed",
+            "message": message,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as e:
+        logger.warning(f"[email] delivery-log write failed (non-fatal): {e}")
+

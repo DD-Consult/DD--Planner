@@ -11,7 +11,9 @@ import {
   confirmProposal,
   getProposalTemplates,
   createProposalFromTemplate,
-  createProposalFromDocument
+  createProposalFromDocument,
+  listDriveDocs,
+  createProposalFromDrive
 } from '../api';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
@@ -54,7 +56,8 @@ import {
   Copy, 
   CheckCircle2, 
   Trash2, 
-  FileText 
+  FileText,
+  Loader2
 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 
@@ -67,10 +70,15 @@ const Proposals = () => {
     client_name: '',
     proposal_title: '',
   });
-  const [createMode, setCreateMode] = useState('blank'); // 'blank' | 'project' | 'template' | 'document'
+  const [createMode, setCreateMode] = useState('blank'); // 'blank' | 'project' | 'template' | 'document' | 'drive'
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [uploadFile, setUploadFile] = useState(null);
+  const [driveFiles, setDriveFiles] = useState([]);
+  const [driveLoadingList, setDriveLoadingList] = useState(false);
+  const [driveError, setDriveError] = useState('');
+  const [selectedDriveDocId, setSelectedDriveDocId] = useState('');
+  const [driveUrl, setDriveUrl] = useState('');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -163,6 +171,24 @@ const Proposals = () => {
     },
   });
 
+  // Create-from-drive mutation (Phase 2d)
+  const fromDriveMutation = useMutation({
+    mutationFn: createProposalFromDrive,
+    onSuccess: (response) => {
+      queryClient.invalidateQueries(['proposals']);
+      setIsCreateDialogOpen(false);
+      setSelectedDriveDocId('');
+      setDriveUrl('');
+      setDriveFiles([]);
+      setDriveError('');
+      toast.success(response.data?.assistant_message || 'Proposal imported from Drive');
+      navigate(`/proposals/${response.data.id}/builder`);
+    },
+    onError: (err) => {
+      toast.error(err?.response?.data?.detail || 'Failed to import from Drive');
+    },
+  });
+
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: deleteProposal,
@@ -225,6 +251,24 @@ const Proposals = () => {
   const handleDelete = (id) => {
     if (window.confirm('Delete this proposal? This cannot be undone.')) {
       deleteMutation.mutate(id);
+    }
+  };
+
+  const handleLoadDriveDocs = async () => {
+    setDriveLoadingList(true);
+    setDriveError('');
+    setDriveFiles([]);
+    try {
+      const response = await listDriveDocs();
+      if (response.data.ok === false) {
+        setDriveError(response.data.message || 'Failed to load Google Drive documents');
+      } else {
+        setDriveFiles(response.data.files || []);
+      }
+    } catch (err) {
+      setDriveError(err?.response?.data?.detail || err?.response?.data?.message || 'Failed to load Google Drive documents');
+    } finally {
+      setDriveLoadingList(false);
     }
   };
 
@@ -435,7 +479,17 @@ const Proposals = () => {
         )}
 
         {/* Create Dialog */}
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
+          setIsCreateDialogOpen(open);
+          if (!open) {
+            // Reset all states when dialog closes
+            setDriveFiles([]);
+            setDriveLoadingList(false);
+            setDriveError('');
+            setSelectedDriveDocId('');
+            setDriveUrl('');
+          }
+        }}>
           <DialogContent data-testid="create-proposal-dialog">
             <DialogHeader>
               <DialogTitle>New Proposal</DialogTitle>
@@ -445,11 +499,12 @@ const Proposals = () => {
             </DialogHeader>
 
             <Tabs value={createMode} onValueChange={setCreateMode} className="py-2">
-              <TabsList className="grid w-full grid-cols-4">
+              <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="blank" data-testid="create-mode-blank">Blank</TabsTrigger>
                 <TabsTrigger value="project" data-testid="create-mode-project">From a project</TabsTrigger>
                 <TabsTrigger value="template" data-testid="create-mode-template">From template</TabsTrigger>
                 <TabsTrigger value="document" data-testid="create-mode-document">Upload document</TabsTrigger>
+                <TabsTrigger value="drive" data-testid="create-mode-drive">From Drive</TabsTrigger>
               </TabsList>
 
               <TabsContent value="blank" className="space-y-4 pt-4">
@@ -614,6 +669,80 @@ const Proposals = () => {
                     data-testid="create-from-document-submit"
                   >
                     {fromDocumentMutation.isPending ? 'Reading & drafting… this can take ~30–60s' : 'Upload & Draft'}
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="drive" className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <p className="text-sm text-[#667085]">
+                    Import a finalized brief straight from Google Drive. (Requires a super admin to connect Google Drive in Settings → Integrations.)
+                  </p>
+                  
+                  {!driveFiles.length && !driveError && (
+                    <Button
+                      onClick={handleLoadDriveDocs}
+                      disabled={driveLoadingList}
+                      variant="outline"
+                      className="w-full"
+                      data-testid="drive-load-btn"
+                    >
+                      {driveLoadingList && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {driveLoadingList ? 'Loading...' : 'Load my Google Docs'}
+                    </Button>
+                  )}
+
+                  {driveError && (
+                    <p className="text-sm text-red-600" data-testid="drive-error">
+                      {driveError}
+                    </p>
+                  )}
+
+                  {driveFiles.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Select a document</Label>
+                      <Select value={selectedDriveDocId} onValueChange={setSelectedDriveDocId}>
+                        <SelectTrigger data-testid="drive-doc-select">
+                          <SelectValue placeholder="Choose a Google Doc" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {driveFiles.map((file) => (
+                            <SelectItem key={file.id} value={file.id}>
+                              {file.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="drive-doc-url-input">...or paste a Google Doc link</Label>
+                    <Input
+                      id="drive-doc-url-input"
+                      value={driveUrl}
+                      onChange={(e) => setDriveUrl(e.target.value)}
+                      placeholder="https://docs.google.com/document/d/..."
+                      data-testid="drive-doc-url-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      const docId = selectedDriveDocId || driveUrl;
+                      if (!docId) return;
+                      fromDriveMutation.mutate({ doc_id: docId, use_ai: true });
+                    }}
+                    disabled={(!selectedDriveDocId && !driveUrl) || fromDriveMutation.isPending}
+                    className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
+                    data-testid="create-from-drive-submit"
+                  >
+                    {fromDriveMutation.isPending ? 'Importing… this can take ~30–60s' : 'Import & Open Builder'}
                   </Button>
                 </div>
               </TabsContent>

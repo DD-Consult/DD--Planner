@@ -118,6 +118,12 @@ class SmtpConfig(BaseModel):
     reply_to: str = ""
 
 
+class EmailBranding(BaseModel):
+    logo_url: str = ""
+    accent_color: str = "#1570EF"
+    company_name: str = "DD Consulting"
+
+
 class EmailConfig(BaseModel):
     enabled: bool = False
     method: str = "resend"      # "resend" | "smtp" — which transport is active
@@ -128,6 +134,9 @@ class EmailConfig(BaseModel):
     # Nested per-method config (preferred):
     resend: Optional[ResendConfig] = None
     smtp: Optional[SmtpConfig] = None
+    # Phase 2: editable templates { key: {subject, body} } + branding
+    templates: Optional[dict] = None
+    branding: Optional[EmailBranding] = None
 
 
 class IntegrationSettingsPayload(BaseModel):
@@ -212,14 +221,36 @@ async def get_integration_settings(current_user: dict = Depends(get_current_user
     smtp_block["has_password"] = bool(spw)
     smtp_block["password"] = ""   # never return the raw password
     # Build the sanitised email response.
+    from services.email_templates import get_default_templates
     settings["email"] = {
         "enabled": em.get("enabled", False),
         "method": em.get("method", "resend"),
         "resend": resend_block,
         "smtp": smtp_block,
+        # Templates: merge saved overrides onto defaults so the editor always has
+        # a full set with labels. `is_custom` flags which have been edited.
+        "templates": _merge_email_templates(em.get("templates") or {}),
+        "branding": em.get("branding") or {"logo_url": "", "accent_color": "#1570EF", "company_name": "DD Consulting"},
+        "default_templates": get_default_templates(),
     }
 
     return settings
+
+
+def _merge_email_templates(saved: dict) -> dict:
+    """Return {key: {label, subject, body, is_custom}} merging saved over defaults."""
+    from services.email_templates import get_default_templates
+    out = {}
+    defaults = get_default_templates()
+    for key, dflt in defaults.items():
+        s = saved.get(key) or {}
+        out[key] = {
+            "label": dflt.get("label", key),
+            "subject": s.get("subject") or dflt["subject"],
+            "body": s.get("body") or dflt["body"],
+            "is_custom": bool(s.get("subject") or s.get("body")),
+        }
+    return out
 
 
 # ─── PUT settings ─────────────────────────────────────────────────────────────
@@ -293,11 +324,42 @@ async def update_integration_settings(
         if not smtp_out["password"]:
             smtp_out["password"] = existing_smtp.get("password", "")
 
+        # Templates: store ONLY fields that differ from the built-in defaults so
+        # a blank/equal template falls back to the default automatically.
+        from services.email_templates import DEFAULT_TEMPLATES
+        templates_out = existing_email.get("templates") or {}
+        if em_in.get("templates") is not None:
+            templates_out = {}
+            for key, val in (em_in.get("templates") or {}).items():
+                if key not in DEFAULT_TEMPLATES or not isinstance(val, dict):
+                    continue
+                subj = (val.get("subject") or "").strip()
+                body = (val.get("body") or "").strip()
+                entry = {}
+                # Keep override only if it differs from default (empty == reset).
+                if subj and subj != DEFAULT_TEMPLATES[key]["subject"]:
+                    entry["subject"] = subj
+                if body and body != DEFAULT_TEMPLATES[key]["body"]:
+                    entry["body"] = body
+                if entry:
+                    templates_out[key] = entry
+
+        branding_out = existing_email.get("branding") or {}
+        if em_in.get("branding") is not None:
+            b = em_in["branding"] or {}
+            branding_out = {
+                "logo_url": b.get("logo_url") or "",
+                "accent_color": b.get("accent_color") or "#1570EF",
+                "company_name": b.get("company_name") or "DD Consulting",
+            }
+
         update_doc["email"] = {
             "enabled": em_in.get("enabled", False),
             "method": (em_in.get("method") or "resend").lower(),
             "resend": resend_out,
             "smtp": smtp_out,
+            "templates": templates_out,
+            "branding": branding_out,
         }
 
     await integration_settings_collection.update_one(
@@ -373,8 +435,22 @@ async def test_email(payload: TestEmailPayload, current_user: dict = Depends(get
         "<p style=\"color:#999;font-size:12px;\">DD Consulting — Project Management Platform</p>"
         "</div>"
     )
-    sent, message = await send_email(to_addr, "DD Planner — test email", html)
+    sent, message = await send_email(to_addr, "DD Planner — test email", html, email_type="test")
     return {"ok": sent, "message": (f"Test email sent to {to_addr}." if sent else message)}
+
+
+# ─── Email delivery log (Phase 3) ──────────────────────────────────────────────
+
+@router.get("/api/integrations/email/log")
+async def get_email_log(limit: int = 100, current_user: dict = Depends(get_current_user)):
+    """Return the recent email delivery log (super_admin only)."""
+    _require_super_admin(current_user)
+    from database import email_log_collection
+    from utils import serialize_doc
+    limit = max(1, min(int(limit or 100), 500))
+    cursor = email_log_collection.find().sort("created_at", -1).limit(limit)
+    rows = await cursor.to_list(length=limit)
+    return [serialize_doc(r) for r in rows]
 
 
 

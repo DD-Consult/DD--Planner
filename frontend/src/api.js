@@ -222,6 +222,9 @@ export const getPendingLeaves = () => api.get('/leaves/pending');
 export const approveLeave = (id, note) => api.put(`/leaves/${id}/approve`, note ? { note } : {});
 export const rejectLeave = (id, note) => api.put(`/leaves/${id}/reject`, note ? { note } : {});
 export const setLeaveStatus = (id, status, note) => api.put(`/leaves/${id}/set-status`, { status, ...(note ? { note } : {}) });
+export const getWhosOut = (start, end) => api.get('/leaves/whos-out', { params: { ...(start ? { start } : {}), ...(end ? { end } : {}) } });
+export const getTimeOffVisibility = () => api.get('/settings/timeoff-visibility');
+export const setTimeOffVisibility = (cfg) => api.put('/settings/timeoff-visibility', cfg);
 
 
 // Holidays
@@ -592,6 +595,8 @@ export const getPortfolioTrends = () => api.get('/insights/portfolio/trends');
 export const getIntegrationSettings = () => api.get('/integrations/settings');
 export const updateIntegrationSettings = (data) => api.put('/integrations/settings', data);
 export const testEmailConfig = (to) => api.post('/integrations/email/test', to ? { to } : {});
+export const getEmailLog = (limit = 100) => api.get('/integrations/email/log', { params: { limit } });
+export const runProposalReminders = (days) => api.post('/proposals/reminders/run', {}, { params: days ? { days } : {} });
 export const testHubSpotConnection = (token) => api.post('/integrations/hubspot/test', { token });
 export const regenerateAgentApiKey = () => api.post('/integrations/agent-api/regenerate');
 export const getIntegrationSyncLogs = (limit = 50) => api.get('/integrations/sync-logs', { params: { limit } });
@@ -644,6 +649,9 @@ export const deleteProposalTemplate = (id) => api.delete(`/proposal-templates/${
 export const createProposalFromTemplate = (payload) => api.post('/proposals/from-template', payload); // {template_id, client_name?, proposal_title?}
 // Phase 2c document ingestion (multipart). pass a FormData with file + use_ai
 export const createProposalFromDocument = (formData) => api.post('/proposals/from-document', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+// Live Google Drive import
+export const listDriveDocs = (folderId) => api.get('/proposals/drive/docs', { params: folderId ? { folder_id: folderId } : {} });
+export const createProposalFromDrive = (payload) => api.post('/proposals/from-drive', payload); // {doc_id, use_ai?}
 export const updateProposal = (id, data) => api.put(`/proposals/${id}`, { data }); // data = full brief object
 export const aiDraftProposal = (id, payload) => api.post(`/proposals/${id}/ai-draft`, payload); // {message, current_data?} -> {assistant_message, data, warnings}
 export const previewProposal = (id) => api.post(`/proposals/${id}/preview`, {}, { responseType: 'text' }); // returns HTML string

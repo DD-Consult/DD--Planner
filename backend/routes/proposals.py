@@ -72,33 +72,19 @@ def _public_base_url(request: Request) -> str:
 
 
 async def send_proposal_link_email(email: str, link: str, client_name: str, title: str):
-    """Send proposal link email via the per-workspace Resend config.
+    """Send proposal link email via the active method + editable template/branding.
 
     Returns (sent: bool, message: str). Best-effort — never raises.
     """
-    from services.email_config import send_email
-    html_content = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #1B2A47;">Your Proposal from DD Consulting</h2>
-        <p>Hi {client_name},</p>
-        <p>Your proposal <strong>{title}</strong> is ready to view.</p>
-        <div style="text-align: center; margin: 30px 0;">
-            <a href="{link}" style="background: #1570EF; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600;">
-                View Proposal
-            </a>
-        </div>
-        <p style="background: #EFF6FF; padding: 15px; border-left: 4px solid #1570EF; border-radius: 4px; font-size: 14px;">
-            <strong>🔒 Security:</strong> This is a secure, unique link for your review.
-        </p>
-        <p style="color: #666; font-size: 14px;">You can also copy this link:</p>
-        <p style="background: #f3f4f6; padding: 10px; border-radius: 4px; word-break: break-all; font-size: 12px; font-family: monospace;">
-            {link}
-        </p>
-        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
-        <p style="color: #999; font-size: 12px;">DD Consulting</p>
-    </div>
-    """
-    return await send_email(email, f"Proposal: {title}", html_content)
+    from services.email_config import send_email, get_email_settings_block
+    from services.email_templates import render_email
+    email_block = await get_email_settings_block()
+    subject, html = render_email(email_block, "proposal_link", {
+        "client_name": client_name,
+        "proposal_title": title,
+        "link": link,
+    })
+    return await send_email(email, subject, html, email_type="proposal_link", related_label=title)
 
 
 # ============================================================
@@ -274,6 +260,11 @@ class ProposalFromTemplateRequest(BaseModel):
     template_id: str
     client_name: Optional[str] = None
     proposal_title: Optional[str] = None
+
+
+class ProposalFromDriveRequest(BaseModel):
+    doc_id: str          # Google Doc id or full URL
+    use_ai: bool = True
 
 
 # ============================================================
@@ -687,40 +678,17 @@ async def create_proposal_from_template(req: ProposalFromTemplateRequest, admin:
 # DOCUMENT INGESTION (Phase 2c — upload .docx/.pdf/.txt)
 # ============================================================
 
-@router.post("/api/proposals/from-document")
-async def create_proposal_from_document(
-    file: UploadFile = File(...),
-    use_ai: bool = Form(True),
-    admin: dict = Depends(require_admin),
-):
-    """Create a new proposal by ingesting an uploaded source document (Phase 2c).
-
-    Accepts .docx / .pdf / .txt / .md. Extracts the text and (by default) uses
-    the AI to map it into the nine-chapter brief. The PM refines in the builder.
-    Falls back to the scaffold with the raw text in the understanding section if
-    the AI is unavailable.
-    """
-    # Read the file (cap size to protect the server/proxy).
-    content = await file.read()
-    MAX_BYTES = 15 * 1024 * 1024  # 15 MB
-    if len(content) > MAX_BYTES:
-        raise HTTPException(status_code=400, detail="File too large (max 15 MB).")
-
-    try:
-        source_text = extract_text(file.filename or "", content)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not read the document: {e}")
-
+async def _build_proposal_from_text(source_text: str, use_ai: bool, source_meta: dict, created_by: str):
+    """Shared: turn extracted source text into a saved Draft proposal (used by
+    document upload AND Google Drive import). Returns serialized proposal + note + warnings."""
     scaffold = load_sample_brief()
     data = scaffold
-    assistant_note = "Imported from uploaded document."
+    assistant_note = "Imported from source document."
     warnings = []
 
     if use_ai:
         system_prompt = f"""You are an AI proposal assistant for DD Consulting, a digital transformation consultancy.
-You will turn the CONTENT of an uploaded source document into a complete, on-brand client proposal brief.
+You will turn the CONTENT of a source document into a complete, on-brand client proposal brief.
 
 ## PROPOSAL BRIEF SCHEMA (return EXACTLY this structure, every key present)
 {json.dumps(scaffold, indent=2)}
@@ -748,23 +716,15 @@ Return ONLY valid JSON: {{"assistant_message": "<1-2 sentence summary of what yo
                 except SystemExit as e:
                     warnings.append(f"Validation note: {str(e)}")
             else:
-                data = _coerce_valid_brief(
-                    {"understanding": {"paragraphs": [source_text[:4000]]}}, scaffold
-                )
-                assistant_note = "AI mapping unavailable — imported the raw document text into the Understanding section; please refine in the builder."
+                data = _coerce_valid_brief({"understanding": {"paragraphs": [source_text[:4000]]}}, scaffold)
+                assistant_note = "AI mapping unavailable — imported the raw text into the Understanding section; please refine in the builder."
         except Exception as e:
-            print(f"[PROPOSALS] from-document AI mapping failed: {e}")
-            data = _coerce_valid_brief(
-                {"understanding": {"paragraphs": [source_text[:4000]]}}, scaffold
-            )
-            assistant_note = "AI mapping failed — imported the raw document text into the Understanding section; please refine in the builder."
+            print(f"[PROPOSALS] import AI mapping failed: {e}")
+            data = _coerce_valid_brief({"understanding": {"paragraphs": [source_text[:4000]]}}, scaffold)
+            assistant_note = "AI mapping failed — imported the raw text into the Understanding section; please refine in the builder."
     else:
-        # No AI: drop the raw text into the understanding section.
-        data = _coerce_valid_brief(
-            {"understanding": {"paragraphs": [source_text[:4000]]}}, scaffold
-        )
+        data = _coerce_valid_brief({"understanding": {"paragraphs": [source_text[:4000]]}}, scaffold)
 
-    # Unique slug
     client_slug = (data.get("client_name") or "proposal").lower().replace(" ", "-")
     data["proposal_slug"] = f"{client_slug}-{str(uuid_module.uuid4())[:8]}"
 
@@ -772,7 +732,7 @@ Return ONLY valid JSON: {{"assistant_message": "<1-2 sentence summary of what yo
         "token": generate_secure_token(32),
         "status": "Draft",
         "data": data,
-        "created_by": admin.get("email", ""),
+        "created_by": created_by,
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
         "sent_at": None,
@@ -787,15 +747,67 @@ Return ONLY valid JSON: {{"assistant_message": "<1-2 sentence summary of what yo
         "linked_client_user_id": None,
         "linked_report_token": None,
         "last_client_activity_at": None,
-        "source": {"type": "document", "filename": file.filename},
+        "source": source_meta,
     }
     result = await proposals_collection.insert_one(proposal_doc)
     proposal_doc["_id"] = result.inserted_id
-
     out = serialize_doc(proposal_doc)
     out["assistant_message"] = assistant_note
     out["warnings"] = warnings
     return out
+
+
+@router.post("/api/proposals/from-document")
+async def create_proposal_from_document(
+    file: UploadFile = File(...),
+    use_ai: bool = Form(True),
+    admin: dict = Depends(require_admin),
+):
+    """Create a new proposal by ingesting an uploaded source document (Phase 2c)."""
+    content = await file.read()
+    MAX_BYTES = 15 * 1024 * 1024  # 15 MB
+    if len(content) > MAX_BYTES:
+        raise HTTPException(status_code=400, detail="File too large (max 15 MB).")
+    try:
+        source_text = extract_text(file.filename or "", content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read the document: {e}")
+
+    return await _build_proposal_from_text(
+        source_text, use_ai,
+        {"type": "document", "filename": file.filename},
+        admin.get("email", ""),
+    )
+
+
+# ============================================================
+# GOOGLE DRIVE IMPORT (live fetch via service account)
+# ============================================================
+
+@router.get("/api/proposals/drive/docs")
+async def list_drive_documents(folder_id: Optional[str] = None, admin: dict = Depends(require_admin)):
+    """List Google Docs the configured service account can see (admin)."""
+    from services.proposals.drive_import import list_drive_docs
+    files, err = await list_drive_docs(folder_id=folder_id)
+    if err:
+        return {"ok": False, "message": err, "files": []}
+    return {"ok": True, "files": files}
+
+
+@router.post("/api/proposals/from-drive")
+async def create_proposal_from_drive(req: ProposalFromDriveRequest, admin: dict = Depends(require_admin)):
+    """Create a proposal by importing a Google Doc directly from Drive."""
+    from services.proposals.drive_import import fetch_doc_text, extract_doc_id
+    text, err = await fetch_doc_text(req.doc_id)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    return await _build_proposal_from_text(
+        text, req.use_ai,
+        {"type": "drive", "doc_id": extract_doc_id(req.doc_id)},
+        admin.get("email", ""),
+    )
 
 
 
@@ -1302,6 +1314,87 @@ async def get_proposal_events(id: str, admin: dict = Depends(require_admin)):
             "accepted": accepted,
         }
     }
+
+
+# ============================================================
+# REMINDERS (Phase 3) — "viewed but not accepted after N days"
+# ============================================================
+
+async def run_proposal_reminders(days: int = 3, request_base_url: Optional[str] = None) -> dict:
+    """Find Sent/Viewed proposals with client activity older than `days` that
+    haven't been Accepted/Confirmed/Declined/Expired and haven't already been
+    reminded, and email the client contact a gentle nudge. Best-effort.
+
+    Returns a summary dict. Safe to run repeatedly (sends at most one reminder
+    per proposal via reminder_sent_at).
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=days)
+    sent_count = 0
+    checked = 0
+
+    # Candidates: status Sent or Viewed, no reminder yet.
+    cursor = proposals_collection.find({
+        "status": {"$in": ["Sent", "Viewed"]},
+        "reminder_sent_at": {"$in": [None, ""]},
+    })
+    candidates = await cursor.to_list(length=500)
+    for p in candidates:
+        checked += 1
+        # Use last client activity, else sent_at, as the "since" marker.
+        marker = p.get("last_client_activity_at") or p.get("sent_at")
+        if not marker:
+            continue
+        try:
+            marker_dt = marker if isinstance(marker, datetime) else dateutil_parse(str(marker))
+            if marker_dt.tzinfo is None:
+                marker_dt = marker_dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+        if marker_dt > cutoff:
+            continue  # too recent
+
+        data = p.get("data", {}) or {}
+        contact_email = data.get("contact_email")
+        if not contact_email:
+            continue
+
+        # Build the proposal link (reuse public base if available).
+        base = (request_base_url or "").rstrip("/")
+        link = f"{base}/proposal/{p.get('token')}" if base else None
+
+        from services.email_config import send_email, get_email_settings_block
+        from services.email_templates import render_email, DEFAULT_TEMPLATES
+        email_block = await get_email_settings_block()
+        # Reuse the proposal_link template but with a reminder-flavoured subject fallback.
+        client_name = data.get("client_name", "there")
+        title = data.get("proposal_title", "your proposal")
+        ctx = {"client_name": client_name, "proposal_title": title, "link": link or ""}
+        subject, html = render_email(email_block, "proposal_link", ctx)
+        subject = f"Reminder: {subject}"
+
+        sent, _msg = await send_email(
+            contact_email, subject, html,
+            email_type="proposal_reminder", related_id=str(p["_id"]), related_label=title,
+        )
+        # Mark as reminded regardless of send outcome, so we don't spam on failures.
+        await proposals_collection.update_one(
+            {"_id": p["_id"]},
+            {"$set": {"reminder_sent_at": now.isoformat()}},
+        )
+        if sent:
+            sent_count += 1
+
+    return {"checked": checked, "reminders_sent": sent_count, "days": days}
+
+
+@router.post("/api/proposals/reminders/run")
+async def trigger_proposal_reminders(request: Request, days: int = 3, admin: dict = Depends(require_admin)):
+    """Manually trigger the 'viewed but not accepted' reminder sweep (admin)."""
+    base = _public_base_url(request)
+    result = await run_proposal_reminders(days=days, request_base_url=base)
+    return result
+
 
 
 # ============================================================

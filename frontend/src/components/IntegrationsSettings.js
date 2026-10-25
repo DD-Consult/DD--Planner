@@ -6,10 +6,11 @@ import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import { Switch } from '../components/ui/switch';
 import { Textarea } from '../components/ui/textarea';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../components/ui/collapsible';
 import {
   getIntegrationSettings, updateIntegrationSettings,
   testHubSpotConnection, regenerateAgentApiKey, getIntegrationSyncLogs,
-  testEmailConfig,
+  testEmailConfig, getEmailLog, runProposalReminders,
 } from '../api';
 import { toast } from 'sonner';
 import {
@@ -129,6 +130,16 @@ export default function IntegrationsSettings() {
   const [smtpFrom, setSmtpFrom] = useState('');
   const [smtpReplyTo, setSmtpReplyTo] = useState('');
   const [emailTestResult, setEmailTestResult] = useState(null);
+  // Email templates & branding
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [brandingCompany, setBrandingCompany] = useState('');
+  const [brandingAccent, setBrandingAccent] = useState('#1570EF');
+  const [brandingLogo, setBrandingLogo] = useState('');
+  const [templates, setTemplates] = useState({
+    proposal_link: { subject: '', body: '' },
+    report_link: { subject: '', body: '' },
+    report_code: { subject: '', body: '' },
+  });
 
   // Populate from fetched settings
   useEffect(() => {
@@ -156,6 +167,26 @@ export default function IntegrationsSettings() {
     setSmtpUsername(s.username || '');
     setSmtpFrom(s.from_email || '');
     setSmtpReplyTo(s.reply_to || '');
+    // Populate templates & branding
+    const branding = email.branding || {};
+    setBrandingCompany(branding.company_name || '');
+    setBrandingAccent(branding.accent_color || '#1570EF');
+    setBrandingLogo(branding.logo_url || '');
+    const tmpl = email.templates || {};
+    setTemplates({
+      proposal_link: { 
+        subject: tmpl.proposal_link?.subject || '', 
+        body: tmpl.proposal_link?.body || '' 
+      },
+      report_link: { 
+        subject: tmpl.report_link?.subject || '', 
+        body: tmpl.report_link?.body || '' 
+      },
+      report_code: { 
+        subject: tmpl.report_code?.subject || '', 
+        body: tmpl.report_code?.body || '' 
+      },
+    });
   }, [settings]);
 
 
@@ -243,6 +274,25 @@ export default function IntegrationsSettings() {
           from_email: smtpFrom || '',
           reply_to: smtpReplyTo || '',
         },
+        templates: {
+          proposal_link: { 
+            subject: templates.proposal_link.subject, 
+            body: templates.proposal_link.body 
+          },
+          report_link: { 
+            subject: templates.report_link.subject, 
+            body: templates.report_link.body 
+          },
+          report_code: { 
+            subject: templates.report_code.subject, 
+            body: templates.report_code.body 
+          },
+        },
+        branding: {
+          logo_url: brandingLogo,
+          accent_color: brandingAccent,
+          company_name: brandingCompany,
+        },
       },
     }),
     onSuccess: () => {
@@ -268,6 +318,22 @@ export default function IntegrationsSettings() {
       setIsEmailTesting(false);
     }
   };
+
+  // ── Email delivery log (Phase 3) ────────────────────────────────────────────
+  const [showEmailLog, setShowEmailLog] = useState(false);
+  const { data: emailLog = [], refetch: refetchEmailLog, isFetching: emailLogLoading } = useQuery({
+    queryKey: ['emailLog'],
+    queryFn: async () => { const r = await getEmailLog(100); return r.data; },
+    enabled: false,
+  });
+  const remindersMutation = useMutation({
+    mutationFn: () => runProposalReminders(),
+    onSuccess: (r) => {
+      toast.success(`Reminder sweep: ${r.data.reminders_sent} sent (checked ${r.data.checked}).`);
+      refetchEmailLog();
+    },
+    onError: (err) => toast.error(err.response?.data?.detail || 'Reminder run failed'),
+  });
 
   // ── Regenerate agent key ───────────────────────────────────────────────────
   const regenMutation = useMutation({
@@ -760,6 +826,241 @@ export default function IntegrationsSettings() {
           </div>
         )}
 
+        {/* Email templates & branding collapsible section */}
+        <Collapsible open={showTemplates} onOpenChange={setShowTemplates} className="mt-4">
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex items-center justify-between w-full p-3 bg-[#F9FAFB] border border-[#E6E8EC] rounded-lg hover:bg-slate-50 transition-colors"
+              data-testid="email-templates-section"
+            >
+              <div className="text-left">
+                <p className="text-sm font-medium text-[#0B1220]">Email content & branding</p>
+                <p className="text-xs text-[#667085]">Customize email templates and company branding</p>
+              </div>
+              {showTemplates ? <ChevronUp size={16} className="text-[#667085]" /> : <ChevronDown size={16} className="text-[#667085]" />}
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-4 space-y-4">
+            {/* Branding row */}
+            <div className="border border-[#E6E8EC] rounded-lg p-4 space-y-3">
+              <p className="text-xs font-semibold text-[#667085] uppercase tracking-wider">Branding</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-sm">Company name</Label>
+                  <Input
+                    value={brandingCompany}
+                    onChange={(e) => setBrandingCompany(e.target.value)}
+                    placeholder="Your Company Ltd"
+                    data-testid="branding-company-input"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm">Accent colour</Label>
+                  <div className="flex gap-2 items-center">
+                    <Input
+                      value={brandingAccent}
+                      onChange={(e) => setBrandingAccent(e.target.value)}
+                      placeholder="#1570EF"
+                      data-testid="branding-accent-input"
+                    />
+                    <div
+                      className="w-8 h-8 rounded border border-[#E6E8EC] shrink-0"
+                      style={{ backgroundColor: brandingAccent }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-sm">Logo URL</Label>
+                  <Input
+                    value={brandingLogo}
+                    onChange={(e) => setBrandingLogo(e.target.value)}
+                    placeholder="https://..."
+                    data-testid="branding-logo-input"
+                  />
+                  <p className="text-xs text-[#667085] mt-1">Paste a hosted logo image URL (optional)</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Template editors */}
+            <div className="border border-[#E6E8EC] rounded-lg p-4 space-y-4">
+              <div>
+                <p className="text-xs font-semibold text-[#667085] uppercase tracking-wider">Email Templates</p>
+                <p className="text-xs text-[#667085] mt-1">Leave a field blank to use the built‑in default. Emails are wrapped with your branding automatically.</p>
+              </div>
+
+              {/* Proposal link template */}
+              {settings?.email?.templates?.proposal_link && (
+                <div className="space-y-2 pb-4 border-b border-[#F2F4F7]">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-[#0B1220]">{settings.email.templates.proposal_link.label || 'Proposal Link Email'}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const defaults = settings.email.default_templates?.proposal_link || {};
+                        setTemplates(prev => ({
+                          ...prev,
+                          proposal_link: { subject: defaults.subject || '', body: defaults.body || '' }
+                        }));
+                      }}
+                      data-testid="tmpl-proposal_link-reset"
+                    >
+                      Reset to default
+                    </Button>
+                  </div>
+                  <div>
+                    <Label className="text-sm">Subject</Label>
+                    <Input
+                      value={templates.proposal_link.subject}
+                      onChange={(e) => setTemplates(prev => ({
+                        ...prev,
+                        proposal_link: { ...prev.proposal_link, subject: e.target.value }
+                      }))}
+                      placeholder={settings.email.default_templates?.proposal_link?.subject || ''}
+                      data-testid="tmpl-proposal_link-subject"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">Body</Label>
+                    <Textarea
+                      rows={6}
+                      value={templates.proposal_link.body}
+                      onChange={(e) => setTemplates(prev => ({
+                        ...prev,
+                        proposal_link: { ...prev.proposal_link, body: e.target.value }
+                      }))}
+                      placeholder={settings.email.default_templates?.proposal_link?.body || ''}
+                      className="font-mono text-xs"
+                      data-testid="tmpl-proposal_link-body"
+                    />
+                    <p className="text-xs text-[#667085] mt-1">
+                      Available fields: <code className="bg-[#F9FAFB] px-1 rounded">{'{client_name}'}</code>{' '}
+                      <code className="bg-[#F9FAFB] px-1 rounded">{'{proposal_title}'}</code>{' '}
+                      <code className="bg-[#F9FAFB] px-1 rounded">{'{link}'}</code>{' '}
+                      <code className="bg-[#F9FAFB] px-1 rounded">{'{company_name}'}</code>
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Report link template */}
+              {settings?.email?.templates?.report_link && (
+                <div className="space-y-2 pb-4 border-b border-[#F2F4F7]">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-[#0B1220]">{settings.email.templates.report_link.label || 'Report Link Email'}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const defaults = settings.email.default_templates?.report_link || {};
+                        setTemplates(prev => ({
+                          ...prev,
+                          report_link: { subject: defaults.subject || '', body: defaults.body || '' }
+                        }));
+                      }}
+                      data-testid="tmpl-report_link-reset"
+                    >
+                      Reset to default
+                    </Button>
+                  </div>
+                  <div>
+                    <Label className="text-sm">Subject</Label>
+                    <Input
+                      value={templates.report_link.subject}
+                      onChange={(e) => setTemplates(prev => ({
+                        ...prev,
+                        report_link: { ...prev.report_link, subject: e.target.value }
+                      }))}
+                      placeholder={settings.email.default_templates?.report_link?.subject || ''}
+                      data-testid="tmpl-report_link-subject"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">Body</Label>
+                    <Textarea
+                      rows={6}
+                      value={templates.report_link.body}
+                      onChange={(e) => setTemplates(prev => ({
+                        ...prev,
+                        report_link: { ...prev.report_link, body: e.target.value }
+                      }))}
+                      placeholder={settings.email.default_templates?.report_link?.body || ''}
+                      className="font-mono text-xs"
+                      data-testid="tmpl-report_link-body"
+                    />
+                    <p className="text-xs text-[#667085] mt-1">
+                      Available fields: <code className="bg-[#F9FAFB] px-1 rounded">{'{client_name}'}</code>{' '}
+                      <code className="bg-[#F9FAFB] px-1 rounded">{'{project_name}'}</code>{' '}
+                      <code className="bg-[#F9FAFB] px-1 rounded">{'{link}'}</code>{' '}
+                      <code className="bg-[#F9FAFB] px-1 rounded">{'{company_name}'}</code>
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Report code template */}
+              {settings?.email?.templates?.report_code && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-[#0B1220]">{settings.email.templates.report_code.label || 'Report Code Email'}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const defaults = settings.email.default_templates?.report_code || {};
+                        setTemplates(prev => ({
+                          ...prev,
+                          report_code: { subject: defaults.subject || '', body: defaults.body || '' }
+                        }));
+                      }}
+                      data-testid="tmpl-report_code-reset"
+                    >
+                      Reset to default
+                    </Button>
+                  </div>
+                  <div>
+                    <Label className="text-sm">Subject</Label>
+                    <Input
+                      value={templates.report_code.subject}
+                      onChange={(e) => setTemplates(prev => ({
+                        ...prev,
+                        report_code: { ...prev.report_code, subject: e.target.value }
+                      }))}
+                      placeholder={settings.email.default_templates?.report_code?.subject || ''}
+                      data-testid="tmpl-report_code-subject"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">Body</Label>
+                    <Textarea
+                      rows={6}
+                      value={templates.report_code.body}
+                      onChange={(e) => setTemplates(prev => ({
+                        ...prev,
+                        report_code: { ...prev.report_code, body: e.target.value }
+                      }))}
+                      placeholder={settings.email.default_templates?.report_code?.body || ''}
+                      className="font-mono text-xs"
+                      data-testid="tmpl-report_code-body"
+                    />
+                    <p className="text-xs text-[#667085] mt-1">
+                      Available fields: <code className="bg-[#F9FAFB] px-1 rounded">{'{client_name}'}</code>{' '}
+                      <code className="bg-[#F9FAFB] px-1 rounded">{'{project_name}'}</code>{' '}
+                      <code className="bg-[#F9FAFB] px-1 rounded">{'{code}'}</code>{' '}
+                      <code className="bg-[#F9FAFB] px-1 rounded">{'{company_name}'}</code>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
         {/* Shared actions */}
         <div className="flex flex-wrap items-center gap-2 mt-4">
           <Button
@@ -796,6 +1097,65 @@ export default function IntegrationsSettings() {
             <span>{emailTestResult.message}</span>
           </div>
         )}
+
+        {/* Delivery log + reminders (Phase 3) */}
+        <div className="mt-6 border-t border-[#E6E8EC] pt-4" data-testid="email-log-section">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setShowEmailLog(!showEmailLog); if (!showEmailLog) refetchEmailLog(); }}>
+              {showEmailLog ? <ChevronUp size={16} className="text-[#667085]" /> : <ChevronDown size={16} className="text-[#667085]" />}
+              <span className="text-sm font-semibold text-[#0B1220]">Delivery log</span>
+              <span className="text-xs text-[#667085]">— what was emailed, to whom, and whether it sent</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => remindersMutation.mutate()}
+                disabled={remindersMutation.isPending}
+                data-testid="run-reminders-btn"
+                title="Email clients whose proposals were viewed but not accepted after 3 days"
+              >
+                {remindersMutation.isPending ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Mail size={14} className="mr-1" />}
+                Run reminder sweep
+              </Button>
+            </div>
+          </div>
+          {showEmailLog && (
+            <div className="mt-3" data-testid="email-log-table">
+              {emailLogLoading ? (
+                <div className="flex items-center gap-2 text-sm text-[#667085] py-3"><Loader2 size={14} className="animate-spin" /> Loading…</div>
+              ) : emailLog.length === 0 ? (
+                <p className="text-sm text-[#98A2B3] py-3">No emails sent yet.</p>
+              ) : (
+                <div className="border border-[#E6E8EC] rounded-lg overflow-hidden text-sm">
+                  <div className="grid grid-cols-12 gap-2 bg-[#F9FAFB] px-3 py-2 text-xs font-semibold text-[#667085] uppercase tracking-wider">
+                    <div className="col-span-3">When</div>
+                    <div className="col-span-3">To</div>
+                    <div className="col-span-2">Type</div>
+                    <div className="col-span-2">Status</div>
+                    <div className="col-span-2">Via</div>
+                  </div>
+                  <div className="divide-y divide-[#F2F4F7] max-h-80 overflow-y-auto">
+                    {emailLog.map((row) => (
+                      <div key={row.id} className="grid grid-cols-12 gap-2 px-3 py-2 items-center" title={row.message || ''}>
+                        <div className="col-span-3 text-xs text-[#667085]">{row.created_at ? new Date(row.created_at).toLocaleString() : '—'}</div>
+                        <div className="col-span-3 truncate">{row.to}</div>
+                        <div className="col-span-2 text-xs">{(row.type || '').replace(/_/g, ' ')}</div>
+                        <div className="col-span-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${row.status === 'sent' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {row.status}
+                          </span>
+                        </div>
+                        <div className="col-span-2 text-xs text-[#667085]">{row.method || '—'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* ── Coming Soon CRMs ── */}

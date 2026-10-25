@@ -222,6 +222,7 @@ ai_knowledge_base_collection = LazyCollection('ai_knowledge_base')
 proposals_collection = LazyCollection('proposals')
 proposal_events_collection = LazyCollection('proposal_events')
 proposal_templates_collection = LazyCollection('proposal_templates')
+email_log_collection = LazyCollection('email_log')
 
 # --- Email Configuration (unchanged) ---
 RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')

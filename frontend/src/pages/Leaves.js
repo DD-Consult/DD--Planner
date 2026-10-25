@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getLeaves, deleteLeave, getResources, getMyResource, getPendingLeaves, approveLeave, rejectLeave, setLeaveStatus } from '../api';
+import { getLeaves, deleteLeave, getResources, getMyResource, getPendingLeaves, approveLeave, rejectLeave, setLeaveStatus, getWhosOut, getTimeOffVisibility, setTimeOffVisibility } from '../api';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import {
@@ -17,9 +17,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
-import { CalendarOff, Plus, Trash2, Loader2, MoreHorizontal } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
+import { Switch } from '../components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Label } from '../components/ui/label';
+import { CalendarOff, Plus, Trash2, Loader2, MoreHorizontal, Users } from 'lucide-react';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { AddLeaveDialog } from '../components/AddLeaveDialog';
 import { useQuery as useMe } from '@tanstack/react-query';
 import { getMe } from '../api';
@@ -39,6 +43,48 @@ const Leaves = () => {
   const isSuperAdmin = meData?.role === 'super_admin';
   // Everyone except super admin now has an OWN-ONLY view (incl. regular admins).
   const ownOnly = !isSuperAdmin;
+
+  // Who's out this week — data
+  const { data: whosOutData } = useQuery({
+    queryKey: ['whosOut'],
+    queryFn: async () => {
+      const response = await getWhosOut();
+      return response.data;
+    },
+  });
+
+  // Time off visibility config
+  const { data: visibilityData } = useQuery({
+    queryKey: ['timeoffVisibility'],
+    queryFn: async () => {
+      const response = await getTimeOffVisibility();
+      return response.data;
+    },
+  });
+
+  // Local state for visibility config (super_admin only)
+  const [localEnabled, setLocalEnabled] = useState(false);
+  const [localAudience, setLocalAudience] = useState('admins');
+
+  useEffect(() => {
+    if (visibilityData) {
+      setLocalEnabled(visibilityData.enabled || false);
+      setLocalAudience(visibilityData.audience || 'admins');
+    }
+  }, [visibilityData]);
+
+  // Mutation to update visibility
+  const updateVisibilityMutation = useMutation({
+    mutationFn: setTimeOffVisibility,
+    onSuccess: () => {
+      toast.success('Visibility updated');
+      queryClient.invalidateQueries({ queryKey: ['timeoffVisibility'] });
+      queryClient.invalidateQueries({ queryKey: ['whosOut'] });
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.detail || 'Failed to update visibility');
+    },
+  });
 
   // Fetch pending leaves for the approval queue (super_admin only — only they can approve)
   const { data: pendingLeaves } = useQuery({
@@ -283,6 +329,108 @@ const Leaves = () => {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Who's out this week card */}
+      {(isSuperAdmin || (whosOutData?.entries && whosOutData.entries.length > 0) || (visibilityData?.enabled && visibilityData.audience === 'everyone')) && (
+        <Card data-testid="whos-out-card" className="border-[#E6E8EC]">
+          <CardHeader>
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <CardTitle className="flex items-center gap-2 text-xl" style={{ fontFamily: 'Space Grotesk', color: '#1570EF' }}>
+                  <Users size={24} />
+                  Who&apos;s out
+                  {whosOutData?.scope === 'team' && (
+                    <span className="text-xs text-[#667085] font-normal ml-2">(your team)</span>
+                  )}
+                </CardTitle>
+                {whosOutData?.window && (
+                  <CardDescription className="mt-1">
+                    {format(parseISO(whosOutData.window.start), 'EEE MMM d')} – {format(parseISO(whosOutData.window.end), 'EEE MMM d')}
+                  </CardDescription>
+                )}
+              </div>
+              
+              {/* Super-admin visibility controls */}
+              {isSuperAdmin && (
+                <div className="ml-4 space-y-3 p-3 bg-[#F7F9FC] rounded-md border border-[#E6E8EC]">
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      id="whos-out-enabled"
+                      checked={localEnabled}
+                      onCheckedChange={setLocalEnabled}
+                      data-testid="whos-out-enabled-toggle"
+                    />
+                    <Label htmlFor="whos-out-enabled" className="text-sm font-medium cursor-pointer">
+                      Share &apos;who&apos;s out&apos; with the team
+                    </Label>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="whos-out-audience" className="text-sm text-[#667085] whitespace-nowrap">
+                      Visible to:
+                    </Label>
+                    <Select value={localAudience} onValueChange={setLocalAudience}>
+                      <SelectTrigger id="whos-out-audience" className="h-8 text-xs" data-testid="whos-out-audience-select">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="admins">Admins only</SelectItem>
+                        <SelectItem value="leads">Project leads</SelectItem>
+                        <SelectItem value="everyone">Everyone</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <Button
+                    size="sm"
+                    onClick={() => updateVisibilityMutation.mutate({ enabled: localEnabled, audience: localAudience })}
+                    disabled={updateVisibilityMutation.isPending}
+                    data-testid="whos-out-save-btn"
+                    style={{ backgroundColor: '#1570EF' }}
+                    className="w-full"
+                  >
+                    {updateVisibilityMutation.isPending ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
+                    Save
+                  </Button>
+                  
+                  <p className="text-xs text-[#667085] mt-2">
+                    Shows names, dates and leave type only — never the reason/notes.
+                  </p>
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          
+          <CardContent>
+            {!whosOutData?.entries || whosOutData.entries.length === 0 ? (
+              <p className="text-[#667085] text-sm">Nobody is on approved leave this week.</p>
+            ) : (
+              <div className="space-y-2" data-testid="whos-out-list">
+                {whosOutData.entries.map((entry) => (
+                  <div
+                    key={entry.resource_id}
+                    data-testid={`whos-out-row-${entry.resource_id}`}
+                    className="flex items-center justify-between p-3 bg-[#F7F9FC] rounded-md border border-[#E6E8EC]"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-[#0B1220]">{entry.name}</span>
+                        <Badge className={getLeaveTypeColor(entry.type)}>
+                          {entry.type}
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-[#667085]">{entry.role}</div>
+                    </div>
+                    <div className="text-sm text-[#667085] text-right">
+                      {format(parseISO(entry.start_date), 'MMM d')} – {format(parseISO(entry.end_date), 'MMM d')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Leaves Table */}
