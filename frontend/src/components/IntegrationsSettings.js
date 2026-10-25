@@ -255,11 +255,12 @@ export default function IntegrationsSettings() {
   });
 
   const [isEmailTesting, setIsEmailTesting] = useState(false);
+  const [emailTestTo, setEmailTestTo] = useState('');
   const handleTestEmail = async () => {
     setIsEmailTesting(true);
     setEmailTestResult(null);
     try {
-      const r = await testEmailConfig();
+      const r = await testEmailConfig(emailTestTo || undefined);
       setEmailTestResult(r.data);
     } catch (err) {
       setEmailTestResult({ ok: false, message: err.response?.data?.detail || 'Test failed' });
@@ -760,7 +761,7 @@ export default function IntegrationsSettings() {
         )}
 
         {/* Shared actions */}
-        <div className="flex items-center gap-2 mt-4">
+        <div className="flex flex-wrap items-center gap-2 mt-4">
           <Button
             onClick={() => saveEmailMutation.mutate()}
             disabled={saveEmailMutation.isPending}
@@ -769,6 +770,13 @@ export default function IntegrationsSettings() {
           >
             {saveEmailMutation.isPending ? <><Loader2 size={14} className="mr-2 animate-spin" />Saving...</> : 'Save Email Settings'}
           </Button>
+          <Input
+            value={emailTestTo}
+            onChange={(e) => setEmailTestTo(e.target.value)}
+            placeholder="test recipient (optional)"
+            className="w-56"
+            data-testid="email-test-to-input"
+          />
           <Button
             variant="outline"
             onClick={handleTestEmail}
@@ -779,6 +787,9 @@ export default function IntegrationsSettings() {
             Send test email
           </Button>
         </div>
+        <p className="text-xs text-[#667085] mt-1">
+          Tip: send a test to an external address (e.g. a personal Gmail) to confirm real delivery, not just same-domain.
+        </p>
         {emailTestResult && (
           <div className={`mt-2 flex items-start gap-2 text-sm ${emailTestResult.ok ? 'text-green-700' : 'text-red-700'}`} data-testid="email-test-result">
             {emailTestResult.ok ? <CheckCircle2 size={14} className="mt-0.5" /> : <XCircle size={14} className="mt-0.5" />}

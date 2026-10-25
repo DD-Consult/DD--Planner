@@ -15,6 +15,7 @@ Design goals (owner-approved plan):
 """
 import logging
 import smtplib
+import socket
 import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -172,11 +173,11 @@ def _send_via_smtp(cfg: dict, to_email: str, subject: str, html: str) -> Tuple[b
 
         if port == 465:
             context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(host, port, timeout=20, context=context) as server:
+            with smtplib.SMTP_SSL(host, port, timeout=15, context=context) as server:
                 server.login(username, password)
                 refused = server.sendmail(envelope_from, [to_email], msg.as_string())
         else:
-            with smtplib.SMTP(host, port, timeout=20) as server:
+            with smtplib.SMTP(host, port, timeout=15) as server:
                 server.ehlo()
                 if use_tls:
                     server.starttls(context=ssl.create_default_context())
@@ -208,6 +209,19 @@ def _send_via_smtp(cfg: dict, to_email: str, subject: str, html: str) -> Tuple[b
     except (smtplib.SMTPRecipientsRefused, smtplib.SMTPDataError) as e:
         logger.error(f"[email] (smtp) send rejected: {e}")
         return False, f"Email not sent: {e}"
+    except (socket.timeout, TimeoutError, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, OSError, ConnectionError) as e:
+        # Could not open/complete the SMTP connection. The #1 cause in production
+        # is the hosting platform BLOCKING OUTBOUND SMTP (ports 25/465/587) —
+        # Google Cloud Run, App Engine and many serverless hosts do this. In that
+        # case SMTP can never work from the server; use the Resend (API) method,
+        # which sends over HTTPS (port 443) and is not blocked.
+        logger.error(f"[email] (smtp) connection failed to {host}:{port}: {e}")
+        return False, (
+            f"Email not sent: couldn't connect to {host}:{port} ({e}). Many hosting platforms "
+            f"(e.g. Google Cloud Run) BLOCK outbound SMTP ports — if this is production, SMTP may be "
+            f"blocked there. Switch the Email method to 'Resend (API)' (sends over HTTPS and is not blocked), "
+            f"or allow SMTP egress on your host (e.g. a Serverless VPC connector + Cloud NAT)."
+        )
     except Exception as e:
         logger.error(f"[email] (smtp) send failed to {to_email}: {e}")
         return False, f"Email not sent: {e}"
