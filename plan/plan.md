@@ -1,57 +1,54 @@
-# Send Emails via Your Own Mailbox (SMTP) — No Email Vendor Required
+# AWS Bedrock for DD Planner's AI — plus smarter, self‑improving guidance
 
-Add a second way to send proposal and client-report emails: directly through your own existing email account over SMTP, so no third-party email service is needed. Keep the existing Resend option and let a workspace pick which one is active in Settings.
+Add AWS Bedrock as the AI engine behind every assistant feature in DD Planner, configured once from Settings with a Bedrock API key, and make that AI noticeably sharper by feeding it more of the workspace's real data and by learning from thumbs‑up/down feedback over time.
 
 ## Who it's for
 
-- **Workspace administrators (super admins)** who would rather send from the company's own mailbox (e.g. a Google Workspace / Gmail address) than sign up for an email-sending vendor.
-- **DD project managers / principals** who send proposals and client reports and want them delivered from the firm's real address.
-- **Clients** who receive the proposal link and their report-access link as an email coming from the firm's own domain.
+- **Workspace administrators (super admins)** who want to point all of DD Planner's AI at their own AWS Bedrock account (their model, their region, their billing, their data‑handling terms) instead of the built‑in default.
+- **Project managers / principals** who use the AI every day — PM Assist chat, work‑breakdown generation, status summaries, rescheduling, proposal drafting, portfolio insights — and want answers grounded in the actual state of their projects.
+- **The business**, which wants the guidance to get better over time rather than stay static.
 
 ## Core features and experience
 
-- **An "Email method" choice in Settings → Integrations.** The Email area now offers two methods — **SMTP (your own mailbox)** and **Resend (API)** — with a single selector for which one is "active". Only the active method is used when emails are sent. Nothing about the existing Resend panel is lost.
-- **A new SMTP panel** sitting alongside the others, holding: the **SMTP host**, **port**, **username**, **password** (entered once, then shown masked), a **"from" address**, and an optional **"reply-to"** address. Saving stores it for that workspace.
-  - **Gmail / Google Workspace helper text** built into the panel: a short note that Gmail requires 2‑Step Verification plus a 16‑character **App Password** (not the normal account password), with the standard host/port prefilled as sensible defaults (host `smtp.gmail.com`, port `587`) that can be changed for any other provider.
-- **A "Send test email" button** for the SMTP panel (mirroring the existing Resend test), so an admin can confirm the mailbox connects and delivers before relying on it — and immediately see a readable error if the host/port/credentials are wrong or the provider blocks the login.
-- **Same send points, now method-aware.** Sending a proposal, confirming an accepted proposal, and the client-report magic-link all use whichever method is active (SMTP or Resend).
-- **Copy/share never breaks.** If no method is configured, the active method is off, or a send fails, the link is still shown on screen to copy and share by hand — exactly as today. Email stays a best-effort add-on.
-- **Honest status back to the user.** After sending a proposal or confirming, the screen states whether the email actually went out or that the link should be shared manually, and why.
-- **Secrets stay secret.** The SMTP password is write-once and returned only as a masked placeholder afterwards; saving an empty password keeps the previously stored one — matching how the Resend key and other integration secrets already behave.
+- **An "AWS Bedrock" choice in Settings → AI.** The existing AI‑provider setting gains Bedrock as an option alongside what's there today. Selecting it reveals a Bedrock API key field (entered once, then shown masked), an AWS region, and a model selection (with a sensible current Claude model prefilled, editable for any Bedrock‑supported model). Saving stores it for the workspace.
+- **A "Test Bedrock" button** so an admin can confirm the key, region and model actually work before relying on it — and immediately see a readable error if the region has no model access, the key is wrong, or the model id isn't available.
+- **Bedrock powers everything once active.** When Bedrock is the selected provider, every AI feature in the app routes through it: PM Assist chat, WBS generation, status‑update drafting, smart reschedule, proposal drafting/refinement, document‑ and project‑sourced proposals, and portfolio insights. Nothing about how those features look or are triggered changes — only the engine behind them.
+- **Graceful fallback, never a dead end.** If Bedrock is misconfigured or a call fails, the feature degrades the same way it does today (clear message, the action still completes where it can) rather than erroring out. Switching providers later is a single selection and a save.
+- **Richer, automatic context (sharper answers).** The AI is given more of the real workspace picture relevant to each request — e.g. a project's history, open risks, recent status updates, timesheet/actuals, team capacity, and related past proposals — so its guidance is specific rather than generic. This happens behind the scenes; there is no new screen and no extra step for the user.
+- **A feedback / learning loop (self‑improving guidance).** Wherever the AI produces something, the user can mark it helpful or not and optionally say why. Those signals, together with the workspace's written AI instructions, are fed back into future prompts so the assistant trends toward what this team actually wants. Admins can see what feedback has been captured.
+- **Secrets stay secret.** The Bedrock API key is write‑once and shown only as a masked placeholder afterwards; saving an empty key keeps the previously stored one — matching how the other integration secrets already behave.
 
 ## User flow
 
-1. A super admin opens Settings → Integrations → Email, picks **SMTP (your own mailbox)** as the method, enters host/port/username/password and the "from" address, saves, and clicks **Send test email** to confirm delivery.
-   - For a Gmail/Workspace mailbox they use an **App Password** generated from their Google account (the panel explains this); for any other provider they enter that provider's SMTP details.
-2. A PM sends a proposal; the client receives an email from the firm's own address with the secure link. The PM sees "email sent".
-3. The client accepts; a DD user confirms; the client receives an email with their report access link.
-4. If the active method is off or misconfigured, every one of those steps still shows the link on screen to copy and share, with a note that email wasn't sent.
+1. A super admin opens Settings → AI, picks **AWS Bedrock**, pastes the Bedrock API key, sets the region and model, saves, and clicks **Test Bedrock** to confirm it works.
+2. From then on every AI action in the app (chat, WBS, summaries, reschedule, proposals, insights) runs on Bedrock — with the extra real‑project context automatically included — so the output is more specific and on‑point.
+3. After an AI result appears, the user clicks thumbs‑up or thumbs‑down (and can add a quick note). Over time those signals plus the workspace's AI instructions nudge future responses toward the team's preferences.
+4. If Bedrock isn't configured or a call fails, the feature behaves exactly as it does today (clear status, no hard failure); an admin can switch the provider back at any time.
 
 ## UI/UX feel
 
-- Matches the existing Integrations panels exactly (selector, masked-secret fields, save button, inline test result) — no new screens or navigation.
-- The two methods read as siblings: choose one, fill it in, test it. Switching methods later is a single selection and a save.
-- Gmail setup friction is reduced by the inline App Password explanation and prefilled standard host/port, while the fields stay generic enough for Microsoft 365, a hosting provider's SMTP, or any other server.
-- Honest status messaging so a PM is never unsure whether the client was emailed.
+- Matches the existing Settings → AI and Integrations panels precisely (provider selector, masked‑secret field, region/model fields, inline test result) — no new navigation.
+- The feedback control is a small, unobtrusive thumbs‑up/down that sits next to AI output and never gets in the way; leaving feedback is optional.
+- Richer context is invisible by design: same screens, better answers.
+- Honest messaging throughout, so an admin always knows whether Bedrock is connected and a PM is never guessing why an answer was generic.
 
 ## Implementation phases
 
-**Phase 1 — MVP (built now):** Add the SMTP email method (host, port, username, password, from, optional reply-to, masked secret, test-send) with Gmail/Workspace App Password guidance and prefilled defaults. Add a method selector (SMTP or Resend) that controls which path is used at send time. Route all proposal and client-report emails through the active method. Keep every copy/share link working when email is off or fails, with clear "sent / not sent" status.
+**Phase 1 — MVP (built now):** Add AWS Bedrock as a selectable AI provider in Settings (API‑key auth + region + model, masked secret, test button), and route all AI features through it when selected, with graceful fallback. Expand the context passed into AI prompts with the most relevant real workspace data per feature. Add the thumbs‑up/down feedback control on AI outputs, store the signals, and feed recent feedback plus workspace AI instructions into subsequent prompts so guidance starts improving.
 
-**Phase 2 (later, not built now):** Customisable email content — editable subject/body templates and workspace branding (logo, colours) on the proposal and report emails, shared across whichever send method is active.
+**Phase 2 (later, not built now):** A one‑click "generate realistic sample data" tool for admins (believable projects, allocations, WBS, proposals) to seed demos, trials and training — distinct from the read‑only public demo.
 
-**Phase 3 (later, not built now):** Delivery visibility — a log of what was emailed to whom and when, plus reminders (e.g. "proposal viewed but not accepted"), building on the existing engagement tracking.
+**Phase 3 (later, not built now):** Deeper learning and analytics — trends in AI feedback across features, prompt/version tracking, and automated suggestions to refine the workspace's AI instructions based on what's been rated well or poorly.
 
 ## Assumptions
 
-- **SMTP is added as an alternative, not a replacement.** The existing Resend option stays; a per-workspace selector chooses the active method, and only the active one sends. (Confirmed.)
-- **The SMTP panel is generic** (host, port, username, password, from, reply-to) so it works with Google Workspace/Gmail, Microsoft 365, or any SMTP server — with Gmail defaults prefilled and App Password guidance shown. (Confirmed direction.)
-- **Sending is from the workspace's own business-domain mailbox at low volume** (proposals + report links, not bulk). Deliverability relies on the domain's normal SPF/DKIM, which business Google/Microsoft domains generally already have; no domain-authentication UI is built here. (Confirmed.)
-- **Gmail/Workspace requires an App Password** (2‑Step Verification enabled); ordinary account passwords and "less secure app" sign-in are not supported by Google. The panel surfaces this; generating the App Password is the admin's step in their Google account.
-- **Common secure-port defaults** are offered (587 with STARTTLS as the default, 465 for implicit TLS) and can be overridden; the panel does not try to auto-detect a provider.
-- **Configuring email is a super-admin action**, consistent with the other integration panels; sending itself happens automatically as part of existing PM actions and needs no special permission.
-- **Credentials are stored in the application's settings store**, shown masked after first save, with empty-on-save meaning "keep existing" — matching the current Resend/HubSpot/Google Drive panels.
-- **Email is best-effort and never blocks the core action**: a failed or unconfigured send still completes the proposal-send or confirm and returns the shareable link.
-- **Email body/subject are the current built-in formats** for this phase; editable templates and branding are deferred to Phase 2.
-- **If neither method is configured, behaviour is unchanged from today** — links are generated and shown for manual sharing; nothing is auto-sent.
-- **No new third-party account is introduced** by this plan; SMTP uses credentials the workspace already owns.
+- **Authentication is the Bedrock API key** (the `AWS_BEARER_TOKEN_BEDROCK` style) plus an AWS region — not classic access‑key/secret pairs. (Confirmed.)
+- **Bedrock, once selected, is the single app‑wide provider for all AI features**, replacing the current default across the board; the existing providers remain available to switch back to. (Confirmed.)
+- **The default model is a current Claude model on Bedrock**, editable by the admin; the admin must have model access enabled in their chosen region, and the panel's test button surfaces it if they don't.
+- **Configuring Bedrock is a super‑admin action** in Settings → AI, consistent with the other integration/secret panels; using the AI happens automatically inside existing features and needs no special permission.
+- **The credential is stored in the application's settings store**, shown masked after first save, with empty‑on‑save meaning "keep existing."
+- **"Improve the AI guidance" for the MVP means two things together:** automatically richer real‑data context in prompts, and a thumbs‑up/down feedback loop whose signals (with the workspace's written AI instructions) steer future prompts. Generating mock/sample data is deferred to Phase 2. (Confirmed direction.)
+- **AI remains best‑effort:** a Bedrock failure or missing configuration never blocks the underlying action; the feature falls back to its current behaviour with a clear message.
+- **Feedback is captured per AI feature and visible to admins;** it influences prompts in a lightweight way in this phase (recent relevant feedback + instructions included as guidance), with heavier analytics/auto‑tuning deferred to Phase 3.
+- **Region availability and billing are the workspace's responsibility;** no AWS account setup, model‑access request, or cost controls are built here beyond surfacing errors from Bedrock.
+- **No change to how any AI feature is triggered or displayed** — only the engine and the quality/grounding of its output change.

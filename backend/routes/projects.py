@@ -20,7 +20,7 @@ from models.schemas import (
 )
 from auth.dependencies import get_current_user, require_admin
 from utils import serialize_doc, ensure_phase_ids, find_user_resource, snap_to_weekday, coerce_date
-from services.ai_providers import get_ai_config, call_openai_api, call_gemini_api
+from services.ai_providers import get_ai_config, call_openai_api, call_gemini_api, call_bedrock_api
 
 router = APIRouter()
 
@@ -1522,6 +1522,11 @@ Generate a professional executive summary (2-3 sentences only)."""
                     if response.status_code == 200:
                         data = response.json()
                         ai_summary = data['candidates'][0]['content']['parts'][0]['text'].strip()
+                elif ai_config["provider"] == "bedrock":
+                    response = await call_bedrock_api(ai_config["api_key"], system_prompt, user_message,
+                                                      region=ai_config.get("region"), model=ai_config.get("model"))
+                    if response.status_code == 200:
+                        ai_summary = response.json()['choices'][0]['message']['content'].strip()
                 elif ai_config["provider"] == "emergent":
                     response = await call_openai_api(ai_config["api_key"], system_prompt, user_message)
                     if response.status_code == 200:
@@ -2039,6 +2044,17 @@ Current Date: {today}"""
                 generated_summary = extract_gemini_text(result).strip()
             else:
                 print(f"Gemini API error: {response.status_code} - {response.text}")
+
+        elif provider == "bedrock":
+            # Use AWS Bedrock (Converse API)
+            from services.ai_providers import call_bedrock_api
+            response = await call_bedrock_api(api_key, system_prompt, user_message,
+                                              region=config.get("region"), model=config.get("model"))
+            if response.status_code == 200:
+                result = response.json()
+                generated_summary = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            else:
+                print(f"Bedrock API error: {response.status_code} - {response.text}")
         
     except Exception as e:
         print(f"AI summary generation error: {type(e).__name__}: {str(e)}")

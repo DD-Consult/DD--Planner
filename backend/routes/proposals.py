@@ -115,6 +115,14 @@ async def _call_ai_for_text(system_prompt: str, user_message: str) -> Optional[s
             return extract_gemini_text(response.json())
         fb = await call_emergent_fallback(system_prompt, user_message)
         return json.dumps(fb) if fb else None
+    if provider == "bedrock":
+        from services.ai_providers import call_bedrock_api
+        response = await call_bedrock_api(api_key, system_prompt, user_message, json_mode=True,
+                                          region=ai_config.get("region"), model=ai_config.get("model"))
+        if response.status_code == 200:
+            return response.json()["choices"][0]["message"]["content"]
+        fb = await call_emergent_fallback(system_prompt, user_message)
+        return json.dumps(fb) if fb else None
     # emergent (default)
     fb = await call_emergent_fallback(system_prompt, user_message)
     return json.dumps(fb) if fb else None
@@ -915,6 +923,13 @@ The PM has provided notes/instructions. You must:
 }}
 
 CRITICAL: Return ONLY the JSON. No markdown fences, no extra text. The entire response must be parseable as JSON."""
+
+    # Self-improving loop: fold recent proposal feedback into the prompt.
+    try:
+        from services.ai_instructions import get_feedback_guidance_for_prompt
+        system_prompt += await get_feedback_guidance_for_prompt("proposal")
+    except Exception:
+        pass
     
     user_message = f"""Current proposal brief:
 {json.dumps(current_data, indent=2)}
@@ -960,6 +975,19 @@ Please update the brief according to the notes and return the complete updated b
             response = await call_gemini_api(api_key, system_prompt, user_message, json_mode=True)
             if response.status_code == 200:
                 ai_response_text = extract_gemini_text(response.json())
+            else:
+                fallback = await call_emergent_fallback(system_prompt, user_message)
+                if fallback:
+                    ai_response_text = json.dumps(fallback)
+                else:
+                    return _ai_unavailable()
+
+        elif provider == "bedrock":
+            from services.ai_providers import call_bedrock_api
+            response = await call_bedrock_api(api_key, system_prompt, user_message, json_mode=True,
+                                              region=ai_config.get("region"), model=ai_config.get("model"))
+            if response.status_code == 200:
+                ai_response_text = response.json()["choices"][0]["message"]["content"]
             else:
                 fallback = await call_emergent_fallback(system_prompt, user_message)
                 if fallback:

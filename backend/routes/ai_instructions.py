@@ -231,7 +231,8 @@ async def submit_feedback(
     Available to all authenticated users.
     """
     # Validate feature
-    valid_features = ["risk_polish", "status_summary", "wbs_generation", "reschedule", "chat", "budget_analysis"]
+    valid_features = ["risk_polish", "status_summary", "wbs_generation", "reschedule", "chat",
+                      "budget_analysis", "proposal", "insights"]
     if feedback.feature not in valid_features:
         raise HTTPException(
             status_code=400,

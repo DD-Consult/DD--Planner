@@ -93,6 +93,14 @@ async def _call_wbs_ai(request_provider: Optional[str], request_api_key: Optiona
                     result = _parse_gemini_json(resp)
                     if result:
                         return result
+            elif config["provider"] == "bedrock":
+                from services.ai_providers import call_bedrock_api
+                resp = await call_bedrock_api(config["api_key"], system_prompt, user_message,
+                                              region=config.get("region"), model=config.get("model"))
+                if resp.status_code == 200:
+                    result = _parse_openai_json(resp)  # bedrock response is OpenAI-shaped
+                    if result:
+                        return result
             else:
                 resp = await call_openai_api(config["api_key"], system_prompt, user_message)
                 if resp.status_code == 200:

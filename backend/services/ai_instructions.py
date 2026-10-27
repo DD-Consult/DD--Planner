@@ -4,7 +4,7 @@ AI Instructions Service
 Fetches and formats custom AI instructions for injection into prompts.
 """
 from typing import Optional
-from database import ai_instructions_collection
+from database import ai_instructions_collection, ai_feedback_collection
 
 async def get_instructions_for_prompt(
     category: str = "all",
@@ -66,3 +66,54 @@ async def get_instructions_for_prompt(
     formatted += "\n--- END GUIDANCE ---\n"
     
     return formatted
+
+
+
+async def get_feedback_guidance_for_prompt(feature: str, project_id: Optional[str] = None, limit: int = 8) -> str:
+    """Fold recent thumbs-up/down feedback for THIS feature into prompt guidance
+    (the lightweight self-improving loop, MVP). Prioritises feedback with notes.
+
+    Returns a formatted guidance string, or "" if there's nothing useful.
+    """
+    try:
+        query = {"feature": feature}
+        if project_id:
+            # include both project-specific and global feedback for the feature
+            query = {"feature": feature, "$or": [{"project_id": project_id}, {"project_id": None}]}
+        cursor = ai_feedback_collection.find(query).sort("created_at", -1)
+        rows = await cursor.to_list(length=50)
+    except Exception:
+        return ""
+    if not rows:
+        return ""
+
+    # Prefer entries that include a written note; cap to `limit`.
+    with_notes = [r for r in rows if (r.get("feedback_text") or "").strip()]
+    chosen = (with_notes or rows)[:limit]
+
+    likes, dislikes = [], []
+    for r in chosen:
+        note = (r.get("feedback_text") or "").strip()
+        out = (r.get("output_summary") or "").strip()
+        snippet = note or (f"(re: {out[:80]})" if out else "")
+        if not snippet:
+            continue
+        if r.get("rating") == "thumbs_down":
+            dislikes.append(snippet)
+        else:
+            likes.append(snippet)
+
+    if not likes and not dislikes:
+        return ""
+
+    parts = ["\n\n--- TEAM FEEDBACK (learn from these ratings) ---"]
+    if dislikes:
+        parts.append("AVOID what this team disliked:")
+        for i, d in enumerate(dislikes[:5], 1):
+            parts.append(f"  - {d}")
+    if likes:
+        parts.append("PREFER what this team liked:")
+        for i, l in enumerate(likes[:5], 1):
+            parts.append(f"  - {l}")
+    parts.append("--- END TEAM FEEDBACK ---\n")
+    return "\n".join(parts)

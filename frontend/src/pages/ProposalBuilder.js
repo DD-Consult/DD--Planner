@@ -43,6 +43,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { ScrollArea } from '../components/ui/scroll-area';
+import AIFeedbackButtons from '../components/AIFeedbackButtons';
 
 const ProposalBuilder = () => {
   const { id } = useParams();
@@ -399,6 +400,15 @@ const ProposalBuilder = () => {
                   <span className="text-sm">Assistant is drafting...</span>
                 </div>
               )}
+              {chatMessages.length > 1 && chatMessages[chatMessages.length - 1]?.role === 'assistant' && (
+                <div className="mr-4">
+                  <AIFeedbackButtons
+                    feature="proposal"
+                    projectId={null}
+                    outputSummary="Proposal AI draft"
+                  />
+                </div>
+              )}
               <div ref={chatEndRef} />
             </div>
           </ScrollArea>
@@ -534,6 +544,15 @@ const ProposalBuilder = () => {
                       <div className="bg-slate-100 text-[#0B1220] mr-4 p-3 rounded-lg flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         <span className="text-sm">Assistant is drafting...</span>
+                      </div>
+                    )}
+                    {chatMessages.length > 1 && chatMessages[chatMessages.length - 1]?.role === 'assistant' && (
+                      <div className="mr-4">
+                        <AIFeedbackButtons
+                          feature="proposal"
+                          projectId={null}
+                          outputSummary="Proposal AI draft"
+                        />
                       </div>
                     )}
                     <div ref={chatEndRef} />

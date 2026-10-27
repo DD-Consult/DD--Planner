@@ -19,7 +19,7 @@ const AIFeedbackButtons = ({ feature, projectId, inputSummary = '', outputSummar
   const [showFeedbackInput, setShowFeedbackInput] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const [rating, setRating] = useState(null); // 'positive' or 'negative'
+  const [rating, setRating] = useState(null); // 'thumbs_up' or 'thumbs_down'
 
   const feedbackMutation = useMutation({
     mutationFn: (data) => submitAIFeedback(data),
@@ -81,7 +81,7 @@ const AIFeedbackButtons = ({ feature, projectId, inputSummary = '', outputSummar
             variant="ghost"
             size="sm"
             className="h-7 w-7 p-0 hover:bg-green-50 hover:text-green-600"
-            onClick={() => handleThumbClick('positive')}
+            onClick={() => handleThumbClick('thumbs_up')}
             data-testid="feedback-thumbs-up"
             title="Helpful"
           >
@@ -91,7 +91,7 @@ const AIFeedbackButtons = ({ feature, projectId, inputSummary = '', outputSummar
             variant="ghost"
             size="sm"
             className="h-7 w-7 p-0 hover:bg-red-50 hover:text-red-600"
-            onClick={() => handleThumbClick('negative')}
+            onClick={() => handleThumbClick('thumbs_down')}
             data-testid="feedback-thumbs-down"
             title="Not helpful"
           >
@@ -101,7 +101,7 @@ const AIFeedbackButtons = ({ feature, projectId, inputSummary = '', outputSummar
       ) : (
         <div className="flex flex-col gap-2 w-full max-w-md" data-testid="feedback-input-form">
           <div className="flex items-center gap-2">
-            {rating === 'positive' ? (
+            {rating === 'thumbs_up' ? (
               <ThumbsUp size={14} className="text-green-600" />
             ) : (
               <ThumbsDown size={14} className="text-red-600" />

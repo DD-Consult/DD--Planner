@@ -25,6 +25,12 @@ _GEMINI_MODEL_FALLBACKS = [
 # (chat, WBS, reschedule, voice) when a tenant hasn't set their own in Settings → AI.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
+# Default Bedrock model — a current Claude inference profile, admin-editable.
+BEDROCK_DEFAULT_MODEL = os.environ.get(
+    "BEDROCK_DEFAULT_MODEL", "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+)
+BEDROCK_DEFAULT_REGION = os.environ.get("BEDROCK_DEFAULT_REGION", "us-east-1")
+
 
 async def get_ai_config() -> dict:
     """
@@ -33,10 +39,16 @@ async def get_ai_config() -> dict:
       1) Per-tenant/app settings from DB (Settings → AI)
       2) EMERGENT_LLM_KEY (if present, checked dynamically)
       3) Env GEMINI_API_KEY default (so a key set in backend .env works everywhere)
+
+    For Bedrock the returned dict also includes `region` and `model`.
     """
     settings = await settings_collection.find_one({"type": "ai_config"})
     if settings and settings.get("ai_provider") and settings.get("ai_api_key"):
-        return {"provider": settings["ai_provider"], "api_key": settings["ai_api_key"]}
+        cfg = {"provider": settings["ai_provider"], "api_key": settings["ai_api_key"]}
+        if settings["ai_provider"] == "bedrock":
+            cfg["region"] = settings.get("bedrock_region") or BEDROCK_DEFAULT_REGION
+            cfg["model"] = settings.get("bedrock_model") or BEDROCK_DEFAULT_MODEL
+        return cfg
     # Check EMERGENT_LLM_KEY dynamically from environment
     emergent_key = os.environ.get("EMERGENT_LLM_KEY", "")
     if emergent_key:
@@ -44,6 +56,86 @@ async def get_ai_config() -> dict:
     if GEMINI_API_KEY:
         return {"provider": "gemini", "api_key": GEMINI_API_KEY}
     return {"provider": None, "api_key": None}
+
+
+async def call_bedrock_api(api_key: str, system_prompt: str, user_message: str,
+                           json_mode: bool = True, region: str = None, model: str = None):
+    """Call Amazon Bedrock via the Converse API using an API-key bearer token.
+
+    Returns an httpx-like response object whose .json() is OpenAI-SHAPED
+    ({"choices":[{"message":{"content": <text>}}]}) so existing openai-style
+    parsing works unchanged, plus .status_code and .text for error handling.
+
+    json_mode=True appends a 'JSON only' instruction (Converse has no strict JSON
+    mode) mirroring the Gemini helper.
+    """
+    import httpx
+
+    region = region or BEDROCK_DEFAULT_REGION
+    model = model or BEDROCK_DEFAULT_MODEL
+    user_text = user_message + ("\n\nRespond with valid JSON only, no markdown." if json_mode else "")
+
+    url = f"https://bedrock-runtime.{region}.amazonaws.com/model/{model}/converse"
+    body = {
+        "messages": [{"role": "user", "content": [{"text": user_text}]}],
+        "inferenceConfig": {"temperature": 0.3, "maxTokens": 4096},
+    }
+    if system_prompt:
+        body["system"] = [{"text": system_prompt}]
+
+    def _resp(status, text_val):
+        return type("obj", (object,), {
+            "status_code": status,
+            "text": text_val,
+            "json": (lambda self=None, _t=text_val: {"choices": [{"message": {"content": _t}}]}),
+        })()
+
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        try:
+            response = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=body,
+            )
+        except httpx.TimeoutException:
+            return type("obj", (object,), {"status_code": 408, "text": "Bedrock request timed out",
+                                           "json": lambda self=None: {}})()
+        except Exception as e:
+            return type("obj", (object,), {"status_code": 500, "text": f"Bedrock request error: {e}",
+                                           "json": lambda self=None: {}})()
+
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                parts = data.get("output", {}).get("message", {}).get("content", [])
+                text_out = ""
+                for p in parts:
+                    if p.get("text"):
+                        text_out += p["text"]
+                return _resp(200, text_out)
+            except Exception as e:
+                logger.error(f"[Bedrock] parse error: {e}")
+                return type("obj", (object,), {"status_code": 500, "text": f"Bedrock parse error: {e}",
+                                               "json": lambda self=None: {}})()
+
+        # Non-200 — surface the real reason.
+        body_txt = ""
+        try:
+            body_txt = response.text[:400]
+        except Exception:
+            pass
+        logger.warning(f"[Bedrock] model={model} region={region} HTTP {response.status_code}: {body_txt}")
+        return type("obj", (object,), {"status_code": response.status_code,
+                                       "text": body_txt or f"Bedrock HTTP {response.status_code}",
+                                       "json": lambda self=None: {}})()
+
+
+def extract_bedrock_text(response) -> str:
+    """Extract text from a call_bedrock_api response (OpenAI-shaped)."""
+    try:
+        return response.json()["choices"][0]["message"]["content"] or ""
+    except Exception:
+        return ""
 
 
 async def call_openai_api(api_key: str, system_prompt: str, user_message: str, json_mode: bool = True):
@@ -209,3 +301,45 @@ def extract_gemini_text(result: dict) -> str:
     except (KeyError, IndexError, TypeError) as e:
         print(f"Gemini text extraction error: {e}")
         return ""
+
+
+
+async def call_ai_text(system_prompt: str, user_message: str, json_mode: bool = True):
+    """Unified AI entry point: resolve the workspace provider and return plain text.
+
+    Dispatches to openai / gemini / bedrock / emergent based on get_ai_config(),
+    with Emergent as the safety-net fallback. Returns (text, provider_used) where
+    text is a string or None on total failure. Best-effort — never raises.
+
+    New code should prefer this helper so ALL providers (incl. Bedrock) are
+    supported uniformly.
+    """
+    try:
+        cfg = await get_ai_config()
+    except Exception:
+        cfg = {"provider": None, "api_key": None}
+    provider = cfg.get("provider")
+    api_key = cfg.get("api_key")
+
+    try:
+        if provider == "openai" and api_key:
+            r = await call_openai_api(api_key, system_prompt, user_message, json_mode=json_mode)
+            if getattr(r, "status_code", 500) == 200:
+                return r.json()["choices"][0]["message"]["content"], "openai"
+        elif provider == "gemini" and api_key:
+            r = await call_gemini_api(api_key, system_prompt, user_message, json_mode=json_mode)
+            if getattr(r, "status_code", 500) == 200:
+                return extract_gemini_text(r.json()), "gemini"
+        elif provider == "bedrock" and api_key:
+            r = await call_bedrock_api(api_key, system_prompt, user_message, json_mode=json_mode,
+                                       region=cfg.get("region"), model=cfg.get("model"))
+            if getattr(r, "status_code", 500) == 200:
+                return extract_bedrock_text(r), "bedrock"
+    except Exception as e:
+        logger.warning(f"[call_ai_text] provider {provider} failed: {e}")
+
+    # Safety net: Emergent LLM (returns parsed JSON or None).
+    fb = await call_emergent_fallback(system_prompt, user_message)
+    if fb is not None:
+        return (json.dumps(fb) if not isinstance(fb, str) else fb), "emergent"
+    return None, None

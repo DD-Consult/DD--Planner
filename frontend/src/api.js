@@ -380,8 +380,8 @@ export const getPortfolioBudgetAnalysis = () => api.get('/ai/portfolio-budget-an
 
 // AI Settings (app-wide, super_admin only)
 export const getAiSettings = () => api.get('/settings/ai');
-export const updateAiSettings = (provider, apiKey) =>
-  api.put('/settings/ai', null, { params: { provider, api_key: apiKey } });
+export const updateAiSettings = (payload) => api.put('/settings/ai', payload); // {provider, api_key?, bedrock_region?, bedrock_model?}
+export const testBedrock = () => api.post('/settings/ai/test-bedrock');
 export const clearAiSettings = () => api.delete('/settings/ai');
 
 // AI Chat Agent

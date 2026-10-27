@@ -22,14 +22,14 @@ from auth.dependencies import get_current_user, require_admin, require_super_adm
 from utils import serialize_doc
 from services.ai_providers import (
     get_ai_config, call_openai_api, call_gemini_api, call_emergent_fallback,
-    extract_gemini_text,
+    extract_gemini_text, call_bedrock_api,
 )
 from services.ai_actions import (
     AUTO_EXECUTE_ACTIONS, execute_ai_action, capture_pre_state,
     build_undo_spec, apply_undo,
 )
 from services.ai_action_registry import dispatch_action, ACTIONS as REGISTERED_ACTIONS, build_actions_prompt
-from services.ai_instructions import get_instructions_for_prompt
+from services.ai_instructions import get_instructions_for_prompt, get_feedback_guidance_for_prompt
 from services.specialist_agents import detect_specialist, get_specialist_header, list_specialist_triggers
 
 router = APIRouter()
@@ -38,6 +38,7 @@ router = APIRouter()
 async def get_ai_settings(current_user: dict = Depends(require_super_admin)):
     """Get app-wide AI settings (super_admin only). Never returns raw key."""
     settings = await settings_collection.find_one({"type": "ai_config"})
+    from services.ai_providers import BEDROCK_DEFAULT_MODEL, BEDROCK_DEFAULT_REGION
     if settings and settings.get("ai_api_key"):
         key = settings["ai_api_key"]
         masked = key[:7] + "..." + key[-4:] if len(key) > 11 else key[:4] + "..."
@@ -46,30 +47,79 @@ async def get_ai_settings(current_user: dict = Depends(require_super_admin)):
             "api_key_masked": masked,
             "has_key": True,
             "has_emergent_fallback": bool(EMERGENT_LLM_KEY),
+            "bedrock_region": settings.get("bedrock_region", BEDROCK_DEFAULT_REGION),
+            "bedrock_model": settings.get("bedrock_model", BEDROCK_DEFAULT_MODEL),
         }
     return {
         "provider": "openai",
         "api_key_masked": "",
         "has_key": False,
         "has_emergent_fallback": bool(EMERGENT_LLM_KEY),
+        "bedrock_region": BEDROCK_DEFAULT_REGION,
+        "bedrock_model": BEDROCK_DEFAULT_MODEL,
     }
+
+
+class AISettingsUpdate(BaseModel):
+    provider: str
+    api_key: Optional[str] = ""      # empty = keep existing
+    bedrock_region: Optional[str] = None
+    bedrock_model: Optional[str] = None
 
 
 @router.put("/api/settings/ai")
 async def update_ai_settings(
-    provider: str,
-    api_key: str,
+    payload: AISettingsUpdate,
     current_user: dict = Depends(require_super_admin),
 ):
-    """Update app-wide AI settings (super_admin only)."""
-    if provider not in ("openai", "gemini"):
-        raise HTTPException(status_code=400, detail="Provider must be 'openai' or 'gemini'")
+    """Update app-wide AI settings (super_admin only).
+
+    Supports providers: openai | gemini | bedrock. For Bedrock, region + model
+    are stored too. An empty api_key PRESERVES the previously stored key.
+    """
+    provider = payload.provider
+    if provider not in ("openai", "gemini", "bedrock"):
+        raise HTTPException(status_code=400, detail="Provider must be 'openai', 'gemini' or 'bedrock'")
+
+    existing = await settings_collection.find_one({"type": "ai_config"})
+    api_key = payload.api_key or ""
+    if not api_key and existing:
+        api_key = existing.get("ai_api_key", "")  # preserve existing secret
+
+    update = {"type": "ai_config", "ai_provider": provider, "ai_api_key": api_key}
+    if provider == "bedrock":
+        from services.ai_providers import BEDROCK_DEFAULT_MODEL, BEDROCK_DEFAULT_REGION
+        update["bedrock_region"] = (payload.bedrock_region or
+                                    (existing or {}).get("bedrock_region") or BEDROCK_DEFAULT_REGION)
+        update["bedrock_model"] = (payload.bedrock_model or
+                                   (existing or {}).get("bedrock_model") or BEDROCK_DEFAULT_MODEL)
+
     await settings_collection.update_one(
-        {"type": "ai_config"},
-        {"$set": {"type": "ai_config", "ai_provider": provider, "ai_api_key": api_key}},
-        upsert=True,
+        {"type": "ai_config"}, {"$set": update}, upsert=True,
     )
     return {"message": "AI settings saved successfully"}
+
+
+@router.post("/api/settings/ai/test-bedrock")
+async def test_bedrock(current_user: dict = Depends(require_super_admin)):
+    """Send a tiny Bedrock Converse request with the saved config to confirm the
+    key/region/model work. Returns {ok, message}. Surfaces Bedrock's real error
+    (no model access, bad key, unknown model id) in a readable way."""
+    from services.ai_providers import get_ai_config, call_bedrock_api, extract_bedrock_text
+    cfg = await get_ai_config()
+    if cfg.get("provider") != "bedrock" or not cfg.get("api_key"):
+        return {"ok": False, "message": "Save AWS Bedrock as the provider (with an API key) first, then test."}
+    try:
+        r = await call_bedrock_api(
+            cfg["api_key"], "You are a test. Reply with the single word OK.",
+            "Reply OK", json_mode=False, region=cfg.get("region"), model=cfg.get("model"),
+        )
+        if getattr(r, "status_code", 500) == 200:
+            txt = (extract_bedrock_text(r) or "").strip()
+            return {"ok": True, "message": f"Bedrock connected ({cfg.get('model')} @ {cfg.get('region')}). Reply: {txt[:60]}"}
+        return {"ok": False, "message": f"Bedrock error (HTTP {r.status_code}): {getattr(r, 'text', '')[:300]}"}
+    except Exception as e:
+        return {"ok": False, "message": f"Bedrock test failed: {e}"}
 
 
 @router.delete("/api/settings/ai")
@@ -827,6 +877,19 @@ Important:
                 else:
                     raise HTTPException(status_code=500, detail="AI service failed. Please check API key in Settings.")
 
+        elif config_provider == "bedrock":
+            response = await call_bedrock_api(config_key, system_prompt, user_message, json_mode=True,
+                                              region=ai_config.get("region"), model=ai_config.get("model"))
+            if response.status_code == 200:
+                ai_response = json.loads(response.json()["choices"][0]["message"]["content"])
+                provider_used = "bedrock"
+            else:
+                ai_response = await call_emergent_fallback(system_prompt, user_message)
+                if ai_response:
+                    provider_used = "emergent_fallback"
+                else:
+                    raise HTTPException(status_code=500, detail="AI service failed. Please check API key in Settings.")
+
         else:
             # "emergent" provider — use Emergent LLM directly
             ai_response = await call_emergent_fallback(system_prompt, user_message)
@@ -941,7 +1004,37 @@ async def get_project_budget_analysis(project_id: str, current_user: dict = Depe
     # Build the AI prompt
     from datetime import datetime, timezone
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    
+
+    # RICHER CONTEXT: open risks + recent status updates for grounded guidance.
+    risks_context = "None recorded."
+    try:
+        _risks = await risks_collection.find({"project_id": project_id}).to_list(length=50)
+        _open = [r for r in _risks if (r.get("status") or "Active") != "Closed"]
+        if _open:
+            risks_context = json.dumps([
+                {"description": r.get("description", ""), "impact": r.get("impact", ""),
+                 "probability": r.get("probability", ""), "mitigation": r.get("mitigation", "")}
+                for r in _open[:12]
+            ], indent=2)
+    except Exception:
+        pass
+
+    status_context = "None recorded."
+    try:
+        _updates = await status_updates_collection.find(
+            {"project_id": project_id}
+        ).sort("created_at", -1).to_list(length=3)
+        if _updates:
+            status_context = json.dumps([
+                {"date": str(u.get("update_date") or u.get("created_at") or "")[:10],
+                 "health": u.get("health"), "schedule_status": u.get("schedule_status"),
+                 "summary": (u.get("ai_generated_summary") or u.get("accomplishments") or "")[:400],
+                 "blockers": u.get("blockers")}
+                for u in _updates
+            ], indent=2, default=str)
+    except Exception:
+        pass
+
     project_context = f"""Project: {project.get("name")}
 Client: {project.get("client_name", "Unknown")}
 Status: {project.get("status", "Unknown")}
@@ -963,7 +1056,13 @@ RESOURCE ALLOCATION:
 {json.dumps(alloc_info, indent=2)}
 
 RESOURCE TIMESHEET DATA:
-{json.dumps([{"name": v["name"], "planned": round(v["planned"], 1), "actual": round(v["actual"], 1)} for v in resource_data.values()], indent=2)}"""
+{json.dumps([{"name": v["name"], "planned": round(v["planned"], 1), "actual": round(v["actual"], 1)} for v in resource_data.values()], indent=2)}
+
+OPEN RISKS & ISSUES:
+{risks_context}
+
+RECENT STATUS UPDATES (newest first):
+{status_context}"""
 
     system_prompt = """You are an AI project management analyst. Analyze the project budget and time tracking data and provide a structured analysis.
 
@@ -1011,6 +1110,8 @@ Rules:
     # Inject custom AI instructions
     custom_instructions = await get_instructions_for_prompt(category="chat", project_id=project_id)
     system_prompt += custom_instructions
+    # Inject self-improving feedback guidance (learning loop)
+    system_prompt += await get_feedback_guidance_for_prompt("chat", project_id=project_id)
 
     # Call AI
     try:
@@ -1418,6 +1519,7 @@ Recommended weeks should be between 1 and 8."""
     # Inject custom AI instructions
     custom_instructions = await get_instructions_for_prompt(category="reschedule", project_id=project_id)
     system_prompt += custom_instructions
+    system_prompt += await get_feedback_guidance_for_prompt("reschedule", project_id=project_id)
 
     try:
         ai_config = await get_ai_config()
@@ -1448,6 +1550,14 @@ Recommended weeks should be between 1 and 8."""
                 try:
                     text = extract_gemini_text(response.json())
                     ai_response = json.loads(text) if text else None
+                except Exception:
+                    ai_response = None
+        elif provider == "bedrock" and config_key:
+            response = await call_bedrock_api(config_key, system_prompt, context, json_mode=True,
+                                              region=ai_config.get("region"), model=ai_config.get("model"))
+            if response.status_code == 200:
+                try:
+                    ai_response = json.loads(response.json()["choices"][0]["message"]["content"])
                 except Exception:
                     ai_response = None
 
@@ -2193,6 +2303,7 @@ Guidelines:
     # Inject custom AI instructions
     custom_ai_instructions = await get_instructions_for_prompt(category="chat")
     system_prompt += custom_ai_instructions
+    system_prompt += await get_feedback_guidance_for_prompt("chat")
 
     # ── Specialist routing — prepend focused prompt if @mention detected ──
     specialist_key = detect_specialist(req.message)
@@ -2238,6 +2349,15 @@ Guidelines:
                 else:
                     body = getattr(response, "text", "")
                     print(f"[AI Chat] Gemini non-200: {response.status_code} {str(body)[:300]}")
+            elif ai_config["provider"] == "bedrock":
+                # Chat is conversational text (not JSON) → json_mode=False.
+                response = await call_bedrock_api(ai_config["api_key"], system_prompt, user_message, json_mode=False,
+                                                  region=ai_config.get("region"), model=ai_config.get("model"))
+                if response.status_code == 200:
+                    ai_response_text = response.json()["choices"][0]["message"]["content"].strip()
+                else:
+                    body = getattr(response, "text", "")
+                    print(f"[AI Chat] Bedrock non-200: {response.status_code} {str(body)[:300]}")
             elif ai_config["provider"] == "emergent":
                 # Use emergentintegrations library for Emergent LLM key
                 try:

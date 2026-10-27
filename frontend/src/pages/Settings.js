@@ -14,7 +14,7 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 import { Settings as SettingsIcon, Key, Sparkles, CheckCircle2, XCircle, User, Camera, Loader2, Trash2, AlertTriangle, Database, ShieldCheck, Bell, Mail, Clock, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getMe, updateAvatar, scanOrphanedData, executeDataCleanup, getAiSettings, updateAiSettings, clearAiSettings, checkTimesheetReminders, checkAllocationReminders, getReminderStatus } from '../api';
+import { getMe, updateAvatar, scanOrphanedData, executeDataCleanup, getAiSettings, updateAiSettings, clearAiSettings, testBedrock, checkTimesheetReminders, checkAllocationReminders, getReminderStatus } from '../api';
 import IntegrationsSettings from '../components/IntegrationsSettings';
 import WorkspaceBrandingSection from '../components/WorkspaceBrandingSection';
 
@@ -22,7 +22,11 @@ const Settings = () => {
   const queryClient = useQueryClient();
   const [provider, setProvider] = useState('openai');
   const [apiKey, setApiKey] = useState('');
+  const [bedrockRegion, setBedrockRegion] = useState('us-east-1');
+  const [bedrockModel, setBedrockModel] = useState('us.anthropic.claude-3-5-sonnet-20241022-v2:0');
   const [error, setError] = useState('');
+  const [bedrockTestResult, setBedrockTestResult] = useState(null);
+  const [isTestingBedrock, setIsTestingBedrock] = useState(false);
 
   // Avatar state
   const [avatarUrl, setAvatarUrl] = useState('');
@@ -55,6 +59,8 @@ const Settings = () => {
   useEffect(() => {
     if (aiSettings) {
       setProvider(aiSettings.provider || 'openai');
+      setBedrockRegion(aiSettings.bedrock_region || 'us-east-1');
+      setBedrockModel(aiSettings.bedrock_model || 'us.anthropic.claude-3-5-sonnet-20241022-v2:0');
     }
   }, [aiSettings]);
 
@@ -74,11 +80,12 @@ const Settings = () => {
 
   // AI settings mutation
   const saveMutation = useMutation({
-    mutationFn: ({ prov, key }) => updateAiSettings(prov, key),
+    mutationFn: (payload) => updateAiSettings(payload),
     onSuccess: async () => {
       toast.success('AI settings saved for the whole app!');
       setApiKey('');
       setError('');
+      setBedrockTestResult(null);
       // Force immediate refetch to show updated values
       await queryClient.invalidateQueries(['aiSettings']);
       refetchAiSettings();
@@ -105,15 +112,45 @@ const Settings = () => {
   }, [userData]);
 
   const handleSave = () => {
-    if (!apiKey.trim()) {
-      setError('API Key is required');
-      return;
+    // Bedrock: allow empty key if one is already saved
+    if (provider === 'bedrock') {
+      if (!apiKey.trim() && !aiSettings?.has_key) {
+        setError('Enter a Bedrock API key');
+        return;
+      }
+    } else {
+      // openai/gemini
+      if (!apiKey.trim()) {
+        setError('API Key is required');
+        return;
+      }
+      if (provider === 'openai' && !apiKey.startsWith('sk-')) {
+        setError('OpenAI API keys should start with "sk-"');
+        return;
+      }
     }
-    if (provider === 'openai' && !apiKey.startsWith('sk-')) {
-      setError('OpenAI API keys should start with "sk-"');
-      return;
+    saveMutation.mutate({
+      provider,
+      api_key: apiKey,
+      bedrock_region: bedrockRegion,
+      bedrock_model: bedrockModel,
+    });
+  };
+
+  const handleTestBedrock = async () => {
+    setIsTestingBedrock(true);
+    setBedrockTestResult(null);
+    try {
+      const response = await testBedrock();
+      setBedrockTestResult(response.data);
+    } catch (err) {
+      setBedrockTestResult({
+        ok: false,
+        message: err.response?.data?.detail || 'Test failed',
+      });
+    } finally {
+      setIsTestingBedrock(false);
     }
-    saveMutation.mutate({ prov: provider, key: apiKey });
   };
 
   const handleAvatarPreview = (url) => setAvatarPreview(url);
@@ -237,6 +274,7 @@ const Settings = () => {
                   <SelectContent>
                     <SelectItem value="openai">OpenAI (GPT-4o-mini)</SelectItem>
                     <SelectItem value="gemini">Google Gemini (Flash)</SelectItem>
+                    <SelectItem value="bedrock">AWS Bedrock (Claude)</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-[#667085] mt-1">This provider will be used for all AI features across the app</p>
@@ -248,19 +286,74 @@ const Settings = () => {
                 <div className="relative">
                   <Key size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[#667085]" />
                   <Input
-                    id="api-key" type="password" value={apiKey} onChange={(e) => { setApiKey(e.target.value); setError(''); }}
-                    placeholder={provider === 'openai' ? 'sk-...' : 'AIza...'}
+                    id="api-key" type="password" value={apiKey} onChange={(e) => { setApiKey(e.target.value); setError(''); setBedrockTestResult(null); }}
+                    placeholder={provider === 'bedrock' ? (aiSettings?.has_key ? aiSettings.api_key_masked : 'Bedrock API key') : (provider === 'openai' ? 'sk-...' : 'AIza...')}
                     className="pl-10" data-testid="api-key-input"
                   />
                 </div>
                 <div className="mt-2 text-xs text-[#667085]">
                   {provider === 'openai' ? (
                     <span>Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-[#1570EF] hover:underline">OpenAI Platform</a></span>
-                  ) : (
+                  ) : provider === 'gemini' ? (
                     <span>Get your API key from <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-[#1570EF] hover:underline">Google AI Studio</a></span>
+                  ) : (
+                    <span>Generate a Bedrock API key in the AWS Bedrock console → API keys.</span>
                   )}
                 </div>
               </div>
+
+              {/* Bedrock-specific fields */}
+              {provider === 'bedrock' && (
+                <>
+                  <div>
+                    <Label htmlFor="bedrock-region">Region</Label>
+                    <Input
+                      id="bedrock-region"
+                      value={bedrockRegion}
+                      onChange={(e) => { setBedrockRegion(e.target.value); setBedrockTestResult(null); }}
+                      placeholder="us-east-1"
+                      data-testid="bedrock-region-input"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="bedrock-model">Model</Label>
+                    <Input
+                      id="bedrock-model"
+                      value={bedrockModel}
+                      onChange={(e) => { setBedrockModel(e.target.value); setBedrockTestResult(null); }}
+                      placeholder="us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+                      data-testid="bedrock-model-input"
+                    />
+                  </div>
+                  <div className="bg-[#F7F7F8] border border-[#E6E8EC] rounded-lg p-4">
+                    <p className="text-xs text-[#667085]">
+                      Paste a Bedrock API key (AWS_BEARER_TOKEN_BEDROCK). You must have model access enabled in this region. Note: SMTP-style — on some hosts outbound is fine; Bedrock uses HTTPS.
+                    </p>
+                  </div>
+                  <div>
+                    <Button
+                      variant="outline"
+                      onClick={handleTestBedrock}
+                      disabled={isTestingBedrock}
+                      data-testid="test-bedrock-btn"
+                    >
+                      {isTestingBedrock ? (
+                        <><Loader2 size={16} className="mr-2 animate-spin" />Testing...</>
+                      ) : (
+                        'Test Bedrock'
+                      )}
+                    </Button>
+                    {bedrockTestResult && (
+                      <div
+                        className={`mt-2 text-sm ${bedrockTestResult.ok ? 'text-green-600' : 'text-red-600'}`}
+                        data-testid="bedrock-test-result"
+                      >
+                        {bedrockTestResult.message}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
 
               {/* Info */}
               <div className="bg-[#F7F7F8] border border-[#E6E8EC] rounded-lg p-4">
@@ -303,19 +396,19 @@ const Settings = () => {
           </div>
           <div className="flex gap-3">
             <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#1570EF] text-white flex items-center justify-center text-xs font-semibold">2</div>
-            <div><strong className="text-[#0B1220]">Type your command:</strong> Use natural language like "Assign Alice to Mobile App at 60%"</div>
+            <div><strong className="text-[#0B1220]">Type your command:</strong> Use natural language like &ldquo;Assign Alice to Mobile App at 60%&rdquo;</div>
           </div>
           <div className="flex gap-3">
             <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#1570EF] text-white flex items-center justify-center text-xs font-semibold">3</div>
-            <div><strong className="text-[#0B1220]">Confirm action:</strong> Review the parsed command and click "Confirm"</div>
+            <div><strong className="text-[#0B1220]">Confirm action:</strong> Review the parsed command and click &ldquo;Confirm&rdquo;</div>
           </div>
         </div>
         <div className="mt-4 pt-4 border-t border-[#E6E8EC]">
           <strong className="text-sm text-[#0B1220]">Example Commands:</strong>
           <ul className="mt-2 space-y-1 text-sm text-[#667085] list-disc list-inside">
-            <li>"Put John on Website Redesign at 75% for 2 weeks"</li>
-            <li>"Website project is delayed, at 50% complete"</li>
-            <li>"Add high impact risk about API delays to Project X"</li>
+            <li>&ldquo;Put John on Website Redesign at 75% for 2 weeks&rdquo;</li>
+            <li>&ldquo;Website project is delayed, at 50% complete&rdquo;</li>
+            <li>&ldquo;Add high impact risk about API delays to Project X&rdquo;</li>
           </ul>
         </div>
       </div>
