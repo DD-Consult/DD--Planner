@@ -138,6 +138,72 @@ def extract_bedrock_text(response) -> str:
         return ""
 
 
+async def list_bedrock_models(api_key: str, region: str = None):
+    """List the Bedrock models usable by this API key in this region, via the
+    control-plane APIs (Bearer-token auth). Prefers INFERENCE PROFILES (which are
+    what on-demand Claude invocation actually requires) and falls back to
+    foundation models. Returns (models, error) where models = [{id, name, type}].
+
+    `type` is 'profile' (inference profile — recommended, invocable) or 'foundation'.
+    """
+    import httpx
+    region = region or BEDROCK_DEFAULT_REGION
+    base = f"https://bedrock.{region}.amazonaws.com"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    models = []
+    err = None
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        # 1. Inference profiles (what Claude-on-demand needs). type=SYSTEM_DEFINED covers cross-region profiles.
+        try:
+            r = await client.get(f"{base}/inference-profiles?maxResults=1000", headers=headers)
+            if r.status_code == 200:
+                for p in r.json().get("inferenceProfileSummaries", []):
+                    pid = p.get("inferenceProfileId")
+                    if pid:
+                        models.append({
+                            "id": pid,
+                            "name": p.get("inferenceProfileName") or pid,
+                            "type": "profile",
+                        })
+            else:
+                err = f"inference-profiles HTTP {r.status_code}: {r.text[:200]}"
+        except Exception as e:
+            err = f"inference-profiles error: {e}"
+
+        # 2. Foundation models that support on-demand TEXT (fallback / additional choices).
+        try:
+            r2 = await client.get(f"{base}/foundation-models?byOutputModality=TEXT", headers=headers)
+            if r2.status_code == 200:
+                existing = {m["id"] for m in models}
+                for m in r2.json().get("modelSummaries", []):
+                    mid = m.get("modelId")
+                    infs = m.get("inferenceTypesSupported", []) or []
+                    # Only add as directly-usable if it supports ON_DEMAND; otherwise it needs a profile.
+                    if mid and mid not in existing and "ON_DEMAND" in infs:
+                        models.append({
+                            "id": mid,
+                            "name": f"{m.get('providerName','')} {m.get('modelName', mid)}".strip(),
+                            "type": "foundation",
+                        })
+            elif err is None:
+                err = f"foundation-models HTTP {r2.status_code}: {r2.text[:200]}"
+        except Exception as e:
+            if err is None:
+                err = f"foundation-models error: {e}"
+
+    # Keep Anthropic/Claude first (most relevant), then the rest, de-duplicated.
+    def _sort_key(m):
+        name = (m["id"] + " " + m["name"]).lower()
+        return (0 if "claude" in name or "anthropic" in name else 1, m["name"].lower())
+    models.sort(key=_sort_key)
+
+    if not models and err is None:
+        err = "No models returned — check model access in this region."
+    return models, (None if models else err)
+
+
+
 async def call_openai_api(api_key: str, system_prompt: str, user_message: str, json_mode: bool = True):
     """Helper function to call OpenAI API.
 

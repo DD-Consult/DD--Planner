@@ -382,6 +382,7 @@ export const getPortfolioBudgetAnalysis = () => api.get('/ai/portfolio-budget-an
 export const getAiSettings = () => api.get('/settings/ai');
 export const updateAiSettings = (payload) => api.put('/settings/ai', payload); // {provider, api_key?, bedrock_region?, bedrock_model?}
 export const testBedrock = () => api.post('/settings/ai/test-bedrock');
+export const listBedrockModels = (apiKey, region) => api.get('/settings/ai/bedrock-models', { params: { ...(apiKey ? { api_key: apiKey } : {}), ...(region ? { region } : {}) } });
 export const clearAiSettings = () => api.delete('/settings/ai');
 
 // AI Chat Agent

@@ -14,7 +14,7 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 import { Settings as SettingsIcon, Key, Sparkles, CheckCircle2, XCircle, User, Camera, Loader2, Trash2, AlertTriangle, Database, ShieldCheck, Bell, Mail, Clock, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getMe, updateAvatar, scanOrphanedData, executeDataCleanup, getAiSettings, updateAiSettings, clearAiSettings, testBedrock, checkTimesheetReminders, checkAllocationReminders, getReminderStatus } from '../api';
+import { getMe, updateAvatar, scanOrphanedData, executeDataCleanup, getAiSettings, updateAiSettings, clearAiSettings, testBedrock, listBedrockModels, checkTimesheetReminders, checkAllocationReminders, getReminderStatus } from '../api';
 import IntegrationsSettings from '../components/IntegrationsSettings';
 import WorkspaceBrandingSection from '../components/WorkspaceBrandingSection';
 
@@ -150,6 +150,30 @@ const Settings = () => {
       });
     } finally {
       setIsTestingBedrock(false);
+    }
+  };
+
+  // Load the models/inference-profiles this Bedrock key + region can actually use.
+  const [bedrockModels, setBedrockModels] = useState([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsMsg, setModelsMsg] = useState('');
+  const handleLoadModels = async () => {
+    setLoadingModels(true);
+    setModelsMsg('');
+    try {
+      // Use the key just typed (if any); else the saved key server-side.
+      const response = await listBedrockModels(apiKey || undefined, bedrockRegion || undefined);
+      const data = response.data || {};
+      setBedrockModels(data.models || []);
+      setModelsMsg(data.message || '');
+      // Auto-select the first model if current value isn't in the list.
+      if ((data.models || []).length && !data.models.some((m) => m.id === bedrockModel)) {
+        setBedrockModel(data.models[0].id);
+      }
+    } catch (err) {
+      setModelsMsg(err.response?.data?.detail || 'Could not load models');
+    } finally {
+      setLoadingModels(false);
     }
   };
 
@@ -316,14 +340,46 @@ const Settings = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="bedrock-model">Model</Label>
-                    <Input
-                      id="bedrock-model"
-                      value={bedrockModel}
-                      onChange={(e) => { setBedrockModel(e.target.value); setBedrockTestResult(null); }}
-                      placeholder="us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-                      data-testid="bedrock-model-input"
-                    />
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="bedrock-model">Model</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleLoadModels}
+                        disabled={loadingModels}
+                        data-testid="load-bedrock-models-btn"
+                      >
+                        {loadingModels ? <><Loader2 size={14} className="mr-1 animate-spin" />Loading…</> : 'Load available models'}
+                      </Button>
+                    </div>
+                    {bedrockModels.length > 0 ? (
+                      <Select value={bedrockModel} onValueChange={(v) => { setBedrockModel(v); setBedrockTestResult(null); }}>
+                        <SelectTrigger id="bedrock-model" className="mt-1" data-testid="bedrock-model-select">
+                          <SelectValue placeholder="Select a model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {bedrockModels.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.name}{m.type === 'profile' ? '  (inference profile)' : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        id="bedrock-model"
+                        className="mt-1"
+                        value={bedrockModel}
+                        onChange={(e) => { setBedrockModel(e.target.value); setBedrockTestResult(null); }}
+                        placeholder="us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+                        data-testid="bedrock-model-input"
+                      />
+                    )}
+                    {modelsMsg && <p className="text-xs text-[#667085] mt-1" data-testid="bedrock-models-msg">{modelsMsg}</p>}
+                    <p className="text-xs text-[#667085] mt-1">
+                      Click &quot;Load available models&quot; to pick from what your key can access in this region. Inference profiles are recommended (some models can&apos;t be called on-demand directly).
+                    </p>
                   </div>
                   <div className="bg-[#F7F7F8] border border-[#E6E8EC] rounded-lg p-4">
                     <p className="text-xs text-[#667085]">

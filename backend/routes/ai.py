@@ -122,6 +122,36 @@ async def test_bedrock(current_user: dict = Depends(require_super_admin)):
         return {"ok": False, "message": f"Bedrock test failed: {e}"}
 
 
+@router.get("/api/settings/ai/bedrock-models")
+async def list_bedrock_models_endpoint(
+    api_key: Optional[str] = None,
+    region: Optional[str] = None,
+    current_user: dict = Depends(require_super_admin),
+):
+    """List Bedrock models the API key can use in the region (super_admin only).
+
+    Prefers inference profiles (invocable for Claude on-demand). Uses the api_key
+    query param if provided (so the admin can load models BEFORE saving using the
+    key they just typed), otherwise the saved key. Returns {ok, models, message}.
+    """
+    from services.ai_providers import list_bedrock_models, get_ai_config, BEDROCK_DEFAULT_REGION
+    key = api_key
+    reg = region
+    if not key:
+        cfg = await get_ai_config()
+        if cfg.get("provider") == "bedrock":
+            key = cfg.get("api_key")
+            reg = reg or cfg.get("region")
+    if not key:
+        return {"ok": False, "models": [], "message": "Enter a Bedrock API key (or save one) first."}
+    reg = reg or BEDROCK_DEFAULT_REGION
+    models, err = await list_bedrock_models(key, reg)
+    if err and not models:
+        return {"ok": False, "models": [], "message": err}
+    return {"ok": True, "models": models, "message": f"{len(models)} model(s) available in {reg}."}
+
+
+
 @router.delete("/api/settings/ai")
 async def clear_ai_settings(current_user: dict = Depends(require_super_admin)):
     """Clear app-wide AI settings, reverting to Emergent LLM key fallback."""
