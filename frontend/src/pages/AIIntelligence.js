@@ -3,13 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Sparkles, TrendingDown, AlertTriangle, ClipboardList, RefreshCw,
-  ChevronRight, Zap, Activity, Timer, Award,
+  ChevronRight, Zap, Activity, Timer, Award, ThumbsUp, Loader2,
 } from 'lucide-react';
 import {
   runAnomalyScan, getLatestAnomalyReport,
   getPortfolioForecast, generateProjectRetrospective,
   listProjectRetrospectives, getRetrospective, deleteRetrospective,
-  getProjects,
+  getProjects, getAIFeedbackAnalytics, suggestAIInstructions,
+  createAIInstruction,
 } from '../api';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -239,6 +240,191 @@ const ForecastPanel = () => {
   );
 };
 
+// ─── AI Feedback & Tuning Panel ────────────────────────────────────────
+const FeedbackTuningPanel = () => {
+  const qc = useQueryClient();
+  const [addedSuggestions, setAddedSuggestions] = useState(new Set());
+
+  const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
+    queryKey: ['aiFeedbackAnalytics'],
+    queryFn: () => getAIFeedbackAnalytics().then(r => r.data),
+    staleTime: 60000,
+  });
+
+  const suggestMutation = useMutation({
+    mutationFn: suggestAIInstructions,
+    onError: (e) => toast.error(`Suggestion failed: ${e?.response?.data?.detail || e?.message || 'Unknown'}`),
+  });
+
+  const addInstructionMutation = useMutation({
+    mutationFn: (data) => createAIInstruction(data),
+    onSuccess: () => {
+      toast.success('Instruction added');
+      qc.invalidateQueries({ queryKey: ['aiInstructions'] });
+    },
+    onError: (e) => toast.error(`Failed to add: ${e?.response?.data?.detail || e?.message || 'Unknown'}`),
+  });
+
+  const handleAddInstruction = (suggestion, index) => {
+    addInstructionMutation.mutate({
+      scope: 'global',
+      category: suggestion.category,
+      instructions: suggestion.suggestion,
+      is_active: true,
+    });
+    setAddedSuggestions(prev => new Set([...prev, index]));
+  };
+
+  const total = analyticsData?.total || 0;
+  const overallSat = analyticsData?.overall_satisfaction_pct || 0;
+  const byFeature = analyticsData?.by_feature || [];
+
+  const prettifyFeature = (f) => f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  
+  const getSatColor = (pct) => {
+    if (pct >= 70) return 'text-emerald-600';
+    if (pct >= 40) return 'text-amber-600';
+    return 'text-red-600';
+  };
+
+  const suggestions = suggestMutation.data?.data?.suggestions || [];
+  const suggestionSummary = suggestMutation.data?.data?.summary || '';
+  const suggestionOk = suggestMutation.data?.data?.ok !== false;
+
+  return (
+    <div className="bg-white rounded-xl border border-[#E6E8EC] p-6" data-testid="feedback-tuning-panel">
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-semibold text-[#0B1220] flex items-center gap-2">
+            <ThumbsUp size={18} className="text-blue-500" />
+            AI Feedback & Tuning
+          </h3>
+          <p className="text-sm text-[#667085] mt-1">
+            See how the team rates AI output, and let AI suggest guidance to improve it.
+          </p>
+        </div>
+        <Button
+          onClick={() => suggestMutation.mutate()}
+          disabled={suggestMutation.isPending}
+          size="sm"
+          data-testid="suggest-instructions-btn"
+        >
+          <RefreshCw size={14} className={`mr-2 ${suggestMutation.isPending ? 'animate-spin' : ''}`} />
+          {suggestMutation.isPending ? 'Analyzing feedback…' : 'Suggest instruction improvements'}
+        </Button>
+      </div>
+
+      {analyticsLoading ? (
+        <div className="py-8 text-center text-[#667085] text-sm">Loading…</div>
+      ) : (
+        <>
+          {total === 0 ? (
+            <div className="py-6 text-center text-sm text-[#667085] bg-slate-50 rounded-lg border border-[#E6E8EC]">
+              No feedback yet — use the 👍/👎 on AI outputs to start tuning.
+            </div>
+          ) : (
+            <>
+              <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200" data-testid="overall-satisfaction">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-[#0B1220]">Overall satisfaction:</span>
+                  <span className={`text-xl font-bold ${getSatColor(overallSat)}`}>
+                    {overallSat.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="text-xs text-[#667085] mt-1">{total} rating{total !== 1 ? 's' : ''}</div>
+              </div>
+
+              {byFeature.length > 0 && (
+                <div className="space-y-2 mb-4">
+                  {byFeature.map((f) => {
+                    const satPct = f.satisfaction_pct || 0;
+                    return (
+                      <div
+                        key={f.feature}
+                        className="p-3 border border-[#E6E8EC] rounded-lg"
+                        data-testid={`feature-row-${f.feature}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-[#0B1220]">{prettifyFeature(f.feature)}</div>
+                            <div className="flex items-center gap-3 mt-1 text-xs text-[#667085]">
+                              <span>👍 {f.up} / 👎 {f.down}</span>
+                              <span className={`font-semibold ${getSatColor(satPct)}`}>
+                                {satPct.toFixed(0)}% satisfaction
+                              </span>
+                            </div>
+                            {f.recent_notes && f.recent_notes.length > 0 && (
+                              <div className="mt-2 space-y-1">
+                                {f.recent_notes.slice(0, 2).map((note, i) => (
+                                  <div key={i} className="text-xs text-[#475467] italic pl-3 border-l-2 border-[#E6E8EC]">
+                                    &ldquo;{note.note}&rdquo; {note.rating === 'up' ? '👍' : '👎'}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {suggestMutation.isPending && (
+        <div className="py-6 text-center">
+          <Loader2 size={24} className="animate-spin mx-auto text-blue-500" />
+          <p className="text-sm text-[#667085] mt-2">Analyzing feedback…</p>
+        </div>
+      )}
+
+      {suggestMutation.isSuccess && (
+        <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+          <div className="text-sm text-[#334155] mb-3" data-testid="suggestions-summary">
+            {suggestionSummary}
+          </div>
+          {!suggestionOk || suggestions.length === 0 ? (
+            <div className="text-xs text-[#667085] italic">
+              {suggestionOk ? 'No specific suggestions at this time.' : 'Unable to generate suggestions.'}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {suggestions.map((s, index) => (
+                <div
+                  key={index}
+                  className="p-3 bg-white rounded-lg border border-purple-300"
+                  data-testid={`suggestion-${index}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1">
+                      <Badge className="text-xs px-2 mb-2 bg-purple-100 text-purple-800 border-purple-300">
+                        {s.category}
+                      </Badge>
+                      <div className="text-sm text-[#334155]">{s.suggestion}</div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleAddInstruction(s, index)}
+                      disabled={addedSuggestions.has(index) || addInstructionMutation.isPending}
+                      data-testid={`add-instruction-${index}`}
+                    >
+                      {addedSuggestions.has(index) ? '✓ Added' : 'Add as instruction'}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── Retrospective Panel ───────────────────────────────────────────────
 const RetrospectivePanel = () => {
   const { data: projects } = useQuery({
@@ -441,6 +627,7 @@ const AIIntelligence = () => {
       <AnomalyPanel />
       <ForecastPanel />
       <RetrospectivePanel />
+      <FeedbackTuningPanel />
     </div>
   );
 };

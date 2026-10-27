@@ -12,9 +12,9 @@ import {
 } from '../components/ui/select';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
-import { Settings as SettingsIcon, Key, Sparkles, CheckCircle2, XCircle, User, Camera, Loader2, Trash2, AlertTriangle, Database, ShieldCheck, Bell, Mail, Clock, Link2 } from 'lucide-react';
+import { Settings as SettingsIcon, Key, Sparkles, CheckCircle2, XCircle, User, Camera, Loader2, Trash2, AlertTriangle, Database, ShieldCheck, Bell, Mail, Clock, Link2, FlaskConical } from 'lucide-react';
 import { toast } from 'sonner';
-import { getMe, updateAvatar, scanOrphanedData, executeDataCleanup, getAiSettings, updateAiSettings, clearAiSettings, testBedrock, listBedrockModels, checkTimesheetReminders, checkAllocationReminders, getReminderStatus } from '../api';
+import { getMe, updateAvatar, scanOrphanedData, executeDataCleanup, getAiSettings, updateAiSettings, clearAiSettings, testBedrock, listBedrockModels, checkTimesheetReminders, checkAllocationReminders, getReminderStatus, getSampleDataStatus, generateSampleData, removeSampleData } from '../api';
 import IntegrationsSettings from '../components/IntegrationsSettings';
 import WorkspaceBrandingSection from '../components/WorkspaceBrandingSection';
 
@@ -442,6 +442,26 @@ const Settings = () => {
         </div>
       )}
 
+      {/* Sample Data - Super Admin only */}
+      {isSuperAdmin && (
+        <div className="bg-white border border-[#E6E8EC] rounded-lg p-6" data-testid="sample-data-card">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg bg-[#F2F7FF] flex items-center justify-center">
+              <FlaskConical size={20} className="text-[#1570EF]" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold" style={{ fontFamily: 'Space Grotesk' }}>Sample data</h3>
+              <p className="text-sm text-[#667085]">Generate realistic demo/training data in this workspace. Separate from the read-only public demo.</p>
+            </div>
+            <span className="ml-auto flex items-center gap-1 text-xs text-[#667085] bg-[#F9FAFB] border border-[#E6E8EC] rounded px-2 py-1">
+              <ShieldCheck size={12} /> Super Admin only
+            </span>
+          </div>
+
+          <SampleDataSection queryClient={queryClient} />
+        </div>
+      )}
+
       {/* Usage Instructions */}
       <div className="bg-[#F7F7F8] border border-[#E6E8EC] rounded-lg p-6">
         <h3 className="text-lg font-semibold mb-4" style={{ fontFamily: 'Space Grotesk' }}>How to Use AI Commands</h3>
@@ -676,6 +696,192 @@ const ReminderSection = () => {
             Note: Email notifications require RESEND_API_KEY to be configured in environment.
           </span>
         )}
+      </p>
+    </div>
+  );
+};
+
+// Separate component for sample data section to use hooks
+const SampleDataSection = ({ queryClient }) => {
+  // Fetch sample data status
+  const { data: sampleStatus, isLoading } = useQuery({
+    queryKey: ['sampleDataStatus'],
+    queryFn: async () => {
+      const r = await getSampleDataStatus();
+      return r.data;
+    },
+  });
+
+  // Generate sample data mutation
+  const generateMutation = useMutation({
+    mutationFn: generateSampleData,
+    onSuccess: (response) => {
+      const data = response.data;
+      if (data.status === 'capped') {
+        toast.info(data.message || 'Sample data generation capped');
+      } else {
+        toast.success(data.message || 'Sample data generated successfully');
+      }
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries(['sampleDataStatus']);
+      queryClient.invalidateQueries(['projects']);
+      queryClient.invalidateQueries(['resources']);
+      queryClient.invalidateQueries(['proposals']);
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.detail || 'Failed to generate sample data');
+    },
+  });
+
+  // Remove sample data mutation
+  const removeMutation = useMutation({
+    mutationFn: removeSampleData,
+    onSuccess: (response) => {
+      const removed = response.data.removed || {};
+      toast.success(`Removed ${removed.total || 0} sample records`);
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries(['sampleDataStatus']);
+      queryClient.invalidateQueries(['projects']);
+      queryClient.invalidateQueries(['resources']);
+      queryClient.invalidateQueries(['proposals']);
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.detail || 'Failed to remove sample data');
+    },
+  });
+
+  const handleRemove = () => {
+    if (window.confirm('Remove all sample data? This deletes every sample project, resource, allocation, proposal, etc. Real data is untouched.')) {
+      removeMutation.mutate();
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 py-6 justify-center text-[#667085]">
+        <Loader2 size={18} className="animate-spin" />
+        <span className="text-sm">Loading sample data status...</span>
+      </div>
+    );
+  }
+
+  const totalRecords = sampleStatus?.total || 0;
+  const hasData = totalRecords > 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Current Status */}
+      <div className="bg-[#F9FAFB] border border-[#E6E8EC] rounded-lg p-4">
+        <div className="text-xs font-semibold text-[#667085] uppercase tracking-wider mb-2">Current Status</div>
+        <div className="space-y-1 text-sm">
+          <div className="flex justify-between items-center">
+            <span className="text-[#667085]">Sample records:</span>
+            <span className="font-medium text-lg" data-testid="sample-data-count">
+              {totalRecords}
+            </span>
+          </div>
+          {hasData && sampleStatus && (
+            <div className="mt-3 pt-3 border-t border-[#E6E8EC]">
+              <div className="text-xs text-[#667085] mb-2">Breakdown:</div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {sampleStatus.projects > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-[#667085]">Projects:</span>
+                    <span className="font-medium">{sampleStatus.projects}</span>
+                  </div>
+                )}
+                {sampleStatus.resources > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-[#667085]">Resources:</span>
+                    <span className="font-medium">{sampleStatus.resources}</span>
+                  </div>
+                )}
+                {sampleStatus.allocations > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-[#667085]">Allocations:</span>
+                    <span className="font-medium">{sampleStatus.allocations}</span>
+                  </div>
+                )}
+                {sampleStatus.wbs_tasks > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-[#667085]">WBS Tasks:</span>
+                    <span className="font-medium">{sampleStatus.wbs_tasks}</span>
+                  </div>
+                )}
+                {sampleStatus.risks > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-[#667085]">Risks:</span>
+                    <span className="font-medium">{sampleStatus.risks}</span>
+                  </div>
+                )}
+                {sampleStatus.status_updates > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-[#667085]">Status Updates:</span>
+                    <span className="font-medium">{sampleStatus.status_updates}</span>
+                  </div>
+                )}
+                {sampleStatus.timesheets > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-[#667085]">Timesheets:</span>
+                    <span className="font-medium">{sampleStatus.timesheets}</span>
+                  </div>
+                )}
+                {sampleStatus.proposals > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-[#667085]">Proposals:</span>
+                    <span className="font-medium">{sampleStatus.proposals}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-wrap gap-3">
+        <Button
+          onClick={() => generateMutation.mutate()}
+          disabled={generateMutation.isPending}
+          data-testid="generate-sample-data-btn"
+        >
+          {generateMutation.isPending ? (
+            <>
+              <Loader2 size={16} className="mr-2 animate-spin" />
+              Generating...
+            </>
+          ) : (
+            <>
+              <FlaskConical size={16} className="mr-2" />
+              Generate sample data
+            </>
+          )}
+        </Button>
+
+        <Button
+          variant="outline"
+          onClick={handleRemove}
+          disabled={removeMutation.isPending || !hasData}
+          data-testid="remove-sample-data-btn"
+          className={hasData ? 'text-red-600 hover:text-red-700 hover:bg-red-50' : ''}
+        >
+          {removeMutation.isPending ? (
+            <>
+              <Loader2 size={16} className="mr-2 animate-spin" />
+              Removing...
+            </>
+          ) : (
+            <>
+              <Trash2 size={16} className="mr-2" />
+              Remove sample data
+            </>
+          )}
+        </Button>
+      </div>
+
+      {/* Helper Note */}
+      <p className="text-xs text-[#667085]">
+        Sample data is tagged and fully removable. It&apos;s created in your real workspace so you can click through a realistic setup — delete it any time.
       </p>
     </div>
   );

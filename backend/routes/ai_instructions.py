@@ -316,3 +316,106 @@ async def get_feedback_stats(
         "by_rating": rating_counts,
         "recent_feedback": recent_feedback_list
     }
+
+
+
+# ============================================================
+# FEEDBACK ANALYTICS + AUTO-TUNING SUGGESTIONS (Phase 3)
+# ============================================================
+
+@router.get("/api/ai/feedback/analytics")
+async def get_feedback_analytics(current_user: dict = Depends(require_admin)):
+    """Per-feature thumbs up/down breakdown with satisfaction % + recent notes.
+
+    Admin only. Powers the feedback trends view.
+    """
+    rows = await ai_feedback_collection.find({}).sort("created_at", -1).to_list(length=5000)
+    total = len(rows)
+    features = {}
+    for r in rows:
+        f = r.get("feature", "other")
+        feat = features.setdefault(f, {"feature": f, "up": 0, "down": 0, "total": 0, "recent_notes": []})
+        feat["total"] += 1
+        if r.get("rating") == "thumbs_down":
+            feat["down"] += 1
+        else:
+            feat["up"] += 1
+        note = (r.get("feedback_text") or "").strip()
+        if note and len(feat["recent_notes"]) < 5:
+            feat["recent_notes"].append({"rating": r.get("rating"), "note": note})
+
+    per_feature = []
+    for feat in features.values():
+        t = feat["total"] or 1
+        feat["satisfaction_pct"] = round(feat["up"] / t * 100)
+        per_feature.append(feat)
+    per_feature.sort(key=lambda x: (-x["total"], x["feature"]))
+
+    up = sum(1 for r in rows if r.get("rating") != "thumbs_down")
+    return {
+        "total": total,
+        "overall_satisfaction_pct": round(up / total * 100) if total else None,
+        "by_feature": per_feature,
+    }
+
+
+@router.post("/api/ai/feedback/suggest-instructions")
+async def suggest_instructions(current_user: dict = Depends(require_admin)):
+    """Use the configured AI to propose refinements to the workspace's AI
+    instructions, based on recent thumbs-down feedback (auto-tuning, Phase 3).
+
+    Admin only. Returns {ok, suggestions:[{category, suggestion}], summary} —
+    the admin reviews and can save them as instructions (we do NOT auto-apply).
+    """
+    rows = await ai_feedback_collection.find({}).sort("created_at", -1).to_list(length=400)
+    if not rows:
+        return {"ok": False, "summary": "No feedback captured yet — collect some thumbs up/down first.", "suggestions": []}
+
+    # Build a compact digest grouped by feature, prioritising thumbs-down with notes.
+    digest = {}
+    for r in rows:
+        f = r.get("feature", "other")
+        d = digest.setdefault(f, {"up": 0, "down": 0, "down_notes": [], "up_notes": []})
+        if r.get("rating") == "thumbs_down":
+            d["down"] += 1
+            n = (r.get("feedback_text") or "").strip()
+            if n and len(d["down_notes"]) < 8:
+                d["down_notes"].append(n)
+        else:
+            d["up"] += 1
+            n = (r.get("feedback_text") or "").strip()
+            if n and len(d["up_notes"]) < 4:
+                d["up_notes"].append(n)
+
+    import json as _json
+    from services.ai_providers import call_ai_text
+    system_prompt = (
+        "You are an AI operations analyst for a project-management app. Given feedback on the app's "
+        "AI features (thumbs up/down with optional notes), propose concise, actionable INSTRUCTIONS the "
+        "team can add to steer the AI toward what they want. Focus on features with low satisfaction or "
+        "repeated complaints. Each suggestion must be a single imperative sentence the AI can follow.\n\n"
+        "Valid categories: all, chat, status_summary, wbs_generation, reschedule, risk_polish.\n"
+        "Return ONLY valid JSON: {\"summary\": \"<1-2 sentence overview>\", "
+        "\"suggestions\": [{\"category\": \"<one of the categories>\", \"suggestion\": \"<imperative instruction>\"}]}. "
+        "Return at most 5 suggestions. If feedback is all positive, return an empty suggestions array with an encouraging summary."
+    )
+    user_message = "Feedback digest by feature:\n" + _json.dumps(digest, indent=2)
+
+    text, provider = await call_ai_text(system_prompt, user_message, json_mode=True)
+    if not text:
+        return {"ok": False, "summary": "AI is unavailable right now — try again shortly.", "suggestions": []}
+    # Parse robustly
+    import re as _re
+    cleaned = _re.sub(r'^```(?:json)?\s*', '', text.strip())
+    cleaned = _re.sub(r'\s*```$', '', cleaned)
+    try:
+        parsed = _json.loads(cleaned)
+        suggestions = parsed.get("suggestions", []) or []
+        # sanitise categories
+        valid = {"all", "chat", "status_summary", "wbs_generation", "reschedule", "risk_polish"}
+        for s in suggestions:
+            if s.get("category") not in valid:
+                s["category"] = "all"
+        return {"ok": True, "summary": parsed.get("summary", ""), "suggestions": suggestions[:5], "provider": provider}
+    except Exception:
+        return {"ok": False, "summary": "Couldn't parse the AI suggestion. Try again.", "suggestions": []}

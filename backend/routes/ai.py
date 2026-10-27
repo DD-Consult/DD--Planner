@@ -151,6 +151,32 @@ async def list_bedrock_models_endpoint(
     return {"ok": True, "models": models, "message": f"{len(models)} model(s) available in {reg}."}
 
 
+# ============================================================
+# SAMPLE DATA GENERATOR (admin seeding for demos/trials/training)
+# ============================================================
+
+@router.get("/api/admin/sample-data/status")
+async def sample_data_status_endpoint(current_user: dict = Depends(require_super_admin)):
+    """Counts of existing admin-generated sample data (super_admin only)."""
+    from services.sample_data import sample_data_status
+    return await sample_data_status()
+
+
+@router.post("/api/admin/sample-data/generate")
+async def generate_sample_data_endpoint(current_user: dict = Depends(require_super_admin)):
+    """Generate one batch of realistic sample data in the workspace (super_admin)."""
+    from services.sample_data import generate_sample_data
+    return await generate_sample_data(created_by=current_user.get("email", ""))
+
+
+@router.delete("/api/admin/sample-data")
+async def remove_sample_data_endpoint(current_user: dict = Depends(require_super_admin)):
+    """Remove ALL admin-generated sample data (super_admin only)."""
+    from services.sample_data import remove_sample_data
+    return await remove_sample_data()
+
+
+
 
 @router.delete("/api/settings/ai")
 async def clear_ai_settings(current_user: dict = Depends(require_super_admin)):

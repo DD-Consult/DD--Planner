@@ -384,6 +384,10 @@ export const updateAiSettings = (payload) => api.put('/settings/ai', payload); /
 export const testBedrock = () => api.post('/settings/ai/test-bedrock');
 export const listBedrockModels = (apiKey, region) => api.get('/settings/ai/bedrock-models', { params: { ...(apiKey ? { api_key: apiKey } : {}), ...(region ? { region } : {}) } });
 export const clearAiSettings = () => api.delete('/settings/ai');
+// Admin sample-data generator
+export const getSampleDataStatus = () => api.get('/admin/sample-data/status');
+export const generateSampleData = () => api.post('/admin/sample-data/generate');
+export const removeSampleData = () => api.delete('/admin/sample-data');
 
 // AI Chat Agent
 export const sendChatMessage = (message, sessionId) =>
@@ -570,6 +574,8 @@ export const updateAIInstruction = (id, data) => api.put(`/ai/instructions/${id}
 export const deleteAIInstruction = (id) => api.delete(`/ai/instructions/${id}`);
 export const submitAIFeedback = (data) => api.post('/ai/feedback', data);
 export const getAIFeedbackStats = () => api.get('/ai/feedback/stats');
+export const getAIFeedbackAnalytics = () => api.get('/ai/feedback/analytics');
+export const suggestAIInstructions = () => api.post('/ai/feedback/suggest-instructions');
 
 // Agent Memory
 export const getAIMemories = (params) => api.get('/ai/memory', { params });
