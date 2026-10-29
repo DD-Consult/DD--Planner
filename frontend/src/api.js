@@ -659,6 +659,9 @@ export const createProposalFromDocument = (formData) => api.post('/proposals/fro
 // Live Google Drive import
 export const listDriveDocs = (folderId) => api.get('/proposals/drive/docs', { params: folderId ? { folder_id: folderId } : {} });
 export const createProposalFromDrive = (payload) => api.post('/proposals/from-drive', payload); // {doc_id, use_ai?}
+// HubSpot deal import
+export const listHubspotDeals = () => api.get('/proposals/hubspot/deals');
+export const createProposalFromDeal = (payload) => api.post('/proposals/from-deal', payload); // {deal_id, use_ai?}
 export const updateProposal = (id, data) => api.put(`/proposals/${id}`, { data }); // data = full brief object
 export const aiDraftProposal = (id, payload) => api.post(`/proposals/${id}/ai-draft`, payload); // {message, current_data?} -> {assistant_message, data, warnings}
 export const previewProposal = (id) => api.post(`/proposals/${id}/preview`, {}, { responseType: 'text' }); // returns HTML string

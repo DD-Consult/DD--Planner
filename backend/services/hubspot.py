@@ -269,6 +269,72 @@ Synced automatically from DD Planner
         return {"ok": False, "message": str(e)}
 
 
+# ─── Proposals: deal → brief facts, list deals, engagement write-back ─────────
+
+async def list_open_deals(token: str, limit: int = 50) -> list:
+    """List recent deals (id + name + stage + amount) for the proposal picker."""
+    data = await _hs_get(
+        "/crm/v3/objects/deals",
+        token,
+        params={"properties": "dealname,dealstage,amount", "limit": min(limit, 100)},
+    )
+    out = []
+    for d in data.get("results", []):
+        props = d.get("properties", {})
+        out.append({
+            "id": d.get("id"),
+            "name": props.get("dealname") or f"Deal {d.get('id')}",
+            "stage": props.get("dealstage") or "",
+            "amount": props.get("amount") or "",
+        })
+    return out
+
+
+async def get_deal_brief_facts(deal_id: str, token: str) -> dict:
+    """Assemble facts from a HubSpot deal for seeding a proposal brief:
+    {deal_name, company_name, contact_name, contact_email, contact_phone,
+     contact_role, amount, close_date, description}."""
+    deal = await get_deal(deal_id, token)
+    props = deal.get("properties", {})
+    company = await get_deal_company_name(deal, token)
+    contact = await get_deal_primary_contact(deal, token)
+    return {
+        "deal_name": props.get("dealname", ""),
+        "company_name": company,
+        "contact_name": contact.get("name", ""),
+        "contact_email": contact.get("email", ""),
+        "contact_phone": contact.get("phone", ""),
+        "contact_role": contact.get("role", ""),
+        "amount": props.get("amount", ""),
+        "close_date": props.get("closedate", ""),
+        "description": props.get("description", ""),
+    }
+
+
+async def push_proposal_note_to_deal(deal_id: str, token: str, title: str, body_lines: list) -> dict:
+    """Create a NOTE engagement on a deal recording a proposal event
+    (sent / viewed / accepted / confirmed). Best-effort. Returns {ok, engagement_id|message}."""
+    if not deal_id:
+        return {"ok": False, "message": "No deal id"}
+    body = f"DD Planner — {title}\n\n" + "\n".join(body_lines) + "\n\n---\nSynced automatically from DD Planner"
+    try:
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        payload = {
+            "engagement": {"active": True, "type": "NOTE", "timestamp": now_ms},
+            "associations": {"dealIds": [int(deal_id)]},
+            "metadata": {"body": body},
+        }
+        result = await _hs_post("/engagements/v1/engagements", token, payload)
+        eid = result.get("engagement", {}).get("id")
+        logger.info(f"[HubSpot] proposal note {eid} on deal {deal_id}")
+        return {"ok": True, "engagement_id": eid}
+    except httpx.HTTPStatusError as e:
+        return {"ok": False, "message": f"HubSpot note error: {e.response.status_code} — {e.response.text[:300]}"}
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+
+
+
 # ─── Webhook signature validation ─────────────────────────────────────────────
 
 def verify_hubspot_signature_v3(

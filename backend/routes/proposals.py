@@ -275,6 +275,11 @@ class ProposalFromDriveRequest(BaseModel):
     use_ai: bool = True
 
 
+class ProposalFromDealRequest(BaseModel):
+    deal_id: str
+    use_ai: bool = True
+
+
 # ============================================================
 # ADMIN ENDPOINTS
 # ============================================================
@@ -818,6 +823,85 @@ async def create_proposal_from_drive(req: ProposalFromDriveRequest, admin: dict 
     )
 
 
+# ============================================================
+# HUBSPOT: deal -> proposal, engagement write-back (Proposal Phase 3)
+# ============================================================
+
+@router.get("/api/proposals/hubspot/deals")
+async def list_hubspot_deals(admin: dict = Depends(require_admin)):
+    """List HubSpot deals for the 'from deal' picker. Graceful if not configured."""
+    from services.hubspot import get_hubspot_config, list_open_deals
+    cfg = await get_hubspot_config()
+    token = (cfg or {}).get("private_app_token")
+    if not cfg or not cfg.get("enabled") or not token:
+        return {"ok": False, "message": "HubSpot is not configured/enabled in Settings → Integrations.", "deals": []}
+    try:
+        deals = await list_open_deals(token)
+        return {"ok": True, "deals": deals}
+    except Exception as e:
+        return {"ok": False, "message": f"Couldn't fetch deals: {e}", "deals": []}
+
+
+@router.post("/api/proposals/from-deal")
+async def create_proposal_from_deal(req: ProposalFromDealRequest, admin: dict = Depends(require_admin)):
+    """Create a proposal pre-filled from a HubSpot deal (facts -> brief via AI)."""
+    from services.hubspot import get_hubspot_config, get_deal_brief_facts
+    cfg = await get_hubspot_config()
+    token = (cfg or {}).get("private_app_token")
+    if not cfg or not cfg.get("enabled") or not token:
+        raise HTTPException(status_code=400, detail="HubSpot is not configured/enabled in Settings → Integrations.")
+    try:
+        facts = await get_deal_brief_facts(req.deal_id, token)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Couldn't read the HubSpot deal: {e}")
+
+    # Build a text brief from the deal facts and reuse the shared AI mapping path.
+    source_text = (
+        f"Client company: {facts.get('company_name') or facts.get('deal_name')}\n"
+        f"Deal / engagement: {facts.get('deal_name')}\n"
+        f"Primary contact: {facts.get('contact_name')} ({facts.get('contact_role')}), "
+        f"{facts.get('contact_email')} {facts.get('contact_phone')}\n"
+        f"Indicative value: {facts.get('amount')}  Target close: {facts.get('close_date')}\n\n"
+        f"Deal notes / description:\n{facts.get('description') or '(none provided)'}"
+    )
+    out = await _build_proposal_from_text(
+        source_text, req.use_ai,
+        {"type": "hubspot_deal", "deal_id": req.deal_id},
+        admin.get("email", ""),
+    )
+    # Ensure the created proposal carries contact email + hubspot deal link for later write-back.
+    try:
+        pid = out.get("id")
+        if pid:
+            updates = {"hubspot_deal_id": req.deal_id}
+            data = (await proposals_collection.find_one({"_id": ObjectId(pid)})) or {}
+            brief = data.get("data", {})
+            if facts.get("contact_email") and not brief.get("contact_email"):
+                brief["contact_email"] = facts["contact_email"]
+                updates["data"] = brief
+            await proposals_collection.update_one({"_id": ObjectId(pid)}, {"$set": updates})
+            out["hubspot_deal_id"] = req.deal_id
+    except Exception as e:
+        print(f"[PROPOSALS] from-deal post-update failed: {e}")
+    return out
+
+
+async def _writeback_proposal_event(proposal: dict, title: str, lines: list):
+    """Best-effort: write a NOTE to the linked HubSpot deal (if any + configured)."""
+    deal_id = proposal.get("hubspot_deal_id")
+    if not deal_id:
+        return
+    try:
+        from services.hubspot import get_hubspot_config, push_proposal_note_to_deal
+        cfg = await get_hubspot_config()
+        token = (cfg or {}).get("private_app_token")
+        if cfg and cfg.get("enabled") and token:
+            await push_proposal_note_to_deal(deal_id, token, title, lines)
+    except Exception as e:
+        print(f"[PROPOSALS] hubspot writeback failed: {e}")
+
+
+
 
 
 @router.get("/api/proposals/{id}")
@@ -1105,6 +1189,12 @@ async def send_proposal(id: str, request: Request, admin: dict = Depends(require
         title = data.get("proposal_title", "Proposal")
         email_sent, email_message = await send_proposal_link_email(contact_email, proposal_link, client_name, title)
 
+    # HubSpot write-back (best-effort): record that the proposal was sent.
+    await _writeback_proposal_event(proposal, "Proposal sent", [
+        f"Proposal: {data.get('proposal_title', '')}",
+        f"Secure link shared{(' with ' + contact_email) if contact_email else ''}.",
+    ])
+
     return {
         "proposal_link": proposal_link,
         "email_sent": email_sent,
@@ -1289,7 +1379,13 @@ async def confirm_proposal(id: str, request: Request, admin: dict = Depends(requ
             }
         }
     )
-    
+
+    # HubSpot write-back (best-effort): record confirmation + provisioned project.
+    await _writeback_proposal_event(proposal, "Proposal confirmed — project created", [
+        f"Project created: {project_doc['name']}",
+        f"Client report access provisioned for {contact_email}.",
+    ])
+
     return {
         "project_id": project_id,
         "client_user_id": client_user_id,
@@ -1533,6 +1629,13 @@ async def track_proposal_event(token: str, event: dict):
                     await notifications_collection.insert_one(notification)
             except Exception as e:
                 print(f"[PROPOSALS] Notification failed: {e}")
+
+            # HubSpot write-back (best-effort): record acceptance on the deal.
+            await _writeback_proposal_event(proposal, "Proposal accepted", [
+                f"Accepted by: {event.get('accepted_by', 'unknown')}",
+                f"Chosen path: {str(event.get('accepted_path', '?')).upper()}",
+                f"Proposal: {proposal.get('data', {}).get('proposal_title', '')}",
+            ])
         
         await proposals_collection.update_one(
             {"_id": proposal["_id"]},

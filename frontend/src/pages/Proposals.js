@@ -13,7 +13,9 @@ import {
   createProposalFromTemplate,
   createProposalFromDocument,
   listDriveDocs,
-  createProposalFromDrive
+  createProposalFromDrive,
+  listHubspotDeals,
+  createProposalFromDeal
 } from '../api';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
@@ -70,7 +72,7 @@ const Proposals = () => {
     client_name: '',
     proposal_title: '',
   });
-  const [createMode, setCreateMode] = useState('blank'); // 'blank' | 'project' | 'template' | 'document' | 'drive'
+  const [createMode, setCreateMode] = useState('blank'); // 'blank' | 'project' | 'template' | 'document' | 'drive' | 'hubspot'
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [uploadFile, setUploadFile] = useState(null);
@@ -79,6 +81,10 @@ const Proposals = () => {
   const [driveError, setDriveError] = useState('');
   const [selectedDriveDocId, setSelectedDriveDocId] = useState('');
   const [driveUrl, setDriveUrl] = useState('');
+  const [hubspotDeals, setHubspotDeals] = useState([]);
+  const [hubspotLoading, setHubspotLoading] = useState(false);
+  const [hubspotError, setHubspotError] = useState('');
+  const [selectedDealId, setSelectedDealId] = useState('');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -189,6 +195,23 @@ const Proposals = () => {
     },
   });
 
+  // Create-from-hubspot-deal mutation
+  const fromHubspotMutation = useMutation({
+    mutationFn: createProposalFromDeal,
+    onSuccess: (response) => {
+      queryClient.invalidateQueries(['proposals']);
+      setIsCreateDialogOpen(false);
+      setSelectedDealId('');
+      setHubspotDeals([]);
+      setHubspotError('');
+      toast.success(response.data?.assistant_message || 'Proposal imported from HubSpot deal');
+      navigate(`/proposals/${response.data.id}/builder`);
+    },
+    onError: (err) => {
+      toast.error(err?.response?.data?.detail || 'Failed to import from HubSpot deal');
+    },
+  });
+
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: deleteProposal,
@@ -269,6 +292,24 @@ const Proposals = () => {
       setDriveError(err?.response?.data?.detail || err?.response?.data?.message || 'Failed to load Google Drive documents');
     } finally {
       setDriveLoadingList(false);
+    }
+  };
+
+  const handleLoadHubspotDeals = async () => {
+    setHubspotLoading(true);
+    setHubspotError('');
+    setHubspotDeals([]);
+    try {
+      const response = await listHubspotDeals();
+      if (response.data.ok === false) {
+        setHubspotError(response.data.message || 'Failed to load HubSpot deals');
+      } else {
+        setHubspotDeals(response.data.deals || []);
+      }
+    } catch (err) {
+      setHubspotError(err?.response?.data?.detail || err?.response?.data?.message || 'Failed to load HubSpot deals');
+    } finally {
+      setHubspotLoading(false);
     }
   };
 
@@ -488,6 +529,10 @@ const Proposals = () => {
             setDriveError('');
             setSelectedDriveDocId('');
             setDriveUrl('');
+            setHubspotDeals([]);
+            setHubspotLoading(false);
+            setHubspotError('');
+            setSelectedDealId('');
           }
         }}>
           <DialogContent data-testid="create-proposal-dialog">
@@ -499,12 +544,13 @@ const Proposals = () => {
             </DialogHeader>
 
             <Tabs value={createMode} onValueChange={setCreateMode} className="py-2">
-              <TabsList className="grid w-full grid-cols-5">
+              <TabsList className="grid w-full grid-cols-6">
                 <TabsTrigger value="blank" data-testid="create-mode-blank">Blank</TabsTrigger>
                 <TabsTrigger value="project" data-testid="create-mode-project">From a project</TabsTrigger>
                 <TabsTrigger value="template" data-testid="create-mode-template">From template</TabsTrigger>
                 <TabsTrigger value="document" data-testid="create-mode-document">Upload document</TabsTrigger>
                 <TabsTrigger value="drive" data-testid="create-mode-drive">From Drive</TabsTrigger>
+                <TabsTrigger value="hubspot" data-testid="create-mode-hubspot">From HubSpot</TabsTrigger>
               </TabsList>
 
               <TabsContent value="blank" className="space-y-4 pt-4">
@@ -743,6 +789,68 @@ const Proposals = () => {
                     data-testid="create-from-drive-submit"
                   >
                     {fromDriveMutation.isPending ? 'Importing… this can take ~30–60s' : 'Import & Open Builder'}
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="hubspot" className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <p className="text-sm text-[#667085]">
+                    Create a proposal from a HubSpot deal. (Requires a super admin to connect HubSpot in Settings → Integrations.)
+                  </p>
+                  
+                  {!hubspotDeals.length && !hubspotError && (
+                    <Button
+                      onClick={handleLoadHubspotDeals}
+                      disabled={hubspotLoading}
+                      variant="outline"
+                      className="w-full"
+                      data-testid="hubspot-load-btn"
+                    >
+                      {hubspotLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {hubspotLoading ? 'Loading...' : 'Load my deals'}
+                    </Button>
+                  )}
+
+                  {hubspotError && (
+                    <p className="text-sm text-red-600" data-testid="hubspot-error">
+                      {hubspotError}
+                    </p>
+                  )}
+
+                  {hubspotDeals.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Select a deal</Label>
+                      <Select value={selectedDealId} onValueChange={setSelectedDealId}>
+                        <SelectTrigger data-testid="hubspot-deal-select">
+                          <SelectValue placeholder="Choose a HubSpot deal" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {hubspotDeals.map((deal) => (
+                            <SelectItem key={deal.id} value={deal.id}>
+                              {deal.name} — {deal.stage}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (!selectedDealId) return;
+                      fromHubspotMutation.mutate({ deal_id: selectedDealId, use_ai: true });
+                    }}
+                    disabled={!selectedDealId || fromHubspotMutation.isPending}
+                    className="bg-[#1570EF] hover:bg-[#1565D8] text-white"
+                    data-testid="create-from-deal-submit"
+                  >
+                    {fromHubspotMutation.isPending ? 'Importing… this can take ~30–60s' : 'Import & Open Builder'}
                   </Button>
                 </div>
               </TabsContent>
