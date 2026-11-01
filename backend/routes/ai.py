@@ -12,11 +12,12 @@ from database import (
     timesheets_collection, risks_collection, status_updates_collection,
     settings_collection, chat_sessions_collection, leaves_collection,
     holidays_collection, wbs_tasks_collection, EMERGENT_LLM_KEY, SYDNEY_TZ,
-    ai_memory_collection,
+    ai_memory_collection, leave_types_collection, leave_allocations_collection,
 )
 from models.schemas import (
     AICommandRequest, AICommandResponse, ChatMessage,
     LeaveCreate, LeaveResponse, HolidayCreate, HolidayResponse,
+    LeaveTypeCreate, LeaveTypeUpdate, LeaveTypeResponse,
 )
 from auth.dependencies import get_current_user, require_admin, require_super_admin
 from utils import serialize_doc
@@ -211,6 +212,9 @@ async def get_leaves(current_user: dict = Depends(get_current_user)):
         doc = serialize_doc(lv)
         if not is_super_admin and doc.get("resource_id") != own_resource_id:
             doc["notes"] = None
+        # Strip heavy attachment data for list responses
+        if doc.get("attachments"):
+            doc["attachments"] = _strip_attachment_data(doc["attachments"])
         result.append(doc)
     return result
 
@@ -232,10 +236,56 @@ async def create_leave(leave: LeaveCreate, current_user: dict = Depends(get_curr
         # Admins must specify a resource_id
         if not leave_doc.get("resource_id"):
             raise HTTPException(status_code=400, detail="resource_id is required")
+    # NEW: half-day portion normalise
+    portion = (leave_doc.get("day_portion") or "full").lower()
+    leave_doc["day_portion"] = portion if portion in ("full", "am", "pm") else "full"
+
+    # NEW: work-a-public-holiday — staff may EITHER nominate a replacement day they'll
+    # take off instead (a swap) OR simply work the holiday with no swap. The replacement
+    # day is OPTIONAL. Derive the leave's own dates BEFORE date coercion since start/end
+    # are typically omitted for a work-a-holiday request.
+    if leave_doc.get("worked_holiday"):
+        # Normalise holiday_date (the public holiday being worked)
+        hd = leave_doc.get("holiday_date")
+        if isinstance(hd, date) and not isinstance(hd, datetime):
+            hd = datetime.combine(hd, datetime.min.time())
+        leave_doc["holiday_date"] = hd
+
+        rep = leave_doc.get("replacement_date")
+        if rep:
+            # Swap requested — the recorded leave spans the nominated replacement day off.
+            if isinstance(rep, date) and not isinstance(rep, datetime):
+                rep = datetime.combine(rep, datetime.min.time())
+            leave_doc["replacement_date"] = rep
+            leave_doc["start_date"] = rep
+            leave_doc["end_date"] = rep
+            if not leave_doc.get("type"):
+                leave_doc["type"] = "Public holiday (worked)"
+        else:
+            # No swap — the staff simply worked the holiday. Record the holiday date
+            # itself so the worked day is logged; no day off is taken.
+            leave_doc["replacement_date"] = None
+            if not hd:
+                raise HTTPException(status_code=400,
+                                    detail="Please provide the public holiday date you worked.")
+            leave_doc["start_date"] = hd
+            leave_doc["end_date"] = hd
+            if not leave_doc.get("type"):
+                leave_doc["type"] = "Public holiday (worked, no swap)"
+    else:
+        leave_doc["worked_holiday"] = False
+        leave_doc["holiday_date"] = None
+        leave_doc["replacement_date"] = None
+        # Normal time off requires start/end dates and a type.
+        if not leave_doc.get("start_date") or not leave_doc.get("end_date"):
+            raise HTTPException(status_code=400, detail="start_date and end_date are required")
+        if not leave_doc.get("type"):
+            raise HTTPException(status_code=400, detail="A leave type is required")
+
     # Convert date to datetime for MongoDB
-    if isinstance(leave_doc.get("start_date"), date):
+    if isinstance(leave_doc.get("start_date"), date) and not isinstance(leave_doc.get("start_date"), datetime):
         leave_doc["start_date"] = datetime.combine(leave_doc["start_date"], datetime.min.time())
-    if isinstance(leave_doc.get("end_date"), date):
+    if isinstance(leave_doc.get("end_date"), date) and not isinstance(leave_doc.get("end_date"), datetime):
         leave_doc["end_date"] = datetime.combine(leave_doc["end_date"], datetime.min.time())
     
     # Set status — ALL time-off now starts Pending and requires explicit
@@ -285,6 +335,8 @@ async def create_leave(leave: LeaveCreate, current_user: dict = Depends(get_curr
 async def delete_leave(leave_id: str, current_user: dict = Depends(get_current_user)):
     role = current_user.get("role", "")
     is_admin = role in ("admin", "super_admin")
+    if not ObjectId.is_valid(leave_id):
+        raise HTTPException(status_code=404, detail="Leave not found")
     leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
     if not leave:
         raise HTTPException(status_code=404, detail="Leave not found")
@@ -470,6 +522,9 @@ async def get_pending_leaves(admin: dict = Depends(require_admin)):
     for lv in leaves:
         lv_dict = serialize_doc(lv)
         lv_dict["resource_name"] = resource_map.get(lv.get("resource_id"), "Unknown")
+        # Strip heavy attachment data for list responses
+        if lv_dict.get("attachments"):
+            lv_dict["attachments"] = _strip_attachment_data(lv_dict["attachments"])
         result.append(lv_dict)
     
     return result
@@ -628,6 +683,111 @@ async def whos_out(start: Optional[str] = None, end: Optional[str] = None,
     }
 
 
+@router.get("/api/leaves/calendar")
+async def leave_calendar(start: Optional[str] = None, end: Optional[str] = None,
+                         current_user: dict = Depends(get_current_user)):
+    """Team leave calendar: public holidays (everyone) + time-off blocks scoped by
+    the SAME visibility rules as get_leaves (super_admin sees all; everyone else
+    sees own; project leads also see their team when the who's-out summary allows).
+    Approvers (super_admin) also see PENDING; others see APPROVED only. Notes are
+    never included. Window defaults to the current month."""
+    from utils import find_user_resource, coerce_date
+
+    role = (current_user.get("role") or "").lower()
+    is_super_admin = role == "super_admin"
+
+    # Window (default: current month)
+    today = datetime.now(timezone.utc).date()
+    try:
+        if start:
+            start_d = datetime.strptime(start, "%Y-%m-%d").date()
+        else:
+            start_d = today.replace(day=1)
+        if end:
+            end_d = datetime.strptime(end, "%Y-%m-%d").date()
+        else:
+            nxt = (start_d.replace(day=28) + timedelta(days=4)).replace(day=1)
+            end_d = nxt - timedelta(days=1)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date; use YYYY-MM-DD")
+
+    # Holidays overlapping window (shown to everyone)
+    sdt = datetime.combine(start_d, datetime.min.time())
+    edt = datetime.combine(end_d, datetime.max.time())
+    hols = await holidays_collection.find({"date": {"$gte": sdt, "$lte": edt}}).to_list(length=1000)
+    holidays = []
+    for h in hols:
+        d = coerce_date(h.get("date"))
+        if d:
+            holidays.append({"date": d.isoformat(), "name": h.get("name", "Holiday"),
+                             "is_public_holiday": bool(h.get("is_public_holiday"))})
+
+    # Determine which resources this viewer may see.
+    own = await find_user_resource(current_user)
+    own_rid = str(own["_id"]) if own else None
+    allowed_rids = None  # None = all
+    include_pending = is_super_admin
+    if not is_super_admin:
+        allowed = {own_rid} if own_rid else set()
+        # leads: include team if the who's-out summary allows it
+        cfg = await _get_timeoff_visibility()
+        if cfg.get("enabled") and cfg.get("audience") in ("everyone", "leads"):
+            allowed |= await _led_resource_ids(current_user)
+        if cfg.get("enabled") and cfg.get("audience") == "everyone":
+            allowed_rids = None  # everyone can see all approved
+        else:
+            allowed_rids = allowed
+
+    statuses = ["Approved"] + (["Pending"] if include_pending else [])
+    raw = await leaves_collection.find({}).to_list(length=10000)
+
+    # Resource names
+    rids = {str(lv.get("resource_id")) for lv in raw if lv.get("resource_id")}
+    name_map = {}
+    obj_ids = []
+    for rid in rids:
+        try:
+            obj_ids.append(ObjectId(rid))
+        except Exception:
+            pass
+    if obj_ids:
+        async for r in resources_collection.find({"_id": {"$in": obj_ids}}, {"name": 1}):
+            name_map[str(r["_id"])] = r.get("name", "Unknown")
+
+    entries = []
+    for lv in raw:
+        status = lv.get("status") or "Approved"
+        if status not in statuses:
+            continue
+        rid = str(lv.get("resource_id"))
+        if allowed_rids is not None and rid not in allowed_rids:
+            continue
+        ls = coerce_date(lv.get("start_date"))
+        le = coerce_date(lv.get("end_date"))
+        if not ls or not le or ls > end_d or le < start_d:
+            continue
+        entries.append({
+            "resource_id": rid,
+            "name": name_map.get(rid, "Unknown"),
+            "type": lv.get("type", "Leave"),
+            "status": status,
+            "day_portion": lv.get("day_portion", "full"),
+            "worked_holiday": bool(lv.get("worked_holiday")),
+            "start_date": ls.isoformat(),
+            "end_date": le.isoformat(),
+        })
+
+    entries.sort(key=lambda e: (e["start_date"], e["name"]))
+    return {
+        "window": {"start": start_d.isoformat(), "end": end_d.isoformat()},
+        "holidays": holidays,
+        "entries": entries,
+        "can_see_pending": include_pending,
+    }
+
+
+
+
 
 
 # Holiday endpoints
@@ -656,6 +816,528 @@ async def delete_holiday(holiday_id: str, admin: dict = Depends(require_admin)):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Holiday not found")
     return {"message": "Holiday deleted"}
+
+
+# ============================================================
+# PUBLIC HOLIDAYS BY REGION (auto-populate)
+# ============================================================
+
+@router.get("/api/settings/holiday-region")
+async def get_holiday_region(current_user: dict = Depends(get_current_user)):
+    """Current workspace holiday region + the available choices."""
+    from services.public_holidays import get_region_setting
+    return await get_region_setting()
+
+
+@router.put("/api/settings/holiday-region")
+async def set_holiday_region(payload: dict, admin: dict = Depends(require_super_admin)):
+    """Set the workspace holiday region AND auto-populate this year's public
+    holidays for it (super_admin only). Body: {region}."""
+    from services.public_holidays import set_region_setting, fetch_and_store_holidays
+    region = (payload or {}).get("region")
+    saved = await set_region_setting(region)
+    year = datetime.now(timezone.utc).year
+    count, err = await fetch_and_store_holidays(year, saved["region"])
+    return {**saved, "year": year, "holidays_loaded": count,
+            "message": (err or f"Loaded {count} public holiday(s) for {saved['label']} {year}.")}
+
+
+@router.post("/api/holidays/refresh-public")
+async def refresh_public_holidays(payload: dict = None, admin: dict = Depends(require_super_admin)):
+    """Re-pull the official public holidays for the configured region and a year
+    (defaults to current year; pass {year} to target another). super_admin only."""
+    from services.public_holidays import fetch_and_store_holidays, get_region_setting
+    reg = await get_region_setting()
+    year = int((payload or {}).get("year") or datetime.now(timezone.utc).year)
+    count, err = await fetch_and_store_holidays(year, reg["region"])
+    return {"region": reg["region"], "year": year, "holidays_loaded": count,
+            "ok": err is None, "message": (err or f"Refreshed {count} public holiday(s) for {reg['label']} {year}.")}
+
+
+# ============================================================
+# LEAVE TYPES (configurable, workspace-managed)
+# ============================================================
+
+_SYSTEM_LEAVE_TYPES = ["Annual", "Sick", "Personal", "Unpaid", "Parental"]
+
+
+async def _ensure_seed_leave_types():
+    """Seed the system leave types once if the collection is empty."""
+    try:
+        if await leave_types_collection.count_documents({}) == 0:
+            for name in _SYSTEM_LEAVE_TYPES:
+                await leave_types_collection.insert_one({
+                    "name": name,
+                    "is_active": True,
+                    "is_system": True,
+                    "accrual_method": "none",
+                    "annual_allowance": 0.0,
+                    "accrual_rate": 0.0,
+                    "allow_negative": False,
+                })
+    except Exception as e:
+        print(f"[leave_types] seed failed: {e}")
+
+
+@router.get("/api/leave-types", response_model=List[LeaveTypeResponse])
+async def list_leave_types(include_inactive: bool = False, current_user: dict = Depends(get_current_user)):
+    """List leave types (all authed users — needed for the request form)."""
+    await _ensure_seed_leave_types()
+    query = {} if include_inactive else {"is_active": {"$ne": False}}
+    rows = await leave_types_collection.find(query).sort("name", 1).to_list(length=200)
+    return serialize_doc(rows)
+
+
+@router.post("/api/leave-types", response_model=LeaveTypeResponse)
+async def create_leave_type(payload: LeaveTypeCreate, admin: dict = Depends(require_admin)):
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Leave type name is required")
+    existing = await leave_types_collection.find_one({"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}})
+    if existing:
+        raise HTTPException(status_code=400, detail="A leave type with that name already exists")
+    
+    # Validate accrual_method
+    accrual_method = payload.accrual_method or "none"
+    if accrual_method not in ("none", "fixed_annual", "monthly_accrual"):
+        raise HTTPException(status_code=400, detail="accrual_method must be 'none', 'fixed_annual', or 'monthly_accrual'")
+    
+    doc = {
+        "name": name,
+        "is_active": True,
+        "is_system": False,
+        "accrual_method": accrual_method,
+        "annual_allowance": payload.annual_allowance or 0.0,
+        "accrual_rate": payload.accrual_rate or 0.0,
+        "allow_negative": payload.allow_negative or False,
+    }
+    result = await leave_types_collection.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return serialize_doc(doc)
+
+
+@router.put("/api/leave-types/{type_id}", response_model=LeaveTypeResponse)
+async def update_leave_type(type_id: str, payload: LeaveTypeUpdate, admin: dict = Depends(require_admin)):
+    update = {}
+    if payload.name is not None and payload.name.strip():
+        update["name"] = payload.name.strip()
+    if payload.is_active is not None:
+        update["is_active"] = payload.is_active
+    if payload.accrual_method is not None:
+        if payload.accrual_method not in ("none", "fixed_annual", "monthly_accrual"):
+            raise HTTPException(status_code=400, detail="accrual_method must be 'none', 'fixed_annual', or 'monthly_accrual'")
+        update["accrual_method"] = payload.accrual_method
+    if payload.annual_allowance is not None:
+        update["annual_allowance"] = payload.annual_allowance
+    if payload.accrual_rate is not None:
+        update["accrual_rate"] = payload.accrual_rate
+    if payload.allow_negative is not None:
+        update["allow_negative"] = payload.allow_negative
+    if not update:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    result = await leave_types_collection.find_one_and_update(
+        {"_id": ObjectId(type_id)}, {"$set": update}, return_document=True)
+    if not result:
+        raise HTTPException(status_code=404, detail="Leave type not found")
+    return serialize_doc(result)
+
+
+@router.delete("/api/leave-types/{type_id}")
+async def delete_leave_type(type_id: str, admin: dict = Depends(require_admin)):
+    """Delete a CUSTOM leave type. System types can only be disabled (not deleted);
+    disabling keeps historical leave entries intact."""
+    lt = await leave_types_collection.find_one({"_id": ObjectId(type_id)})
+    if not lt:
+        raise HTTPException(status_code=404, detail="Leave type not found")
+    if lt.get("is_system"):
+        await leave_types_collection.update_one({"_id": ObjectId(type_id)}, {"$set": {"is_active": False}})
+        return {"message": "System leave type disabled (kept for history)."}
+    await leave_types_collection.delete_one({"_id": ObjectId(type_id)})
+    return {"message": "Leave type deleted"}
+
+
+# ============================================================
+# LEAVE BALANCES & ALLOCATIONS (computed dynamically)
+# ============================================================
+
+async def _compute_balance(resource_id: str, leave_type_doc: dict, year: int) -> dict:
+    """Compute leave balance dynamically for a resource/type/year.
+    
+    Returns:
+        {
+            resource_id, leave_type (name), year, accrual_method,
+            allocated (float or null), taken (float), pending (float),
+            available (float or null), allow_negative (bool), is_override (bool)
+        }
+    """
+    from utils import count_business_days
+    
+    leave_type_name = leave_type_doc.get("name", "")
+    accrual_method = leave_type_doc.get("accrual_method", "none")
+    annual_allowance = leave_type_doc.get("annual_allowance", 0.0)
+    accrual_rate = leave_type_doc.get("accrual_rate", 0.0)
+    allow_negative = leave_type_doc.get("allow_negative", False)
+    
+    # Check for override (tolerate legacy docs where year was stored as a string)
+    override = await leave_allocations_collection.find_one({
+        "resource_id": resource_id,
+        "leave_type": leave_type_name,
+        "year": {"$in": [year, str(year)]},
+    })
+    
+    is_override = bool(override)
+    
+    if is_override:
+        allocated = override.get("allocated", 0.0)
+    else:
+        # Derive from type config
+        if accrual_method == "fixed_annual":
+            allocated = annual_allowance
+        elif accrual_method == "monthly_accrual":
+            # If current year, use elapsed months; otherwise 12
+            now = datetime.now(timezone.utc)
+            if year == now.year:
+                months_elapsed = now.month
+            else:
+                months_elapsed = 12
+            allocated = accrual_rate * months_elapsed
+        else:  # "none"
+            allocated = None
+    
+    # Calculate taken: sum approved leaves for this type in this year
+    year_start = datetime(year, 1, 1, tzinfo=timezone.utc)
+    year_end = datetime(year, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+    
+    approved_leaves = await leaves_collection.find({
+        "resource_id": resource_id,
+        "type": leave_type_name,
+        "status": "Approved",
+        "start_date": {"$gte": year_start, "$lte": year_end}
+    }).to_list(length=1000)
+    
+    taken = 0.0
+    for leave in approved_leaves:
+        day_portion = leave.get("day_portion", "full")
+        if day_portion in ("am", "pm"):
+            taken += 0.5
+        else:
+            start = leave.get("start_date")
+            end = leave.get("end_date")
+            if start and end:
+                taken += count_business_days(start, end)
+    
+    # Calculate pending
+    pending_leaves = await leaves_collection.find({
+        "resource_id": resource_id,
+        "type": leave_type_name,
+        "status": "Pending",
+        "start_date": {"$gte": year_start, "$lte": year_end}
+    }).to_list(length=1000)
+    
+    pending = 0.0
+    for leave in pending_leaves:
+        day_portion = leave.get("day_portion", "full")
+        if day_portion in ("am", "pm"):
+            pending += 0.5
+        else:
+            start = leave.get("start_date")
+            end = leave.get("end_date")
+            if start and end:
+                pending += count_business_days(start, end)
+    
+    # Calculate available
+    if allocated is None:
+        available = None  # Unlimited/untracked
+    else:
+        available = allocated - taken - pending
+    
+    return {
+        "resource_id": resource_id,
+        "leave_type": leave_type_name,
+        "year": year,
+        "accrual_method": accrual_method,
+        "allocated": allocated,
+        "taken": taken,
+        "pending": pending,
+        "available": available,
+        "allow_negative": allow_negative,
+        "is_override": is_override,
+    }
+
+
+@router.get("/api/leave-balances")
+async def get_leave_balances(
+    resource_id: Optional[str] = None,
+    year: Optional[int] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Get leave balances for a resource across all active leave types.
+    
+    Non-admins may only query their own resource_id.
+    """
+    from utils import find_user_resource
+    
+    # Default year to current year
+    if year is None:
+        year = datetime.now(timezone.utc).year
+    
+    # Resolve resource_id
+    if resource_id is None:
+        # Use caller's own resource
+        resource = await find_user_resource(current_user)
+        if not resource:
+            raise HTTPException(status_code=404, detail="Resource not found for current user")
+        resource_id = str(resource["_id"])
+    else:
+        # Check permissions: non-admins can only query their own resource
+        role = (current_user.get("role") or "").lower()
+        if role not in ("admin", "super_admin"):
+            own_resource = await find_user_resource(current_user)
+            if not own_resource or str(own_resource["_id"]) != resource_id:
+                raise HTTPException(status_code=403, detail="You can only view your own leave balances")
+    
+    # Get all active leave types
+    await _ensure_seed_leave_types()
+    leave_types = await leave_types_collection.find({"is_active": {"$ne": False}}).to_list(length=200)
+    
+    balances = []
+    for lt in leave_types:
+        balance = await _compute_balance(resource_id, lt, year)
+        balances.append(balance)
+    
+    return balances
+
+
+@router.put("/api/leave-allocations")
+async def upsert_leave_allocation(
+    resource_id: str = Body(...),
+    leave_type: str = Body(...),
+    year: int = Body(...),
+    allocated: float = Body(...),
+    admin: dict = Depends(require_admin),
+):
+    """Upsert a leave allocation override for a specific resource/type/year.
+    
+    Admin only. This overrides the leave type's default accrual logic.
+    """
+    # Validate leave type exists
+    lt = await leave_types_collection.find_one({"name": leave_type})
+    if not lt:
+        raise HTTPException(status_code=404, detail=f"Leave type '{leave_type}' not found")
+    
+    # Upsert override — normalise the filter so we also overwrite any legacy
+    # string-year doc, then force year to int on write.
+    await leave_allocations_collection.delete_many({
+        "resource_id": resource_id, "leave_type": leave_type,
+        "year": {"$in": [year, str(year)]},
+    })
+    await leave_allocations_collection.update_one(
+        {"resource_id": resource_id, "leave_type": leave_type, "year": int(year)},
+        {"$set": {"allocated": allocated}},
+        upsert=True,
+    )
+    
+    # Return recomputed balance
+    balance = await _compute_balance(resource_id, lt, year)
+    return balance
+
+
+@router.delete("/api/leave-allocations")
+async def delete_leave_allocation(
+    resource_id: str,
+    leave_type: str,
+    year: int,
+    admin: dict = Depends(require_admin),
+):
+    """Delete a leave allocation override, reverting to the leave type's default accrual.
+    
+    Admin only.
+    """
+    # Validate leave type exists
+    lt = await leave_types_collection.find_one({"name": leave_type})
+    if not lt:
+        raise HTTPException(status_code=404, detail=f"Leave type '{leave_type}' not found")
+    
+    # Delete override (tolerate legacy string-year docs)
+    await leave_allocations_collection.delete_many({
+        "resource_id": resource_id,
+        "leave_type": leave_type,
+        "year": {"$in": [year, str(year)]},
+    })
+    
+    # Return recomputed balance
+    balance = await _compute_balance(resource_id, lt, year)
+    return balance
+
+
+# ============================================================
+# LEAVE ATTACHMENTS (stored as base64 inside leave docs)
+# ============================================================
+
+def _strip_attachment_data(attachments: list) -> list:
+    """Strip data_base64 from attachments for lightweight responses."""
+    if not attachments:
+        return []
+    return [
+        {
+            "id": a.get("id"),
+            "filename": a.get("filename"),
+            "content_type": a.get("content_type"),
+            "size": a.get("size"),
+            "uploaded_at": a.get("uploaded_at"),
+        }
+        for a in attachments
+    ]
+
+
+@router.post("/api/leaves/{leave_id}/attachments")
+async def add_leave_attachment(
+    leave_id: str,
+    filename: str = Body(...),
+    content_type: str = Body(...),
+    data_base64: str = Body(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Add an attachment to a leave request.
+    
+    Resource may only attach to their own leaves; admin/super_admin may attach to any.
+    Max 3 attachments per leave, max ~5MB per file, allowed types: application/pdf, image/png, image/jpeg.
+    """
+    from utils import find_user_resource
+    import base64
+    
+    # Validate content type
+    allowed_types = ["application/pdf", "image/png", "image/jpeg"]
+    if content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Content type must be one of: {', '.join(allowed_types)}"
+        )
+    
+    # Validate size (rough check: base64 length * 0.75 ≈ original size)
+    size_bytes = len(data_base64) * 0.75
+    max_size = 5 * 1024 * 1024  # 5MB
+    if size_bytes > max_size:
+        raise HTTPException(status_code=400, detail="File size exceeds 5MB limit")
+    
+    # Fetch leave
+    try:
+        leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Leave not found")
+    
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave not found")
+    
+    # Check permissions
+    role = (current_user.get("role") or "").lower()
+    if role not in ("admin", "super_admin"):
+        own_resource = await find_user_resource(current_user)
+        if not own_resource or str(leave.get("resource_id")) != str(own_resource["_id"]):
+            raise HTTPException(status_code=403, detail="You can only attach to your own leave requests")
+    
+    # Check attachment count
+    existing_attachments = leave.get("attachments", [])
+    if len(existing_attachments) >= 3:
+        raise HTTPException(status_code=400, detail="Maximum 3 attachments per leave request")
+    
+    # Create attachment
+    attachment = {
+        "id": str(uuid_module.uuid4()),
+        "filename": filename,
+        "content_type": content_type,
+        "size": int(size_bytes),
+        "data_base64": data_base64,
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    # Append to leave
+    await leaves_collection.update_one(
+        {"_id": ObjectId(leave_id)},
+        {"$push": {"attachments": attachment}}
+    )
+    
+    # Return updated leave (with full attachments including data_base64)
+    updated_leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
+    return serialize_doc(updated_leave)
+
+
+@router.get("/api/leaves/{leave_id}/attachments/{attachment_id}")
+async def get_leave_attachment(
+    leave_id: str,
+    attachment_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Get a specific attachment with full data_base64.
+    
+    Same visibility rules as leave requests.
+    """
+    from utils import find_user_resource
+    
+    # Fetch leave
+    try:
+        leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Leave not found")
+    
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave not found")
+    
+    # Check permissions
+    role = (current_user.get("role") or "").lower()
+    if role not in ("admin", "super_admin"):
+        own_resource = await find_user_resource(current_user)
+        if not own_resource or str(leave.get("resource_id")) != str(own_resource["_id"]):
+            raise HTTPException(status_code=403, detail="You can only view your own leave attachments")
+    
+    # Find attachment
+    attachments = leave.get("attachments", [])
+    attachment = next((a for a in attachments if a.get("id") == attachment_id), None)
+    
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    
+    return attachment
+
+
+@router.delete("/api/leaves/{leave_id}/attachments/{attachment_id}")
+async def delete_leave_attachment(
+    leave_id: str,
+    attachment_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Delete an attachment from a leave request.
+    
+    Same visibility rules as leave requests.
+    """
+    from utils import find_user_resource
+    
+    # Fetch leave
+    try:
+        leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Leave not found")
+    
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave not found")
+    
+    # Check permissions
+    role = (current_user.get("role") or "").lower()
+    if role not in ("admin", "super_admin"):
+        own_resource = await find_user_resource(current_user)
+        if not own_resource or str(leave.get("resource_id")) != str(own_resource["_id"]):
+            raise HTTPException(status_code=403, detail="You can only delete your own leave attachments")
+    
+    # Remove attachment
+    await leaves_collection.update_one(
+        {"_id": ObjectId(leave_id)},
+        {"$pull": {"attachments": {"id": attachment_id}}}
+    )
+    
+    return {"message": "Attachment deleted"}
+
+
+
 
 @router.get("/api/ai/portfolio-budget-analysis")
 async def get_portfolio_budget_analysis(current_user: dict = Depends(get_current_user)):

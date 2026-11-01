@@ -300,10 +300,16 @@ class BulkRiskCreate(BaseModel):
 
 class LeaveCreate(BaseModel):
     resource_id: Optional[str] = None  # Optional: backend auto-fills for resource users
-    start_date: date
-    end_date: date
-    type: str
+    start_date: Optional[date] = None  # not required for a work-a-holiday swap (derived from replacement_date)
+    end_date: Optional[date] = None
+    type: Optional[str] = None
     notes: Optional[str] = None
+    # NEW: half-day support ("full" | "am" | "pm")
+    day_portion: Optional[str] = "full"
+    # NEW: work-a-public-holiday + nominated replacement day
+    worked_holiday: Optional[bool] = False
+    holiday_date: Optional[date] = None        # the public holiday being worked
+    replacement_date: Optional[date] = None    # the day taken off instead (required if worked_holiday)
 
 
 class LeaveUpdate(BaseModel):
@@ -312,6 +318,7 @@ class LeaveUpdate(BaseModel):
     end_date: Optional[date] = None
     type: Optional[str] = None
     notes: Optional[str] = None
+    day_portion: Optional[str] = None
 
 
 class LeaveResponse(BaseModel):
@@ -329,6 +336,41 @@ class LeaveResponse(BaseModel):
     created_at: Optional[str] = None
     submitted_by: Optional[str] = None
     submitted_by_role: Optional[str] = None
+    # NEW: half-day + work-swap
+    day_portion: Optional[str] = "full"
+    worked_holiday: Optional[bool] = False
+    holiday_date: Optional[str] = None
+    replacement_date: Optional[str] = None
+    # Attachments (lightweight summary, no data_base64 in list views)
+    attachments: Optional[List[dict]] = None
+
+
+class LeaveTypeCreate(BaseModel):
+    name: str
+    accrual_method: Optional[str] = "none"  # "none" | "fixed_annual" | "monthly_accrual"
+    annual_allowance: Optional[float] = 0.0
+    accrual_rate: Optional[float] = 0.0
+    allow_negative: Optional[bool] = False
+
+
+class LeaveTypeUpdate(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+    accrual_method: Optional[str] = None
+    annual_allowance: Optional[float] = None
+    accrual_rate: Optional[float] = None
+    allow_negative: Optional[bool] = None
+
+
+class LeaveTypeResponse(BaseModel):
+    id: str
+    name: str
+    is_active: bool = True
+    is_system: bool = False
+    accrual_method: str = "none"
+    annual_allowance: float = 0.0
+    accrual_rate: float = 0.0
+    allow_negative: bool = False
 
 
 class HolidayCreate(BaseModel):
@@ -342,6 +384,9 @@ class HolidayResponse(BaseModel):
     name: str
     date: str
     description: Optional[str] = None
+    source: Optional[str] = "manual"      # "auto" (public holiday feed) | "manual"
+    region: Optional[str] = None
+    is_public_holiday: Optional[bool] = False
 
 
 class AICommandRequest(BaseModel):

@@ -231,6 +231,27 @@ export const setTimeOffVisibility = (cfg) => api.put('/settings/timeoff-visibili
 export const getHolidays = () => api.get('/holidays');
 export const createHoliday = (data) => api.post('/holidays', data);
 export const deleteHoliday = (id) => api.delete(`/holidays/${id}`);
+// Public holiday region + refresh
+export const getHolidayRegion = () => api.get('/settings/holiday-region');
+export const setHolidayRegion = (region) => api.put('/settings/holiday-region', { region });
+export const refreshPublicHolidays = (year) => api.post('/holidays/refresh-public', year ? { year } : {});
+// Leave types
+export const getLeaveTypes = (includeInactive) => api.get('/leave-types', { params: includeInactive ? { include_inactive: true } : {} });
+export const createLeaveType = (data) => api.post('/leave-types', typeof data === 'string' ? { name: data } : data);
+export const updateLeaveType = (id, data) => api.put(`/leave-types/${id}`, data);
+export const deleteLeaveType = (id) => api.delete(`/leave-types/${id}`);
+// Team leave calendar
+export const getLeaveCalendar = (start, end) => api.get('/leaves/calendar', { params: { ...(start ? { start } : {}), ...(end ? { end } : {}) } });
+// Leave balances & allocation overrides (Phase 2)
+export const getLeaveBalances = (resourceId, year) =>
+  api.get('/leave-balances', { params: { ...(resourceId ? { resource_id: resourceId } : {}), ...(year ? { year } : {}) } });
+export const upsertLeaveAllocation = (data) => api.put('/leave-allocations', data);
+export const deleteLeaveAllocation = (resourceId, leaveType, year) =>
+  api.delete('/leave-allocations', { params: { resource_id: resourceId, leave_type: leaveType, year } });
+// Leave attachments (Phase 2) — stored as base64
+export const addLeaveAttachment = (leaveId, data) => api.post(`/leaves/${leaveId}/attachments`, data);
+export const getLeaveAttachment = (leaveId, attachmentId) => api.get(`/leaves/${leaveId}/attachments/${attachmentId}`);
+export const deleteLeaveAttachment = (leaveId, attachmentId) => api.delete(`/leaves/${leaveId}/attachments/${attachmentId}`);
 
 // AI Command
 export const aiCommand = (query, provider, apiKey) => 

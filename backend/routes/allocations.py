@@ -408,35 +408,49 @@ async def get_capacity_report(
             "days": []
         }
         
+        # Per-resource: dates where this person is WORKING a public holiday
+        # (so the holiday should NOT reduce their capacity that day).
+        worked_holiday_dates = set()
+        for leave in all_leaves:
+            if str(leave.get("resource_id")) == resource_id and leave.get("worked_holiday") and leave.get("holiday_date"):
+                hd = leave["holiday_date"]
+                if isinstance(hd, datetime):
+                    hd = hd.date()
+                worked_holiday_dates.add(hd)
+
         # Iterate through each day in the range
         current_date = start
         while current_date <= end:
             total_percentage = 0
-            
-            # NEW: Check if resource is on leave or it's a holiday
+
+            # Check if resource is on leave or it's a holiday
             is_on_leave = False
             leave_type = None
-            
-            # Check holidays (applies to ALL resources)
-            if current_date in holiday_dates:
+            half_day = False
+
+            # Public/company holiday (applies to ALL resources) — UNLESS this
+            # person opted to work it (approved work-swap).
+            if current_date in holiday_dates and current_date not in worked_holiday_dates:
                 is_on_leave = True
                 leave_type = "Holiday"
-            
-            # Check individual leaves
+
+            # Check individual leaves (incl. half-day + replacement days)
             for leave in all_leaves:
                 if str(leave["resource_id"]) == resource_id:
                     leave_start = leave["start_date"]
                     leave_end = leave["end_date"]
-                    
-                    # Convert datetime to date for comparison if needed
                     if isinstance(leave_start, datetime):
                         leave_start = leave_start.date()
                     if isinstance(leave_end, datetime):
                         leave_end = leave_end.date()
-                    
+
                     if leave_start <= current_date <= leave_end:
                         is_on_leave = True
-                        leave_type = leave["type"]
+                        leave_type = leave.get("type", "Leave")
+                        if (leave.get("day_portion") or "full") in ("am", "pm"):
+                            half_day = True
+                        else:
+                            half_day = False
                         break
             
             # Find all allocations for this resource on this date
@@ -455,14 +469,20 @@ async def get_capacity_report(
                     if alloc_start <= current_date <= alloc_end:
                         total_percentage += allocation["percentage"]
             
-            # NEW LOGIC: Determine color based on leave status
-            if is_on_leave:
-                # If on leave, available capacity is 0%
-                # Any allocation = overload (red)
+            # Determine color based on leave status
+            if is_on_leave and not half_day:
+                # Full day off: available capacity is 0%
                 if total_percentage > 0:
-                    color = "red"  # Work assigned on leave day = overload
+                    color = "red"  # Work assigned on a full leave day = overload
                 else:
-                    color = "leave"  # NEW: Special color for leave days
+                    color = "leave"
+            elif is_on_leave and half_day:
+                # Half day off: available capacity ~50%. Flag amber if allocation
+                # exceeds the remaining half, else a 'leave' tint.
+                if total_percentage > 50:
+                    color = "red"
+                else:
+                    color = "leave"
             else:
                 # Normal capacity calculation
                 if total_percentage <= 80:
@@ -477,6 +497,7 @@ async def get_capacity_report(
                 "load": total_percentage,
                 "color": color,
                 "on_leave": is_on_leave,
+                "half_day": half_day,
                 "leave_type": leave_type if is_on_leave else None
             })
             

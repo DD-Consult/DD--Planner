@@ -1001,3 +1001,31 @@ The auto-cascade logic (triggered when a predecessor's end_date changes) had thr
 
 - 0 console errors, 0 React child errors
 
+
+## Session: Public Holidays & Smarter Leave Component — Phase 1 (Aug 2025)
+
+### Goal
+Auto-fill AU public holidays by region, allow staff to work-or-swap a public holiday, add leave types config, half-day leaves, and a team leave calendar.
+
+### Phase 1 (DONE — backend 45/45 passed, frontend verified)
+- Holiday auto-population by region (AU National / NSW / QLD) via Nager.Date public API; endpoints: GET/PUT /api/settings/holiday-region, GET /api/holidays.
+- Leave types config with auto-seeded defaults (Annual, Sick, Personal, Unpaid, Parental) + admin CRUD: GET/POST/PUT/DELETE /api/leave-types.
+- Half-day leaves (day_portion: full | am | pm) with normalization.
+- Work-a-public-holiday on POST /api/leaves: worked_holiday + holiday_date, with OPTIONAL replacement_date.
+  - WITH swap: leave spans replacement day; type defaults "Public holiday (worked)".
+  - WITHOUT swap (per user decision — replacement day is OPTIONAL): leave records the worked holiday date; type defaults "Public holiday (worked, no swap)".
+  - Resolved prior P0: 422 Unprocessable Entity on work-swap requests. Fixed by making start_date/end_date/type optional in LeaveCreate and deriving dates in create_leave.
+- Team leave calendar: GET /api/leaves/calendar returns window, holidays, entries, can_see_pending.
+- Frontend: AddLeaveDialog.js mode selector (Time Off / Work a Public Holiday), Duration selector (Full/Morning/Afternoon), Replacement Date now labeled "(Optional)" with no-swap helper text.
+
+### Next (Phase 2)
+- Per-person leave balances & accruals; attachments on leave requests.
+
+### Phase 2 (DONE — backend 50/51 passed, frontend verified end-to-end)
+- Configurable accruals on leave types: accrual_method (none|fixed_annual|monthly_accrual), annual_allowance, accrual_rate, allow_negative. Managed in Holidays page Leave Types card.
+- Per-person leave balances (computed dynamically, no mutable counters): GET /api/leave-balances?resource_id=&year=. Returns allocated/taken/pending/available per active type. Half-day leaves count 0.5. monthly_accrual scales by elapsed months.
+- Allocation overrides (super_admin only in UI; require_admin on API): PUT/DELETE /api/leave-allocations. Robust to legacy string-year docs ($in [int,str]); writes year as int.
+- Attachments on leave requests (base64 inside leave doc): POST/GET/DELETE /api/leaves/{id}/attachments. Guards: max 3, 5MB, types pdf/png/jpeg. List/pending responses strip data_base64.
+- Route-collision fix: balances/allocations moved to /api/leave-balances and /api/leave-allocations (hyphen namespace) to avoid shadowing by DELETE /api/leaves/{leave_id}.
+- Frontend: Leave Balances card (super_admin picker+inline override/reset with badge; resource/regular-admin read-only own balances); AddLeaveDialog attachment file input; Leaves list attachments column + popover (download/remove/add).
+- Fixed a TDZ runtime crash in Leaves.js (useState referencing a later useQuery) by reordering hooks.

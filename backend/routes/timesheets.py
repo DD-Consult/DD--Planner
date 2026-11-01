@@ -341,15 +341,9 @@ async def auto_fill_timesheets(week_start: str, current_user: dict = Depends(get
     week_start_dt = datetime.combine(week_start_date, datetime.min.time())
     week_end_dt = datetime.combine(week_end_date, datetime.max.time())
     non_working_days = set()
+    worked_holiday_days = set()  # days this resource opted to WORK a public holiday
+    half_days = set()            # days this resource is off for only half
     try:
-        holidays = await holidays_collection.find(
-            {"date": {"$gte": week_start_dt, "$lte": week_end_dt}}
-        ).to_list(length=100)
-        for h in holidays:
-            hd = h.get("date")
-            hd = hd.date() if isinstance(hd, datetime) else hd
-            if hd and hd.weekday() < 5:
-                non_working_days.add(hd)
         leaves = await leaves_collection.find({
             "resource_id": resource_id,
             "start_date": {"$lte": week_end_dt},
@@ -357,16 +351,39 @@ async def auto_fill_timesheets(week_start: str, current_user: dict = Depends(get
         }).to_list(length=100)
         # Filter to approved only (legacy docs with no status field count as approved)
         leaves = [lv for lv in leaves if (lv.get("status") or "Approved") == "Approved"]
+        # Also capture worked-holiday dates across ALL this resource's approved leaves
+        wh_all = await leaves_collection.find({"resource_id": resource_id, "worked_holiday": True}).to_list(length=200)
+        for lv in wh_all:
+            if (lv.get("status") or "Approved") != "Approved":
+                continue
+            hd = lv.get("holiday_date")
+            hd = hd.date() if isinstance(hd, datetime) else hd
+            if hd:
+                worked_holiday_days.add(hd)
+
+        holidays = await holidays_collection.find(
+            {"date": {"$gte": week_start_dt, "$lte": week_end_dt}}
+        ).to_list(length=100)
+        for h in holidays:
+            hd = h.get("date")
+            hd = hd.date() if isinstance(hd, datetime) else hd
+            # Skip holidays this resource is working (swap approved).
+            if hd and hd.weekday() < 5 and hd not in worked_holiday_days:
+                non_working_days.add(hd)
         for lv in leaves:
             ls, le = lv.get("start_date"), lv.get("end_date")
             ls = ls.date() if isinstance(ls, datetime) else ls
             le = le.date() if isinstance(le, datetime) else le
             if not ls or not le:
                 continue
+            portion = (lv.get("day_portion") or "full")
             d = max(ls, week_start_date)
             while d <= min(le, week_end_date):
                 if d.weekday() < 5:
-                    non_working_days.add(d)
+                    if portion in ("am", "pm"):
+                        half_days.add(d)
+                    else:
+                        non_working_days.add(d)
                 d += timedelta(days=1)
     except Exception as e:
         print(f"[Auto-fill] Holiday/leave lookup failed (non-critical): {e}")
