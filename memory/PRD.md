@@ -1029,3 +1029,26 @@ Auto-fill AU public holidays by region, allow staff to work-or-swap a public hol
 - Route-collision fix: balances/allocations moved to /api/leave-balances and /api/leave-allocations (hyphen namespace) to avoid shadowing by DELETE /api/leaves/{leave_id}.
 - Frontend: Leave Balances card (super_admin picker+inline override/reset with badge; resource/regular-admin read-only own balances); AddLeaveDialog attachment file input; Leaves list attachments column + popover (download/remove/add).
 - Fixed a TDZ runtime crash in Leaves.js (useState referencing a later useQuery) by reordering hooks.
+
+## Feature Confirmed & Documented: Work a Public Holiday — Swap or Work-Only (Phase 1)
+
+Approved-plan confirmation of existing, verified behaviour (no code change required; re-verified).
+
+**Process:** Staff record working a recognised public holiday, optionally nominating a day off in lieu.
+- Request dialog toggle: "Request Time Off" (normal leave) vs "Work a Public Holiday".
+- Holiday picker pre-filled from the workspace region (AU National / NSW / QLD).
+- Replacement Date is OPTIONAL:
+  - Provided → recorded as a swap; entry lands on the replacement day; type "Public holiday (worked)".
+  - Blank → recorded as worked, no swap; entry logged against the holiday date; type "Public holiday (worked, no swap)".
+- Approval model UNCHANGED: every request enters Pending; Super-Admin-only approval; nothing auto-approved.
+- Worked/swap entries are tagged distinctly in lists and the team calendar (↔ marker; ★ for public holidays).
+
+**Explicit confirmations (keep as-is):**
+- NO lieu-day balance / credit / ledger is created by working a holiday.
+- NO auto-fill of worked hours into timesheets. Timesheets only revert a worked public holiday back to a normal working day for that resource (removes it from non-working days); it injects no extra hours.
+- Replacement day is a single day; no enforced window tying it to the worked holiday (MVP).
+- Approval stays Super-Admin-only.
+
+**Re-verified this session:** swap → type "Public holiday (worked)", start=replacement day, status Pending; no-swap → type "Public holiday (worked, no swap)", start=holiday date, status Pending. Timesheets/lieu confirmed untouched.
+
+**Out of scope now:** Phase 2 (time-in-lieu balance/ledger; replacement-window guardrails). Phase 3 (manager-level approval; regions beyond AU; auto-reflect worked hours into timesheets).

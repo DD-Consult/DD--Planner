@@ -1,74 +1,93 @@
-# Public Holidays & a Smarter Leave Component
+# Work a Public Holiday — Swap or Work-Only Process
 
-Auto-fill public holidays by region (Australia — National, NSW, QLD) and let staff choose to work or swap a holiday for another nominated day. Also a first round of upgrades to the leave/time-off component.
+A way for staff to record that they worked on a public holiday, and optionally
+nominate a different day to take off instead. Requests are reviewed and approved
+the same way as any other time-off request.
 
 ## Who it's for
-
-- **Workspace administrators (super admins)** who set the workspace's region and want public holidays to appear automatically each year and feed capacity planning — without typing them in by hand.
-- **Staff (resources/contractors) and regular admins** who are affected by public holidays, and who may want to work a public holiday (e.g. for operational reasons) and take a different day off instead.
-- **Approvers (super admins)** who sign off time off and now also sign off "I'll work the holiday and take this other day" requests.
+- **Staff / resources** who are rostered or choose to work on a recognised public
+  holiday and want it recorded — either with a day taken in lieu (a "swap") or
+  with no day off at all.
+- **Super Admins** (owners) who review and approve these requests.
 
 ## Core features and experience
-
-### 1. Public holidays by region (automatic)
-- A workspace-wide **region setting** in Settings: **Australia**, with a sub-choice of **National only**, **NSW**, or **QLD** (NSW/QLD each include the national holidays plus that state's holidays).
-- On setting/confirming the region, the app **auto-populates that year's public holidays** (and can refresh/advance to the next year). Holidays are sourced from a free public-holidays service for Australia; no account or key is required.
-- Each holiday shows its **date and name** and is clearly marked as a public holiday. Admins can still **manually add, edit, or delete** a holiday (e.g. a one-off regional holiday or a correction) — the automatic list and manual entries live together.
-- Public holidays **count as non-working days in capacity/planning** exactly as company holidays do today (they reduce available capacity and are excluded from timesheet auto-fill), so plans stay accurate.
-- A **"Refresh public holidays"** action re-pulls the official list for the selected region/year in case dates change.
-
-### 2. Work-or-swap a public holiday (staff choice)
-- For an upcoming public holiday, a staff member can raise a **"I'll work this holiday"** request. At the same time they **must nominate the replacement day** they'll take off instead (no open-ended "in-lieu balance" — the alternate day is chosen up front).
-- This goes through the **same approval flow as other time off** (super-admin approves/rejects; nothing is auto-approved). On approval: the person is treated as **available on the public holiday** and **off on their nominated replacement day** for capacity/planning.
-- The request clearly records: which holiday, the nominated replacement date, who requested it, when, and who approved it — visible in the same place as other time-off requests.
-
-### 3. A better leave component (first round)
-Chosen must-haves for this build:
-- **Leave types configuration** — a managed list of leave types (Annual, Sick, Personal, Unpaid, Parental, plus **custom** types an admin can add/rename/disable), used when requesting time off.
-- **Half-day leave** — a request can be a full day or a **half day** (morning/afternoon), reflected proportionally in capacity.
-- **Team leave calendar view** — a calendar showing approved (and, for approvers, pending) time off and public holidays across the team, respecting the existing visibility rules (who can see whose time off).
-
-The remaining ideas — **per-person balances/accruals**, **attachments (e.g. medical certificate)**, and **blackout dates** — are planned for later phases (below), not this build.
+- **Two request types in one place.** The existing "Request Time Off" form has a
+  toggle: *Time Off* (normal leave) or *Work a Public Holiday*.
+- **Holiday picker is pre-filled.** The public holiday list is populated
+  automatically from the workspace's region (AU National / NSW / QLD), so staff
+  select from real dates rather than typing them.
+- **Swap is optional.** The person may nominate a *Replacement Date* (the day
+  they'll take off instead) or leave it blank to record that they worked the
+  holiday with nothing taken in lieu.
+- **Approval required.** Every request — swap or no-swap — enters as *Pending* and
+  must be approved by a Super Admin. Nothing is auto-approved. This matches the
+  current time-off approval model exactly.
+- **Clear labelling.** A swap request is recorded as "Public holiday (worked)";
+  a no-swap request is recorded as "Public holiday (worked, no swap)" so the two
+  cases are distinguishable in lists and the team calendar.
+- **No separate lieu-day balance.** Working a holiday does **not** create a
+  "+1 day owed" credit or ledger, and it does **not** auto-fill worked hours into
+  timesheets. The request simply records the holiday worked and, if given, the
+  replacement day taken off. (Confirmed: keep as-is.)
 
 ## User flow
-
-1. A super admin opens Settings → sets the workspace region (Australia → National / NSW / QLD) → public holidays for the current year auto-populate; they can refresh or add a manual one.
-2. A staff member opening Time Off sees upcoming public holidays. For one of them they choose **"Work this holiday"**, nominate the replacement day they'll take instead, and submit.
-3. A super admin reviews the request (same queue as other leave) and approves or rejects it. On approval, capacity updates: available on the holiday, off on the nominated day.
-4. Anyone requesting normal time off picks a **leave type** and can mark it a **half day**; it still routes to the super admin for approval.
-5. The team **leave calendar** shows public holidays plus approved/pending time off, scoped to what each person is allowed to see.
+1. Staff member opens the **Time Off** page and clicks **Request Time Off**.
+2. In the dialog, they switch **Request Type** to **Work a Public Holiday**.
+3. They **select the public holiday** they worked from the pre-filled dropdown.
+4. **Replacement Date (optional):**
+   - Pick a date → recorded as a **swap**; the time-off entry lands on that
+     replacement day.
+   - Leave blank → recorded as **worked, no swap**; the entry is logged against
+     the holiday date itself.
+5. They optionally add a note and submit.
+6. The request appears as **Pending** in the Super Admin approval queue.
+7. A **Super Admin approves or rejects** it. On approval it shows as an approved
+   entry (on the replacement day for a swap, or on the holiday for no-swap) and
+   appears in the team leave calendar.
 
 ## UI/UX feel
-
-- Matches the existing Settings and Time Off screens — a region selector and a "refresh holidays" action sit alongside the current holiday management; no new areas to learn.
-- The work-or-swap request reuses the existing "Request Time Off" pattern with two extra fields (which holiday, which replacement day) and the same status badges and approval queue.
-- The leave calendar reads like a normal month view: public holidays shaded, each person's approved time off as blocks, pending shown only to approvers.
-- Honest, low-pressure wording throughout; nothing about requesting or approving changes in character — just more options and auto-filled holidays.
+- Lives inside the current Time Off request dialog — no new screen to learn.
+- Plain, form-style layout consistent with the rest of the planner: labelled
+  fields, a single primary action, inline validation messages.
+- The replacement field is explicitly marked **(Optional)** with a one-line hint
+  explaining that leaving it blank means "worked the holiday with no swap."
+- Worked/swap entries are visually tagged in lists and the calendar so they're
+  easy to tell apart from ordinary leave.
 
 ## Implementation phases
 
-**Phase 1 — MVP (built now):**
-- Workspace region setting (Australia: National / NSW / QLD) with automatic public-holiday population for the current year, a refresh action, and manual add/edit/delete retained.
-- Public holidays reduce capacity and are excluded from timesheet auto-fill (consistent with today's company holidays).
-- Work-or-swap-a-public-holiday request with mandatory nominated replacement day, routed through the existing super-admin approval; approved outcome flips availability (work the holiday, off the replacement day).
-- Leave-component upgrades: configurable leave types (incl. custom), half-day leave, and a team leave calendar view honoring existing visibility rules.
+### Phase 1 — MVP (the confirmed process)
+- Request-type toggle (Time Off vs Work a Public Holiday).
+- Region-filled public holiday picker (AU National / NSW / QLD).
+- Optional replacement date: swap vs worked-no-swap, with the two distinct type
+  labels.
+- Pending-by-default with Super Admin approval; visible in the team calendar.
+- This is the behaviour that exists and has been verified; Phase 1 is a
+  confirmation and documentation of it, with no change to the approval model and
+  no lieu-day balance.
 
-**Phase 2 (later, not built now):**
-- Per-person leave **balances and accruals** (e.g. annual-leave entitlement that draws down as leave is approved), with simple reporting.
-- **Attachments** on a leave request (e.g. upload a medical certificate), visible to the requester and approvers only.
+### Phase 2 — Later (not in scope now)
+- Optional "time-in-lieu" balance/ledger: working a holiday earns a credit that
+  is spent when the replacement day is taken, with a visible balance.
+- Optional guardrails: require the replacement day to fall within a set window of
+  the worked holiday.
 
-**Phase 3 (later, not built now):**
-- **Blackout dates / capacity guardrails** (periods where leave is discouraged or requires extra sign-off), per-person or per-workspace **region override** (multi-country/state teams), and additional countries beyond Australia.
+### Phase 3 — Future (not in scope now)
+- Manager-level approval for work/swap requests (in addition to Super Admin).
+- Regions/countries beyond Australia for the holiday picker.
+- Auto-reflecting worked-holiday hours into timesheets.
 
 ## Assumptions
-
-- **Region scope for now is Australia only**, offered as **National / NSW / QLD**; NSW and QLD each include national holidays plus their state holidays. Other countries/states are deferred to Phase 3. (Confirmed country focus.)
-- **Holidays apply workspace-wide** (one shared region for the whole team), not per-person. Per-person/region override is Phase 3. (Confirmed.)
-- **Automatic holiday source** is a free public-holidays service for Australia that needs no account or API key and returns national vs state (NSW/QLD) holidays; if it's ever unreachable, holidays already loaded are kept and the admin can retry or add manually. (Confirmed automatic approach.)
-- **Working a public holiday requires nominating the replacement day immediately** (no accrued time-off-in-lieu balance), and it uses the **same approval** as all other time off (super-admin approves; nothing auto-approved). (Confirmed.)
-- **Approval authority and current time-off visibility rules are unchanged** — only super admins approve; who can see whose time off (and the "who's out" summary) stays as currently configured; the new leave calendar respects those same rules.
-- **Capacity treatment:** public holidays and approved leave reduce available capacity and are excluded from timesheet auto-fill, matching how company holidays behave today; a half-day reduces capacity by half for that day.
-- **Leave types** are a workspace-managed list seeded with Annual, Sick, Personal, Unpaid and Parental, plus admin-defined custom types; disabling a type keeps historical entries intact.
-- **Team leave calendar** shows public holidays to everyone and time off according to existing visibility (a person sees their own; approvers/leads see per the current rules); reasons/notes remain private as they are today.
-- **"Reset" is treated as starting a fresh planning cycle**, not deleting any existing data or configuration. If a data reset is actually wanted, it will be handled separately on explicit request.
-- **Phase 2's balances/accruals, attachments, and Phase 3's blackout dates** are explicitly out of scope for this build, per the staged plan above.
+- **Approval stays Super-Admin-only** for work/swap requests, identical to the
+  current time-off flow (confirmed).
+- **No lieu-day balance or credit** is created by working a holiday; the request
+  only records the worked holiday and the optional replacement day (confirmed —
+  keep as-is).
+- **Replacement day is optional**, and when provided it is a single day (the
+  common case for a one-day public holiday); multi-day swaps are out of scope.
+- The replacement day can be any valid date the staff member chooses; there is
+  **no enforced window** tying it to the worked holiday in the MVP.
+- The holiday picker continues to draw from the workspace's configured region
+  (AU National / NSW / QLD) with no additional regions in the MVP.
+- Worked-holiday entries are **not** pushed into timesheets automatically in the
+  MVP.
